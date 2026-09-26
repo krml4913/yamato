@@ -24,6 +24,7 @@ from .util import (YAMATO_BIN, YamatoError, append_log, fmt_span, fmt_time, read
 SEAT_FILES = ("memory-inbox.md",)   # the memory itself is the role's: roles/<role>/memory.md (design-p1 §3)
 OWNER = inbox.OWNER
 WATCHDOG_POLL = 30
+WATCHDOG_MIN_SLEEP = 1.0   # the shortest watchdog sleep (tests shorten it)
 
 
 def out(msg: str = "") -> None:
@@ -559,7 +560,7 @@ def watchdog(shipdir: Path, token: str) -> int:
                            for r in roster.load(shipdir)["seats"].values()):
                     report.safety_net(shipdir, team, "終業のときに日報がなかった")
                     return 0
-            time.sleep(max(1.0, min(WATCHDOG_POLL, dl["graceUntil"] - now)))
+            time.sleep(max(WATCHDOG_MIN_SLEEP, min(WATCHDOG_POLL, dl["graceUntil"] - now)))
     finally:
         try:
             if pidfile.read_text().split()[0] == str(os.getpid()):

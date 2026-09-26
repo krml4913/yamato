@@ -114,7 +114,22 @@ notify:
 - 日報 (design-p1 §2): `report.daily: on_down` (ひな形の既定) の艦では、`down`・強制停止のときにその日の日報が無ければ事実だけで作り、まだ送っていなければ要約を送る (captain が落ちていても owner に届く安全網)。captain が終業時に「一言」「明日」を書いて `report send` する流れは `roles/pm.md` に書いてある。captain の注入には `inject` の `last_report` で前回の日報の「一言」「owner の判断待ち」「明日」だけが入る
 - `PushNotification` は方式にしない (席の外から出せない。[verify-p1-d](docs/verify-p1-d.md) V11)
 
-テスト: `python3 -m unittest discover`。E2E の手順と結果は [docs/e2e-p0.md](docs/e2e-p0.md) と [docs/e2e-p1.md](docs/e2e-p1.md)。
+## テストの実行
+
+```sh
+python3 -m unittest discover                 # 全部 (これが正。目安 10 秒程度、約 400 件)
+python3 -m unittest discover --durations 10  # 遅いテストの上位 10 件も出す
+python3 -m tests.parallel                    # モジュールごとにプロセスを分けて並列に流す (目安 4〜5 秒)
+python3 -m unittest tests.test_seat          # 1 モジュールだけ
+```
+
+unit test は速く保つ (遅いと開発の速さにそのまま響く)。全体で 10 秒程度、1 本 0.5 秒を超えたら理由があるものだけ。
+
+- 新しいテストを足したら `--durations 10` の上位を見て、自分の足したテストが上がってきていないか確かめる (レビューでも見る)。表示は 1 本ずつの実時間で、setUpClass の時間は入らない
+- 時間切れ・猶予・poll 間隔は実時間で待たない。モジュール定数 (`headless.POLL`・`headless.IDLE_POLL`・`seat.WATCHDOG_POLL`・`seat.WATCHDOG_MIN_SLEEP`・`memory.WATCH_POLL` など) を `mock.patch.object` で縮めるか、時計・関数を差し替える。待つなら固定の sleep より「条件が成り立つまで短い間隔で見る」
+- 偽の claude (`tests/fake_claude.py`) は `ShipTestCase` では同じプロセスの中で動く (`tests/helpers.py` の `patch_fast`)。`-p` だけは本物のプロセス。本物のプロセスとして呼ぶのを確かめたいときは `real_claude_process = True`
+- git を使うテストは `tests/test_worktree_pr.py` の `GitShipTestCase` のように、一時 repo を setUpClass で 1 回作ってテストごとにコピーする。git の起動 1 回がおよそ 10 ms、push は 40 ms かかる
+- 本物のプロセス・本物の claude で確かめることは unit test ではなく E2E ([docs/e2e-p0.md](docs/e2e-p0.md)、[docs/e2e-p1.md](docs/e2e-p1.md)) でやる
 
 ## docs
 - [design.md](docs/design.md) — 設計書

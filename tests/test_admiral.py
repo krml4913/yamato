@@ -124,14 +124,14 @@ class AdmiralTest(ShipTestCase):
         self.run_cmd(seat.up, self.shipdir, "20m")
         dl = deadline.read(self.shipdir)
         now = time.time()
-        deadline.write_raw(self.shipdir, {**dl, "deadline": now + 0.5, "graceUntil": now + 1.0, "grace": 0.5})
+        deadline.write_raw(self.shipdir, {**dl, "deadline": now + 0.2, "graceUntil": now + 0.3, "grace": 0.1})
         forced = []
-        with mock.patch.object(seat, "WATCHDOG_POLL", 0.2), \
+        with mock.patch.object(seat, "WATCHDOG_POLL", 0.05), mock.patch.object(seat, "WATCHDOG_MIN_SLEEP", 0.01), \
                 mock.patch.object(seat, "enforce", side_effect=lambda *a: forced.append(1) or []):
             t = threading.Thread(target=seat.watchdog, args=(self.shipdir, dl["token"]))
             t.start()
             self.run_cmd(admiral.extend, self.shipdir, "1h")
-            time.sleep(2.0)
+            time.sleep(0.3)                        # several polls past the old graceUntil
             self.assertTrue(t.is_alive())          # still waiting on the new deadline
             self.assertEqual(forced, [])           # the old graceUntil passed without a force stop
             deadline.write_raw(self.shipdir, {**deadline.read(self.shipdir), "token": "other"})
