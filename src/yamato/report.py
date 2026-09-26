@@ -21,6 +21,7 @@ from pathlib import Path
 
 from . import board as board_mod
 from . import events, notify, roster
+from .pr import PR_CONFLICT, PR_MERGE
 from .util import YamatoError, atomic_write, read_json, ship_lock, today
 
 REPORT_MADE = "report_made"    # events.jsonl kinds (docs/events.md)
@@ -168,10 +169,11 @@ def decision_lines(shipdir: Path, team: dict, date: str, now: float) -> list[str
 
 def done_lines(shipdir: Path, items: dict, since: float, until: float) -> list[str]:
     lines, seen = [], set()
-    for e in events.read(shipdir, since=since, until=until, kinds=(events.BOARD_SET, events.BOARD_ADD)):
-        changes = (e.get("data") or {}).get("changes") or {}
-        fields = (e.get("data") or {}).get("fields") or {}
-        if (changes.get("state") or [None, None])[1] != "done" and fields.get("state") != "done":
+    for e in events.read(shipdir, since=since, until=until, kinds=(events.BOARD_SET, events.BOARD_ADD, PR_MERGE)):
+        d = e.get("data") or {}
+        merged = e.get("kind") == PR_MERGE   # a merge counts as done even while the item is still open
+        changes, fields = d.get("changes") or {}, d.get("fields") or {}
+        if not merged and (changes.get("state") or [None, None])[1] != "done" and fields.get("state") != "done":
             continue
         iid = e.get("item")
         if iid in seen:
@@ -180,7 +182,10 @@ def done_lines(shipdir: Path, items: dict, since: float, until: float) -> list[s
         meta = items.get(iid, ({}, "", False))[0]
         if meta.get("kind") == "decision":
             continue   # closed decisions are not work done
-        extra = [x for x in (meta.get("assignee") or e.get("seat"), meta.get("pr") and f"PR {meta['pr']}") if x]
+        pr = f"PR {meta['pr']}" if meta.get("pr") else None
+        if merged:
+            pr = f"PR {d.get('pr') or meta.get('pr')} を {d.get('mergedBy') or e.get('by') or '?'} が merge"
+        extra = [x for x in (meta.get("assignee") or e.get("seat"), pr) if x]
         tail = f" ({', '.join(extra)})" if extra else ""
         lines.append(f"- {iid} {meta.get('title') or e.get('summary') or ''}{tail}")
     return lines
@@ -245,6 +250,14 @@ def anomaly_lines(shipdir: Path, team: dict, since: float, until: float, live: b
             lines.append(f"- {e.get('seat')} が {_hm(e['ts'])} に引き継ぎなしで終了 ({d.get('reason') or '?'})")
         elif kind == notify.NOTIFY_FAILED:
             lines.append(f"- {_hm(e['ts'])} {e.get('summary')}")
+        elif kind == events.DECISION_CLOSE and d.get("by_decider") is False:
+            on = f"。--by は {d['on_behalf_of']}" if d.get("on_behalf_of") else ""
+            lines.append(f"- {e.get('item')} の判断を decider ({d.get('decider') or '?'}) 以外の "
+                         f"{d.get('closed_by') or e.get('by') or '?'} が {_hm(e['ts'])} に閉じた{on}")
+        elif kind == PR_CONFLICT:
+            to = f"。{d['notified']} に rebase を頼んだ" if d.get("notified") else ""
+            lines.append(f"- {e.get('item')} の PR #{d.get('pr')} が {_hm(e['ts'])} に衝突 "
+                         f"({d.get('mergedItem')} の PR #{d.get('mergedPr')} を merge){to}")
     denied: dict = {}
     for e in evs:
         if e.get("kind") == events.PERMISSION_DENIED:

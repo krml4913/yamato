@@ -8,6 +8,9 @@ template's team.yaml; ``[]`` checks nothing) and merges running one at a time
 
 ``gh`` is called as ``$YAMATO_GH`` (default ``gh``) with the caller's own
 environment, so tests can swap it for a stand-in.
+
+Each open / merge, each refusal or failure of them, and each conflict found after a
+merge leaves one line in events.jsonl (docs/events.md).
 """
 from __future__ import annotations
 
@@ -21,11 +24,17 @@ from pathlib import Path
 from .board import Board
 from .team import git_conf
 from .util import YamatoError, merge_lock
-from .worktree import caller, repo_root
+from .worktree import caller, clip, record, record_failure, repo_root
 
 _PR_URL_RE = re.compile(r"https?://\S+/pull/(\d+)")
 MERGEABLE_TRIES = 5      # GitHub computes `mergeable` lazily after a push to the base
 MERGEABLE_WAIT = 3.0
+
+PR_OPEN = "pr_open"                  # events.jsonl kinds (docs/events.md)
+PR_OPEN_FAILED = "pr_open_failed"
+PR_MERGE = "pr_merge"
+PR_MERGE_FAILED = "pr_merge_failed"  # also when git.merge_requires is not met (data.unmet)
+PR_CONFLICT = "pr_conflict"
 
 
 def gh_bin() -> str:
@@ -67,28 +76,35 @@ def _send(shipdir: Path, team: dict, to: str, text: str, sender: str) -> None:
 def open_pr(shipdir: Path, team: dict, item_id: str, title: str | None = None, body: str | None = None,
             draft: bool = False, by: str | None = None) -> int:
     brd = Board(shipdir, team)
-    meta, _, _ = brd.read(item_id)
-    if meta.get("pr"):
-        print(f"{item_id} の PR は既にある: #{meta['pr']}")
-        return 0
-    branch = meta.get("branch")
-    if not branch:
-        raise YamatoError(f"{item_id} に branch がありません (`yamato worktree add` か `board set {item_id} branch=...`)")
     who = caller(shipdir, by)
-    args = ["pr", "create", "--base", git_conf(team)["base"], "--head", branch,
-            "--title", title or f"{item_id} {meta.get('title')}",
-            "--body", body if body is not None else f"yamato 艦 {team['name']} の {item_id}"]
-    if draft:
-        args.append("--draft")
-    cp = gh(args, _cwd(team, meta))
-    m = _PR_URL_RE.search(cp.stdout or "")
-    if not m:
-        raise YamatoError(f"gh pr create の出力から PR の番号を読めません: {(cp.stdout or '').strip()}")
-    url, number = m.group(0), m.group(1)
-    fields = {"pr": number}
-    if _column(team, "review"):
-        fields["column"] = "review"
-    brd.set(item_id, fields, note=f"PR #{number} を開いた: {url}", by=who)
+    meta: dict = {}
+    try:
+        meta, _, _ = brd.read(item_id)
+        if meta.get("pr"):
+            print(f"{item_id} の PR は既にある: #{meta['pr']}")
+            return 0
+        branch = meta.get("branch")
+        if not branch:
+            raise YamatoError(f"{item_id} に branch がありません (`yamato worktree add` か `board set {item_id} branch=...`)")
+        args = ["pr", "create", "--base", git_conf(team)["base"], "--head", branch,
+                "--title", title or f"{item_id} {meta.get('title')}",
+                "--body", body if body is not None else f"yamato 艦 {team['name']} の {item_id}"]
+        if draft:
+            args.append("--draft")
+        cp = gh(args, _cwd(team, meta))
+        m = _PR_URL_RE.search(cp.stdout or "")
+        if not m:
+            raise YamatoError(f"gh pr create の出力から PR の番号を読めません: {(cp.stdout or '').strip()}")
+        url, number = m.group(0), m.group(1)
+        fields = {"pr": number}
+        if _column(team, "review"):
+            fields["column"] = "review"
+        brd.set(item_id, fields, note=f"PR #{number} を開いた: {url}", by=who)
+    except YamatoError as e:
+        record_failure(shipdir, PR_OPEN_FAILED, item_id, who, e, meta)
+        raise
+    record(shipdir, PR_OPEN, item_id, who, f"{item_id} の PR #{number} を開いた", meta,
+           pr=number, url=url, branch=branch, column=fields.get("column"), draft=draft or None)
     print(f"PR #{number} を開いた: {url}")
     to = meta.get("reviewer") or team["hub"]
     if to != who:
@@ -133,23 +149,34 @@ def _pr_state(team: dict, meta: dict, number) -> dict:
 
 def merge_pr(shipdir: Path, team: dict, item_id: str, by: str | None = None) -> int:
     brd = Board(shipdir, team)
-    meta, _, _ = brd.read(item_id)
-    number = meta.get("pr")
-    if not number:
-        raise YamatoError(f"{item_id} に pr がありません (`yamato pr open` か `board set {item_id} pr=<番号>`)")
     who = caller(shipdir, by)
-    conf = git_conf(team)
-    with merge_lock(shipdir):
-        reasons = unmet(shipdir, team, meta)
-        if reasons:
-            raise YamatoError(f"{item_id} (PR #{number}) は merge の条件 (git.merge_requires) を満たしていない:\n- "
-                              + "\n- ".join(reasons))
-        if _pr_state(team, meta, number).get("state") == "MERGED":
-            print(f"PR #{number} は既に merge されている")
-        else:
-            gh(["pr", "merge", str(number), f"--{conf['strategy']}"], _cwd(team, meta))
-            print(f"PR #{number} を merge した ({conf['strategy']})")
-        brd.set(item_id, {"merged_by": who}, note=f"PR #{number} を merge した", by=who)
+    meta: dict = {}
+    refused: list[str] = []
+    try:
+        meta, _, _ = brd.read(item_id)
+        number = meta.get("pr")
+        if not number:
+            raise YamatoError(f"{item_id} に pr がありません (`yamato pr open` か `board set {item_id} pr=<番号>`)")
+        conf = git_conf(team)
+        with merge_lock(shipdir):
+            refused = unmet(shipdir, team, meta)
+            if refused:
+                raise YamatoError(f"{item_id} (PR #{number}) は merge の条件 (git.merge_requires) を満たしていない:\n- "
+                                  + "\n- ".join(refused))
+            already = _pr_state(team, meta, number).get("state") == "MERGED"
+            if already:
+                print(f"PR #{number} は既に merge されている")
+            else:
+                gh(["pr", "merge", str(number), f"--{conf['strategy']}"], _cwd(team, meta))
+                print(f"PR #{number} を merge した ({conf['strategy']})")
+            brd.set(item_id, {"merged_by": who}, note=f"PR #{number} を merge した", by=who)
+            record(shipdir, PR_MERGE, item_id, who,
+                   f"{item_id} の PR #{number} を merge した" + (" (既に merge 済み)" if already else ""), meta,
+                   pr=str(number), strategy=conf["strategy"], mergedBy=who, alreadyMerged=already or None)
+    except YamatoError as e:
+        record_failure(shipdir, PR_MERGE_FAILED, item_id, who, e, meta, pr=meta.get("pr"),
+                       unmet=[clip(r) for r in refused] or None)
+        raise
     _check_conflicts(shipdir, team, item_id, number, who)
     return 0
 
@@ -178,6 +205,10 @@ def _check_conflicts(shipdir: Path, team: dict, merged_id: str, merged_pr, who: 
         brd.set(meta["id"], fields, note=text, by=who)
         print(f"衝突: {meta['id']} の PR #{meta['pr']}")
         to = meta.get("assignee") if conf["conflict"] == "author" else conf["conflict"]
+        record(shipdir, PR_CONFLICT, meta["id"], who,
+               f"{meta['id']} の PR #{meta['pr']} が衝突 ({merged_id} の PR #{merged_pr} を merge)", meta,
+               pr=str(meta["pr"]), mergedItem=merged_id, mergedPr=str(merged_pr), mergedBy=who,
+               column=fields.get("column"), notified=to if to and to != who else None)
         if to and to != who:
             _send(shipdir, team, to, text, who)
         elif not to:

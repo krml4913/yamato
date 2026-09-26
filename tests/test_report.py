@@ -12,7 +12,7 @@ from unittest import mock
 
 from tests.helpers import ShipTestCase
 from yamato import board as board_mod
-from yamato import deadline, events, inject, notify, report, roster
+from yamato import deadline, events, inject, notify, pr, report, roster
 from yamato.util import YamatoError
 
 DATE = "2026-09-26"
@@ -136,6 +136,49 @@ class BuildTest(ReportTestCase):
     def test_listing_failure_does_not_fail_the_report(self):
         self.agents.side_effect = YamatoError("claude がない")
         self.assertEqual(report.sections(self.build())["異常"], "- なし")
+
+    def test_merges_are_done_work_even_while_the_item_is_open(self):
+        b = self.brd()
+        merged = b.add("ログイン", {"assignee": "impl", "pr": "12", "state": "active"})["id"]
+        both = b.add("決済", {"assignee": "impl", "pr": "13"})["id"]
+        old = b.add("昨日の merge", {"assignee": "impl", "pr": "14"})["id"]
+        pm = {"strategy": "squash", "mergedBy": "pm"}
+        events.emit(self.shipdir, pr.PR_MERGE, seat="impl", item=merged, by="pm", now=at(10),
+                    data={"pr": "12", **pm})
+        events.emit(self.shipdir, pr.PR_MERGE, seat="impl", item=merged, by="owner", now=at(11),
+                    data={"pr": "12", "strategy": "squash", "mergedBy": "owner", "alreadyMerged": True})
+        events.emit(self.shipdir, pr.PR_MERGE, seat="impl", item=both, by="pm", now=at(10, 30), data={"pr": "13", **pm})
+        with mock.patch("yamato.events.time.time", return_value=at(11)):
+            b.set(both, {"state": "done"}, by="pm")
+        events.emit(self.shipdir, pr.PR_MERGE, seat="impl", item=old, by="pm", now=at(10) - 86400,
+                    data={"pr": "14", **pm})
+        events.emit(self.shipdir, pr.PR_MERGE_FAILED, seat="impl", item=old, by="pm", now=at(10),
+                    data={"reason": "条件を満たさない", "unmet": ["review: x"]})   # refused: not work done
+        done = report.sections(self.build())["今日終わったもの"].splitlines()
+        self.assertEqual(done, [f"- {merged} ログイン (impl, PR 12 を pm が merge)",
+                                f"- {both} 決済 (impl, PR 13 を pm が merge)"])
+
+    def test_merge_conflicts_and_decisions_closed_by_a_non_decider_are_anomalies(self):
+        events.emit(self.shipdir, pr.PR_CONFLICT, seat="impl", item="T-002", by="pm", now=at(10, 30),
+                    data={"pr": "2", "mergedItem": "T-001", "mergedPr": "1", "mergedBy": "pm",
+                          "column": "rebase", "notified": "impl"})
+        events.emit(self.shipdir, pr.PR_CONFLICT, seat="pm", item="T-003", by="pm", now=at(10, 40),
+                    data={"pr": "3", "mergedItem": "T-001", "mergedPr": "1", "mergedBy": "pm"})
+        events.emit(self.shipdir, events.DECISION_CLOSE, seat="owner", item="D-001", by="pm", now=at(11),
+                    data={"decider": "owner", "closed_by": "pm", "on_behalf_of": "owner", "by_decider": False})
+        events.emit(self.shipdir, events.DECISION_CLOSE, seat="pm", item="D-002", by="pm", now=at(11, 5),
+                    data={"decider": "pm", "closed_by": "pm", "by_decider": True})
+        events.emit(self.shipdir, pr.PR_CONFLICT, seat="impl", item="T-009", by="pm", now=at(10) - 86400,
+                    data={"pr": "9", "mergedItem": "T-001", "mergedPr": "1"})
+        events.emit(self.shipdir, pr.PR_MERGE_FAILED, seat="impl", item="T-004", by="pm", now=at(10),
+                    data={"reason": "x"})   # a refused merge is the safety net working, not an anomaly
+        anomalies = report.sections(self.build())["異常"].splitlines()
+        self.assertEqual(anomalies, [
+            "- T-002 の PR #2 が 10:30 に衝突 (T-001 の PR #1 を merge)。impl に rebase を頼んだ",
+            "- T-003 の PR #3 が 10:40 に衝突 (T-001 の PR #1 を merge)",
+            "- D-001 の判断を decider (owner) 以外の pm が 11:00 に閉じた。--by は owner",
+        ])
+        self.assertEqual(report.summary(self.build())[1], "error")
 
 
 class MakeAndSendTest(ReportTestCase):
