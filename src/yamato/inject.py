@@ -7,7 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from . import board as board_mod
-from . import deadline, inbox, roster
+from . import deadline, inbox, memory, roster
 from .team import inject_parts
 from .util import YAMATO_BIN, today
 
@@ -50,6 +50,17 @@ def _file_section(title: str, path: Path, limit: tuple[int, int]) -> str:
     if not text:
         return f"## {title}\n(なし)"
     return f"## {title}\n{cap_text(text, *limit, source=str(path))}"
+
+
+def _memory_section(title: str, path: Path, limit: tuple[int, int], team: dict, kind: str) -> str:
+    """Like ``_file_section``, but a file over ``memory.limits`` (a hand edit: ``memory apply``
+    refuses those) is cut there first and says so (design-p1 §3.5)."""
+    text = _read(path).strip()
+    if not text:
+        return f"## {title}\n(なし)"
+    text, warning = memory.within_limits(text, team, kind)
+    out = f"## {title}\n{cap_text(text, *limit, source=str(path))}"
+    return out + (f"\n{warning}" if warning else "")
 
 
 def _last_report(shipdir: Path, limit: tuple[int, int]) -> str:
@@ -110,6 +121,11 @@ def build(shipdir: Path, team: dict, seat: str, source: str = "startup",
     if "last_report" in want:
         parts.append(_last_report(shipdir, lim["last_report"]))
 
+    # the applier's role gets `memory status` on its first start of the day (design-p1 §3.4)
+    notice = memory.applier_notice(shipdir, team, seat)
+    if notice:
+        parts.append(notice)
+
     cursor_to = inbox.cursor(shipdir, seat)
     if "inbox" in want:
         # the inbox gets what is left of the total budget after the parts above,
@@ -135,9 +151,13 @@ def build(shipdir: Path, team: dict, seat: str, source: str = "startup",
             lines.append(f"…続きと省略された全文は `{y} inbox {shipdir} {seat}` で読む")
         parts.append(f"## 未読の inbox ({len(unread)} 件)\n" + ("\n".join(lines) if lines else "(なし)"))
     if "memory" in want:
-        parts.append(_file_section("席の memory", sdir / "memory.md", lim["memory"]))
+        memory.migrate(shipdir, team)   # a P0 ship's seats/<seat>/memory.md moves in on first read
+        role = spec["role"]
+        parts.append(_memory_section(f"役割の memory (roles/{role}/memory.md)", memory.memory_path(shipdir, role),
+                                     lim["memory"], team, "memory"))
     if "knowledge" in want:
-        parts.append(_file_section("チームの knowledge.md", shipdir / "knowledge.md", lim["knowledge"]))
+        parts.append(_memory_section("チームの knowledge.md", memory.knowledge_path(shipdir), lim["knowledge"],
+                                     team, "knowledge"))
 
     text = "\n\n".join(parts)
     if len(text) > lim["total_chars"]:

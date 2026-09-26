@@ -14,13 +14,15 @@ class InjectTest(ShipTestCase):
         super().setUp()
         self.t = self.team()
         self.sdir = self.shipdir / "seats" / "impl"
+        self.rdir = self.shipdir / "roles" / "impl"   # the role's memory (design-p1 §3)
+        self.rdir.mkdir(parents=True, exist_ok=True)
 
     def build(self, **limits):
         return inject.build(self.shipdir, self.t, "impl", "startup", limits or None)
 
     def test_sections_present(self):
         (self.sdir / "handoff.md").write_text("前回: T-001 途中")
-        (self.sdir / "memory.md").write_text("モックは 30 日で切れる")
+        (self.rdir / "memory.md").write_text("モックは 30 日で切れる")
         board.Board(self.shipdir, self.t).add("関数を足す", {"assignee": "impl"})
         inbox.append(self.shipdir, "impl", "pm", "T-001 を頼む")
         text, cur = self.build()
@@ -54,7 +56,7 @@ class InjectTest(ShipTestCase):
         self.assertIn("上限で省略", text)
 
     def test_memory_and_knowledge_capped_by_chars(self):
-        (self.sdir / "memory.md").write_text("m" * 5000)
+        (self.rdir / "memory.md").write_text("m" * 5000)
         (self.shipdir / "knowledge.md").write_text("k" * 5000)
         text, _ = self.build(memory=(40, 100), knowledge=(60, 200))
         self.assertIn("m" * 100 + "\n…(上限で省略", text)

@@ -21,7 +21,7 @@ from .team import load_team, profile_of, seat_spec
 from .util import (YAMATO_BIN, YamatoError, append_log, fmt_span, fmt_time, read_json,
                    seat_lock, ship_lock, write_json)
 
-SEAT_FILES = ("memory.md", "memory-inbox.md")
+SEAT_FILES = ("memory-inbox.md",)   # the memory itself is the role's: roles/<role>/memory.md (design-p1 §3)
 OWNER = inbox.OWNER
 WATCHDOG_POLL = 30
 

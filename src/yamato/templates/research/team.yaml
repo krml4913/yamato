@@ -109,6 +109,23 @@ deny:
   - "Write(/{{ship}}/seats/*/inbox.*)"
   - "Edit(/{{ship}}/decisions/**)"
   - "Write(/{{ship}}/decisions/**)"
+  # knowledge.md は yamato memory apply --knowledge だけが書く (役割の memory.md は上の roles/** で止まる)
+  - "Edit(/{{ship}}/knowledge.md)"
+  - "Write(/{{ship}}/knowledge.md)"
+
+# memory の棚卸し (design-p1 §3)。役割の memory は roles/<役割>/memory.md (同じ役割の席で共有)
+#   候補は席が `yamato memo` で溜め、`yamato memory curate` が headless のシフト (roles/_memory-curator.md) で
+#   案 (roles/<役割>/memory.proposed.md) を作り、`yamato memory apply` で反映する。誰が打つかはコードは検査しない
+memory:
+  applier: editor            # 反映を打つ役割 (省略時は hub)。この役割のその日の最初のシフトに memory status が注入される
+  curate_every: 7d           # 前回の反映からこの日数で棚卸しの目安 (memory status に出るだけ)
+  curate_at: 30              # 候補がこの件数に達したら棚卸しの目安
+  max_duration: 15m          # 棚卸しのシフト 1 回の上限
+  limits:                    # 超える案は memory apply が反映を拒否する。手で編集して超えたら注入で切って警告する
+    memory_lines: 80
+    memory_bytes: 8192
+    knowledge_lines: 120
+    knowledge_bytes: 12288
 
 # 席を起動するときに外す環境変数 (秘密を席の環境に置かない)
 env_unset: [GH_TOKEN, GITHUB_TOKEN]
