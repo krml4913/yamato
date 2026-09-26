@@ -72,9 +72,19 @@ inject:
     inbox_chars: 400         # 1 通あたり
     total_chars: 9500        # 全体 (Claude Code の hook 出力は約 1 万文字で切られる)
 
-# owner 宛ての send (`yamato send <ship> owner "..."`) の通知経路。複数可: command / mac (slack / windows は P1)
+# owner 宛ての send (`yamato send <ship> owner "..."`) の通知経路 (design-p1 §2.4)。
+# via に並べた方式すべてに送る (複数可)。どれかが失敗しても他は送り、失敗は events.jsonl (notify_failed) に残る。
+#   slack   incoming webhook に POST。URL は slack.webhook_env の環境変数から読む (艦フォルダには書かない)
+#   mac     macOS の通知 (osascript)
+#   windows Windows の toast (PowerShell)
+#   command 下の command を実行する。件名・本文・重要度 (success / waiting / progress / error / info) は
+#           stdin の JSON {"title", "message", "level"} と YAMATO_TITLE / YAMATO_MESSAGE / YAMATO_LEVEL で渡る。
+#           メールなど上の 3 つ以外はこれで送る
+# 省略 (via: []) なら通知しない (inbox にだけ残る)
 notify:
-  via: []
+  via: []                    # 例: [slack, mac]
+  slack:
+    webhook_env: YAMATO_SLACK_WEBHOOK
   # command: "terminal-notifier -title \"$YAMATO_TITLE\" -message \"$YAMATO_MESSAGE\""
 
 board:
