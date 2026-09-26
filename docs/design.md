@@ -572,18 +572,20 @@ design-p1 には、別の名前で書かれている箇所がある (`ship up / 
 - 会話ログ (transcript) を艦フォルダに保存する SessionEnd hook (§8.3)。未実装だが、design-p1 §1.5 の代筆の追跡が前提にしている。headless の席では SessionEnd hook の待ちが 1.5 秒なので、保存はそれに収めるか `timeout` を付ける (design-p1 §4.2)
 - **【要検証】** design-p1 §11 の未確認のうち: サブスクの枠切れのとき、bg の席と `-p` がどうなるか (V5)。SessionStart の `additionalContext` の長さの上限 (V8。検証 C の担当。P0 は約 1 万文字で切られる前提で `inject.limits.total_chars` を 9500 にしている)。bg の席 + Remote Control からの `PushNotification` (V11)。`env_unset` が daemon 経由で起動する席に効くか (§4.1)
 
-**P0 の実装と design-p1 で、名前や置き場が食い違っているもの** (P1 の実装で揃える。どちらに寄せるかはその task で決める)
+**P0 の実装と design-p1 で、名前や置き場が食い違っていたもの: 決定済み (leader, 2026-09-26)**
 
-| 項目 | P0 の実装 | design-p1 |
+基本は P0 の実装の名前に寄せる。design-p1 v3 は、この決定に合わせて書き換えた。例外は memory 本体だけ。
+
+| 項目 | 決定 | 備考 |
 |---|---|---|
-| 席の終業 | `yamato seat-stop` | `yamato shift end` |
-| 艦の起動・終業・状況 | `yamato up` / `down` / `status` (`ship` は `create` だけ) | `yamato ship up` / `down` / `status` |
-| deny リスト | team.yaml の最上位 `deny:` | `permissions.deny:` |
-| settings ファイル | 席ごと `.runtime/settings-<seat>.json` | `settings.json` / `settings.<role>.json` |
-| memory 本体 | `seats/<seat>/memory.md` | `roles/<role>/memory.md` (同じ役割の席で共有) |
-| 注入の部品名 | `memory` | `role_memory` |
-| owner | 予約名。役割には書けない | 調査艦の例 (§7.1) に `owner: { agent: human }` がある |
-| 引き継ぎの安全網 | `seat-stop` が `handoff.md` の更新を確かめる (`seat_stop.require_handoff`)。Stop hook の安全網は無い | Stop hook の `handoff_guard` |
+| 席の終業 | `yamato seat-stop` (`seat-stop --rotate` も) | design-p1 の `shift end` は使わない |
+| 艦の起動・終業・状況 | `yamato up` / `down` / `status` / `extend` / `halt`。`ship` は `create` だけ | `extend` / `halt` は P1 で足す |
+| deny リスト | team.yaml の最上位 `deny:` | `permissions.deny:` は使わない |
+| settings ファイル | 席ごと `.runtime/settings-<seat>.json` | `settings.json` / `settings.<role>.json` は使わない |
+| memory 本体 | **例外**: design-p1 の `roles/<role>/memory.md` (同じ役割の席で共有) | P0 の `seats/<seat>/memory.md` からは、memory の棚卸しの task (design-p1 §10 の 8) で移す。それまでは P0 のまま |
+| 注入の部品名 | `memory` | `role_memory` は使わない。memory 本体を移したあとは `roles/<role>/memory.md` を読む |
+| owner | 予約名。役割には書けない | design-p1 §7.1 の調査艦の例から `owner: { agent: human }` を外した |
+| 引き継ぎの安全網 | `seat-stop` が `handoff.md` の更新を確かめる (`seat_stop.require_handoff`) | Stop hook の `handoff_guard` は作らない |
 
 ## 16. 作る順番
 
