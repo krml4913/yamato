@@ -18,6 +18,14 @@ roles:
     shift: per_task
     count: 1                 # 2 以上にすると席は impl-1, impl-2, ... になる
     description: 実装担当。割り当てられた task を実装してテストし、captain に報告する
+  # headless の役割の例 (1 シフト = claude -p 1 回。design-p1 §4)。調査や 1 回で終わる確認に向く
+  # researcher:
+  #   model: sonnet
+  #   shift: headless
+  #   max_duration: 30m        # 1 シフトの上限 (艦の deadline + grace と早い方で止める)
+  #   max_budget_usd: 1.0      # 書いたときだけ --max-budget-usd を付ける (既定は掛けない)
+  #   report_to: pm            # シフト終了の定型文の報告先 (省略時は hub)
+  #   description: 調査担当
 
 # 無人の席にやらせない操作 (Claude Code の permissions.deny)。艦ごとに自由に変えてよい
 # `{{ship}}` は艦フォルダのパスに置き換わる。`ask` ルールは auto モードでも止まるので使わない

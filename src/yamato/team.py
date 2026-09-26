@@ -10,7 +10,7 @@ from pathlib import Path
 from .notify import CHANNELS as NOTIFY_CHANNELS
 from .util import YamatoError, check_name, parse_duration, read_json
 
-SHIFTS = ("per_task", "persistent")
+SHIFTS = ("per_task", "persistent", "headless")
 STATES = ("open", "active", "blocked", "done")
 TOP_KEYS = {"name", "hub", "workspace", "charter", "roles", "time_limit", "grace", "deny", "board",
             "settings", "seat_stop", "env_unset", "inject", "notify", "git", "report", "decisions"}
@@ -22,7 +22,7 @@ INJECT_LIMIT_KEYS = ("handoff", "memory", "knowledge", "log_tail", "mine_items",
                      "inbox_chars", "total_chars", "last_report")
 RESERVED_SEATS = ("owner",)   # the human's inbox; not a seat
 SEAT_STOP_DEFAULTS = {"require_handoff": True, "require_delivery": True}
-ROLE_KEYS = {"model", "shift", "count", "description", "inject"}
+ROLE_KEYS = {"model", "shift", "count", "description", "inject", "max_duration", "max_budget_usd", "report_to"}
 # `git:` (design-p1 §8.3). The values a ship runs with live in the template's
 # team.yaml; these are only what a ship without a `git:` section gets.
 GIT_KEYS = {"base", "strategy", "merge_requires", "merge_decision", "conflict"}
@@ -104,8 +104,22 @@ def validate(data: dict, shipdir: Path) -> dict:
         parts = spec.get("inject")
         if parts is not None:
             _check_parts(parts, f"roles.{role}.inject")
+        max_duration = spec.get("max_duration")
+        if max_duration is not None:
+            max_duration = parse_duration(max_duration)
+            if max_duration <= 0:
+                raise YamatoError(f"team.yaml: roles.{role}.max_duration は 0 より長くする")
+        budget = spec.get("max_budget_usd")
+        if budget is not None and (isinstance(budget, bool) or not isinstance(budget, (int, float)) or budget <= 0):
+            raise YamatoError(f"team.yaml: roles.{role}.max_budget_usd は正の数 (今: {budget!r})")
+        for key, value in (("max_duration", max_duration), ("max_budget_usd", budget)):
+            if value is not None and shift != "headless":
+                warnings.append(f"roles.{role}.{key} は shift: headless の役割でだけ効く (今: {shift})。無視する")
         roles[role] = {
             "inject": parts,
+            "max_duration": max_duration,
+            "max_budget_usd": budget,
+            "report_to": str(spec["report_to"]) if spec.get("report_to") else None,
             "model": model,
             "shift": shift,
             "count": count,
@@ -117,6 +131,11 @@ def validate(data: dict, shipdir: Path) -> dict:
         raise YamatoError(f"team.yaml: hub={hub!r} が roles にありません")
     if roles[hub]["count"] != 1:
         raise YamatoError("team.yaml: hub の役割は count: 1 にする")
+
+    seats = expand_seats(roles)
+    for role, spec in roles.items():
+        if spec["report_to"] and spec["report_to"] not in (*seats, *RESERVED_SEATS):
+            raise YamatoError(f"team.yaml: roles.{role}.report_to={spec['report_to']!r} は席の名前か owner")
 
     ws = data.get("workspace")
     if not ws:

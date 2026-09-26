@@ -35,9 +35,10 @@ yamato が書くのは次の kind。定数は `src/yamato/events.py`。
 | `board_set` | `board set` | 変更後の担当 | 項目 | `--by` | `changes` (`{key: [前, 後]}`)、`note` (`--note`) |
 | `board_archive` | `board archive` | 担当 | 項目 | ― | ― |
 | `send` | `send` (inbox に記録した時点。起動前・上限後も書く) | 宛先 | ― | 送り手 | `n` (inbox の番号)、`chars` |
-| `shift_start` | roster のシフト開始 (new / resume) | 席 | ― | ― | `shiftNo`、`how`、`sessionId` |
-| `shift_end` | roster のシフト終了 | 席 | ― | ― | `shiftNo`、`reason` (`seat-stop` / `exited` / `down-force` / `grace-exceeded`)、`handoffWritten`、`note` (「引き継ぎなしで終了」など) |
+| `shift_start` | roster のシフト開始 (new / resume / headless) | 席 | ― | ― | `shiftNo`、`how`、`sessionId` |
+| `shift_end` | roster のシフト終了 | 席 | ― | ― | `shiftNo`、`reason` (`seat-stop` / `exited` / `down-force` / `grace-exceeded`。headless はほかに `max-duration` / `failed` / `wrapper-signal` (ラッパーが SIGTERM・SIGINT を受けて `-p` に転送した) / `wrapper-lost` (ラッパーが居ないのに `-p` が残っていたのを reconcile が止めた))、`handoffWritten`、`note` (「引き継ぎなしで終了」など) |
 | `force_stop` | `down --force`・猶予超えの強制停止 (このあと `shift_end` も出る) | 席 | ― | ― | `reason`、`shiftNo`、`sessionId` |
+| `shift_failed` | headless のシフトの異常 (design-p1 §4.2 の 4、§4.4。このあと `shift_end` も出る) | 席 | ― | ― | `shiftNo`、`sessionId`、`exitCode`、`failures` (理由の文)、`is_error`、`api_error_status`、`terminal_reason` |
 | `permission_denied` | PermissionRequest の deny hook (`source: dialog`)、PermissionDenied hook (`source: auto`、classifier の拒否) | 席 | ― | ― | `source`、`tool`、`reason` (auto のみ) |
 | `notify_failed` | 通知 (`notify.via`、design-p1 §2.4) が 1 方式失敗したとき。方式ごとに 1 行。OS が違うための「送らない」は書かない。定数は `notify.NOTIFY_FAILED` | ― | ― | ― | `via`、`level`、`reason` (webhook の URL は入れない) |
 | `report_made` | `report daily` と日報の安全網 (design-p1 §2.2) が日報を作ったとき | ― | ― | ― | `date`、`factsOnly`、`reason` (facts-only のとき) |

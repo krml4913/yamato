@@ -60,9 +60,10 @@ zellij --session yamato-view --new-session-with-layout ~/yamato/view.kdl
 | `seat-stop <ship> <seat> [--delivered]` | (席が使う) handoff.md の更新を確認して遅延 stop |
 | `view layout <ship>... [-o FILE]` | 艦ごとに 1 タブ、席ごとに 1 ペインの zellij layout (KDL) を出力する。艦は名前 (`ships.json` → `~/yamato/<name>`) かパス |
 | `view attach <ship> <seat> [--poll SEC]` | (layout のペインの中身) 席の今のシフト (roster の sessionId) が生きていれば `claude attach`、シフトが替われば付け直す。止まっている席には attach しない |
+| `run-headless <ship> <seat>` | (`send` が切り離して起動する) headless の席の 1 シフトを `claude -p` で回し、使用量・結果の判定・定型文の終了報告まで持つ。記録と結果は [docs/e2e-headless.md](docs/e2e-headless.md) |
 | `hook <event> <ship> <seat>` | (Claude Code の hook から呼ばれる) session-start / user-prompt-submit / stop / wait-deadline / deny-dialog / log-denied |
 
-team.yaml の項目: `name` / `hub` / `workspace` / `roles` (役割ごとに `model`・`shift: per_task|persistent`・`count`・`inject`) / `time_limit` / `grace` / `deny` / `env_unset` / `settings` (席の settings.json に重ねる) / `seat_stop` (終業前の確認) / `inject` (注入の中身と上限) / `notify` (owner 宛ての通知経路。`decisions: digest|each`) / `decisions` (判断の category → `decider` と `when`。`merge: owner` の短い書き方も可) / `board` (`kinds`・`columns`・`fields`・`archive_on_done`) / `git` (`base`・`strategy`・`merge_requires`・`merge_decision`・`conflict`。worktree と pr の道具が読む) / `report` (`daily: on_down|off`)。
+team.yaml の項目: `name` / `hub` / `workspace` / `roles` (役割ごとに `model`・`shift: per_task|persistent|headless`・`count`・`inject`。headless は `max_duration`・`max_budget_usd`・`report_to` も) / `time_limit` / `grace` / `deny` / `env_unset` / `settings` (席の settings.json に重ねる) / `seat_stop` (終業前の確認) / `inject` (注入の中身と上限) / `notify` (owner 宛ての通知経路。`decisions: digest|each`) / `decisions` (判断の category → `decider` と `when`。`merge: owner` の短い書き方も可) / `board` (`kinds`・`columns`・`fields`・`archive_on_done`) / `git` (`base`・`strategy`・`merge_requires`・`merge_decision`・`conflict`。worktree と pr の道具が読む) / `report` (`daily: on_down|off`)。
 運用の方針 (deny の中身、外す環境変数、worktree の使い方、git の流れ) はコードに持たず、ひな形の team.yaml と役割プロンプト (`roles/<role>.md`) に書いてある。艦ごとに変えてよい。
 
 worktree と pr (design-p1 §8): yamato は道具を出すだけで、誰がいつ使うか (タスク = ブランチ、worktree で作業する、push してよいのは自分のブランチ、merge は owner の了承のあと captain が打つ、など) は dev ひな形の `roles/*.md` と team.yaml の `deny` に書いてある。
@@ -106,3 +107,4 @@ notify:
 - [verify-p0-a.md](docs/verify-p0-a.md) / [verify-p0-b.md](docs/verify-p0-b.md) — P0 の実機検証 (起動レシピ)
 - [e2e-p0.md](docs/e2e-p0.md) — P0 実装の E2E
 - [events.md](docs/events.md) — events.jsonl の行の形式と読み方、lastActive
+- [e2e-headless.md](docs/e2e-headless.md) — `shift: headless` と `run-headless` の実機確認

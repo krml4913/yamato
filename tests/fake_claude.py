@@ -3,13 +3,16 @@
 
 State lives in $FAKE_CLAUDE_STATE (JSON). Live sessions get the pid in
 $FAKE_ALIVE_PID (the test runner itself), stopped ones pid None. Every call is
-appended to state["calls"] with its argv and a few env vars.
+appended to state["calls"] with its argv and a few env vars. ``-p`` (headless)
+is played by fake_claude_lib/print_mode.py.
 """
 import json
 import os
 import sys
 import time
 import uuid
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "fake_claude_lib"))
 
 path = os.environ["FAKE_CLAUDE_STATE"]
 argv = sys.argv[1:]
@@ -30,9 +33,18 @@ except (FileNotFoundError, ValueError):
     st = {"sessions": [], "calls": []}
 st["calls"].append({"argv": argv, "cwd": os.getcwd(),
                     "GH_TOKEN": os.environ.get("GH_TOKEN"),
-                    "CLAUDE_CODE_SESSION_ID": os.environ.get("CLAUDE_CODE_SESSION_ID")})
+                    "CLAUDE_CODE_SESSION_ID": os.environ.get("CLAUDE_CODE_SESSION_ID"),
+                    "CLAUDE_CODE_CHILD_SESSION": os.environ.get("CLAUDE_CODE_CHILD_SESSION"),
+                    "stdin_is_devnull": os.path.samestat(os.fstat(0), os.stat(os.devnull))})
 alive_pid = int(os.environ["FAKE_ALIVE_PID"])
 mode = st.get("mode", {})
+
+
+if "-p" in argv:
+    json.dump(st, open(path, "w"))
+    fcntl.flock(_lock, fcntl.LOCK_UN)   # a -p runs for a while: let other calls in
+    import print_mode
+    sys.exit(print_mode.run(argv, mode))
 
 
 def save():
