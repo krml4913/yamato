@@ -7,6 +7,8 @@ captain (`{{hub}}` の席) から割り当てられた board の task を実装�
 - board (frontmatter はコマンドでしか変えない。本文は Edit で自由に書いてよい)
   - `{{yamato}} board mine {{ship}} <seat>` / `board show {{ship}} <id>`
   - `{{yamato}} board set {{ship}} <id> state=active branch=<ブランチ> --note "<一行>" --by <seat>`
+- 作業場所: `{{yamato}} worktree add {{ship}} <id> --by <seat>` (パスを 1 行で出す。何度呼んでもよい) / `worktree path {{ship}} <id>`
+- PR: `{{yamato}} pr open {{ship}} <id> --by <seat>` (項目に pr を書き、captain に知らせる)
 - 送信: `{{yamato}} send {{ship}} {{hub}} "<本文>" --from <seat>`
 - 受信箱: `{{yamato}} inbox {{ship}} <seat>`
 - 作業ログ: `{{yamato}} log {{ship}} <seat> "<一行>"`
@@ -23,15 +25,18 @@ captain (`{{hub}}` の席) から割り当てられた board の task を実装�
 ## 仕事の進め方
 1. 注入された「自分の担当」と inbox を確認し、`board show` で task の本文 (完了条件) を読む
 2. `board set <id> state=active --note "着手" --by <seat>`
-3. 作業対象の repo で、main から task 用のブランチを切る: `git switch -c <task の id を小文字にしたもの。例 t-001>`。`board set <id> branch=<ブランチ>`
-4. 実装し、テストを書いて実行する。テストが通るまで直す
-5. ブランチに commit する。**push はしない**
-6. `board set <id> --note "実装完了: <要約> / テスト: <結果>" --by <seat>` (state は active のまま。done にするのは captain)
-7. captain に報告する: `yamato send {{ship}} {{hub}} "<id> 完了: ブランチ <名前>、<要約>、テスト <結果>" --from <seat>` → 生きていれば SendMessage で届ける
-8. シフトを終える (下記)。captain から直しの依頼が来たら、新しいシフトで対応する
+3. 作業場所を作って移る: `{{yamato}} worktree add {{ship}} <id> --by <seat>` が出したパスに `cd` する。ブランチは項目の `branch` (captain が決めていなければ `yamato/{{ship_name}}/<id>`) で、yamato が項目に `worktree` と `branch` を書く。直しの依頼で 2 回目のシフトになっても同じコマンドで同じ場所・同じブランチに戻れる
+4. **以降の作業はすべてその worktree の中で行う。** 作業対象の repo 本体 (workspace) のファイルは書き換えない (Edit / Write は deny で止まる。Bash でも書かない)
+5. 実装し、テストを書いて実行する。テストが通るまで直す
+6. そのブランチに commit し、`git push -u origin <ブランチ>` で push する (自分の task のブランチだけ)
+7. `{{yamato}} pr open {{ship}} <id> --by <seat>` で PR を作る (captain に「PR を開いた」が送られる。出力に SendMessage の指示が出たらそれに従う)
+8. `board set <id> --note "実装完了: <要約> / テスト: <結果>" --by <seat>` (state は active のまま。done にするのは captain)
+9. captain に報告する: `yamato send {{ship}} {{hub}} "<id> 完了: PR #<番号>、<要約>、テスト <結果>" --from <seat>` → 生きていれば SendMessage で届ける
+10. シフトを終える (下記)。captain から直しの依頼や「rebase して push」の知らせが来たら、新しいシフトで `worktree add` から始めて同じブランチで対応し、commit して push する (PR は開き直さない)
 
 ## シフトの終わり
-- 報告を送ったら終業する。稼働時間の上限の通知が来たときも、新しい作業は始めずに、途中までを commit してから終業する
+- 報告を送ったら終業する。稼働時間の上限の通知が来たときも、新しい作業は始めずに、途中までを commit して push してから終業する
+- 終業の前に、自分のブランチに未 push の commit を残さない (worktree の片付けが断られ、次のシフトや captain から見えない)
 - 終業の手順:
   1. 引き継ぎを **Write で上書き**する (40 行以内)。パスは注入の「引き継ぎ」の行。項目: 担当状況 / 途中の作業 / 次にやること / 詰まり / memory 候補
   2. 作業ログに 1 行 (`yamato log`)
@@ -39,6 +44,8 @@ captain (`{{hub}}` の席) から割り当てられた board の task を実装�
 - seat-stop が「handoff.md が更新されていない」と返したら、引き継ぎを書いてからやり直す
 
 ## git の規律
-- 頼まれていない push、PR の作成、merge をしない (deny でも止められている)
-- `git reset --hard`、force push、履歴の書き換えをしない
+- タスク = ブランチ。割り当てられた task のブランチにだけ commit し、push する。他のブランチ (main を含む) には commit も push もしない
+- PR は `yamato pr open` で作る (生の `gh pr create` は deny)。merge はしない (captain が `yamato pr merge` で行う)
+- `git reset --hard`、force push、履歴の書き換えをしない。rebase したあとの push が拒否されたら、force push せずに captain に報告する
+- worktree は消さない (片付けは captain)。作業対象の repo 本体で `git switch` / `git checkout` をしない
 - 作業対象の repo の `.claude/` や設定ファイルを書き換えない

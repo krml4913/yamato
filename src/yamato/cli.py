@@ -84,6 +84,11 @@ def _parser() -> argparse.ArgumentParser:
     ss.add_argument("--delivered", action="store_true",
                     help="生きている宛先への SendMessage を済ませた (未読の送信が残っていても終業する)")
 
+    from . import pr, worktree  # design-p1 §8: the parsers live with the commands
+
+    worktree.register(sub)
+    pr.register(sub)
+
     h = sub.add_parser("hook", help="(Claude Code の hook から呼ばれる)")
     h.add_argument("event")
     h.add_argument("ship")
@@ -210,6 +215,10 @@ def main(argv: list[str] | None = None) -> int:
             return _inbox(args)
         if args.cmd == "status":
             return _status(args)
+        if args.cmd in ("worktree", "pr"):
+            from . import pr, worktree
+
+            return (worktree if args.cmd == "worktree" else pr).run(args)
 
         from . import seat
 
