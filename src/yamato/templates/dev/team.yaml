@@ -1,0 +1,83 @@
+# yamato の艦の定義 (dev ひな形)。書式は docs/design.md §5 と README を参照
+name: {{name}}
+hub: pm                      # captain を務める役割
+workspace: "{{workspace}}"   # 席の作業ディレクトリ (作業対象の repo)
+charter: charter.md
+
+time_limit: 3h               # yamato up からの稼働時間 (up --for で上書き)
+grace: 20m                   # 終業の指示から強制停止までの猶予
+
+roles:
+  pm:
+    model: opus
+    shift: persistent
+    description: captain。owner の依頼を board の task に分けて席に割り振り、成果を確認して回収する
+  impl:
+    model: sonnet
+    shift: per_task
+    count: 1                 # 2 以上にすると席は impl-1, impl-2, ... になる
+    description: 実装担当。割り当てられた task を実装してテストし、captain に報告する
+
+# 無人の席にやらせない操作 (Claude Code の permissions.deny)。艦ごとに自由に変えてよい
+# `{{ship}}` は艦フォルダのパスに置き換わる。`ask` ルールは auto モードでも止まるので使わない
+deny:
+  # git: 頼まれていない push・PR・merge、履歴の破壊
+  - "Bash(git push*)"
+  - "Bash(gh pr create*)"
+  - "Bash(gh pr merge*)"
+  - "Bash(git reset --hard*)"
+  # 席の出入りは yamato を通す (自分を止めるのは seat-stop だけ)
+  - "Bash(claude stop*)"
+  - "Bash(claude rm*)"
+  - "Bash(claude --resume*)"
+  # 作業 repo の Claude Code 設定
+  - "Edit(.claude/**)"
+  - "Write(.claude/**)"
+  # yamato のコマンドだけが書く記録
+  - "Edit(/{{ship}}/team.yaml)"
+  - "Write(/{{ship}}/team.yaml)"
+  - "Edit(/{{ship}}/roster.json)"
+  - "Write(/{{ship}}/roster.json)"
+  - "Edit(/{{ship}}/usage.jsonl)"
+  - "Write(/{{ship}}/usage.jsonl)"
+  - "Edit(/{{ship}}/.runtime/**)"
+  - "Write(/{{ship}}/.runtime/**)"
+  - "Edit(/{{ship}}/seats/*/inbox.*)"
+  - "Write(/{{ship}}/seats/*/inbox.*)"
+
+# 席を起動するときに外す環境変数 (席に gh の権限を渡さない)。gh を使わせる艦は消してよい
+env_unset: [GH_TOKEN, GITHUB_TOKEN]
+
+# 席の settings.json に重ねる中身 (yamato が要る hooks・auto・受信の設定はその上に載る)
+settings:
+  worktree:
+    bgIsolation: none        # 席は workspace を共有し、自動 worktree を作らない (repo がない艦では yamato が常に none にする)
+
+# seat-stop が終業前に確かめること
+seat_stop:
+  require_handoff: true      # handoff.md が今回のシフトで更新されていること
+  require_delivery: true     # 生きている宛先への送信が読まれているか、--delivered が付いていること
+
+# SessionStart で席に読ませるもの (design §8.2)。役割ごとに roles.<role>.inject で上書きできる
+# 上限を超えた分は切って「上限で省略」と書く
+inject:
+  parts: [handoff, log_tail, mine, inbox, memory, knowledge]
+  limits:
+    handoff: [40, 2000]      # [行数, 文字数]
+    memory: [40, 1500]
+    knowledge: [60, 1500]
+    log_tail: [20, 1200]     # 前のシフトが引き継ぎなしで終わったときの作業ログの末尾
+    mine_items: 15
+    inbox_messages: 10
+    inbox_chars: 400         # 1 通あたり
+    total_chars: 9500        # 全体 (Claude Code の hook 出力は約 1 万文字で切られる)
+
+# owner 宛ての send (`yamato send <ship> owner "..."`) の通知経路。複数可: command / mac (slack / windows は P1)
+notify:
+  via: []
+  # command: "terminal-notifier -title \"$YAMATO_TITLE\" -message \"$YAMATO_MESSAGE\""
+
+board:
+  archive_on_done: true      # done になった項目を board/archive/ に移す (false なら `board archive` で手で移す)
+  kinds: [task]              # 最初の値が board add の既定。ほかの値も自由に使える
+  fields: [branch]           # 目安 (board は固定項目以外を検証しない)
