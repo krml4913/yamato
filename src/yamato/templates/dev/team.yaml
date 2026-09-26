@@ -1,0 +1,28 @@
+# yamato の艦の定義 (dev ひな形)。書式は docs/design.md §5 と README を参照
+name: {{name}}
+hub: pm                      # captain を務める役割
+workspace: "{{workspace}}"   # 席の作業ディレクトリ (作業対象の repo)
+charter: charter.md
+
+time_limit: 3h               # yamato up からの稼働時間 (up --for で上書き)
+grace: 20m                   # 終業の指示から強制停止までの猶予
+
+roles:
+  pm:
+    model: opus
+    shift: persistent
+    description: captain。owner の依頼を board の task に分けて席に割り振り、成果を確認して回収する
+  impl:
+    model: sonnet
+    shift: per_task
+    count: 1                 # 2 以上にすると席は impl-1, impl-2, ... になる
+    description: 実装担当。割り当てられた task を実装してテストし、captain に報告する
+
+# 無人の席にやらせない操作 (yamato 既定の deny に追加される)
+deny:
+  - "Bash(git push*)"
+  - "Bash(gh pr create*)"
+
+board:
+  kinds: [task]
+  fields: [branch]
