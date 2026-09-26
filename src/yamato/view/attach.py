@@ -14,14 +14,13 @@ Rules from docs/spike-zellij-attach.md:
 """
 from __future__ import annotations
 
-import json
-import os
 import subprocess
 import sys
 import time
 from typing import Callable
 
-from .shipfiles import ViewError, roster_session_id
+from .. import claude, roster
+from ..util import YamatoError
 
 # Returns what to pass to ``claude attach`` for the seat's current shift
 # (already checked to be alive), or None. A change in the value means a new shift.
@@ -30,59 +29,21 @@ Resolver = Callable[[], str | None]
 DEFAULT_POLL = 3.0
 
 
-def claude_bin() -> str:
-    return os.environ.get("YAMATO_CLAUDE", "claude")
-
-
-# --- Claude Code observation -------------------------------------------------
-
-def list_agents() -> list[dict]:
-    """``claude agents --json --all`` (every session, live or stopped)."""
-    try:
-        cp = subprocess.run([claude_bin(), "agents", "--json", "--all"],
-                            capture_output=True, text=True, timeout=30)
-    except FileNotFoundError:
-        raise ViewError(f"claude コマンドが見つかりません ({claude_bin()})") from None
-    except subprocess.TimeoutExpired:
-        raise ViewError("claude agents --json がタイムアウトしました") from None
-    if cp.returncode != 0:
-        raise ViewError(f"claude agents --json が失敗しました: {(cp.stderr or cp.stdout).strip()}")
-    try:
-        data = json.loads(cp.stdout or "[]")
-    except ValueError:
-        raise ViewError("claude agents --json の出力を読めません") from None
-    return data if isinstance(data, list) else []
-
-
-def is_alive(rec: dict | None) -> bool:
-    """Alive means ``pid != null``; double-checked with ``kill -0``."""
-    if not rec or rec.get("pid") is None:
-        return False
-    try:
-        os.kill(int(rec["pid"]), 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    except (TypeError, ValueError):
-        return False
-    return True
-
-
 # --- resolvers ---------------------------------------------------------------
 
 def roster_resolver(shipdir, seat: str, *,
-                    agents: Callable[[], list[dict]] = list_agents,
-                    alive: Callable[[dict | None], bool] = is_alive) -> Resolver:
+                    agents: Callable[[], list[dict]] = claude.agents,
+                    alive: Callable[[dict | None], bool] = claude.is_alive) -> Resolver:
     """Default: roster.json's sessionId for the seat, if that session is alive.
 
     Matched on the full sessionId; returns the session's short ``id`` for attach.
+    roster.json is read without the ship lock: P0 writes it atomically.
     """
     def resolve() -> str | None:
-        sid = roster_session_id(shipdir, seat)
+        sid = roster.seat(shipdir, seat).get("sessionId")
         if not sid:
             return None
-        rec = next((a for a in agents() if a.get("sessionId") == sid), None)
+        rec = claude.by_session(agents()).get(sid)
         if not alive(rec):
             return None
         return rec.get("id") or sid[:8]
@@ -120,7 +81,7 @@ def watch(proc: subprocess.Popen, sid: str, resolve: Resolver, *, poll: float,
             pass
         try:
             new = resolve()
-        except ViewError as e:
+        except YamatoError as e:
             on_error(e)
             continue
         # None (roster empty / new shift not up yet) keeps the current attach:
@@ -160,7 +121,7 @@ def run(resolve: Resolver, label: str, *, poll: float = DEFAULT_POLL, out=None,
                 rounds -= 1
             try:
                 sid = resolve()
-            except ViewError as e:
+            except YamatoError as e:
                 status(f"席の状態を確認できません: {e} ({time.strftime('%H:%M:%S')})")
                 sleep(poll)
                 continue
@@ -170,7 +131,7 @@ def run(resolve: Resolver, label: str, *, poll: float = DEFAULT_POLL, out=None,
                 continue
 
             say(f"attach {sid}")
-            proc = spawn([claude_bin(), "attach", sid])
+            proc = spawn([claude.claude_bin(), "attach", sid])
             replaced = watch(proc, sid, resolve, poll=poll)
             code = proc.returncode
             proc = None

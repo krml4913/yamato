@@ -8,7 +8,7 @@ Claude Code の background session の上に薄く乗る。agent-fleet の後継
 - admiral: 窓口。艦の出撃と帰投、全艦の一望
 - owner: 人間
 
-状態: P0 (記録・席の起動・send・シフトの終わり・時間の上限)。設計書は [docs/design.md](docs/design.md) (冒頭 §0 が最新の決定)。
+状態: P0 (記録・席の起動・send・シフトの終わり・時間の上限) と、zellij の表示層 (`yamato view`)。設計書は [docs/design.md](docs/design.md) (冒頭 §0 が最新の決定)。
 
 ## 使い方 (P0)
 
@@ -31,6 +31,10 @@ cd ~/dev/myapp && claude    # trust のダイアログで承認して終了
 ./yamato board list dev --all
 ./yamato down dev                # 終業を指示 (席は引き継ぎを書いて止まる。猶予を過ぎたら強制停止)
 ./yamato down dev --force        # 今すぐ止める (roster に「引き継ぎなしで終了」)
+
+# 5. zellij で席を覗く (艦ごとに 1 タブ、席ごとに 1 ペイン。窓を閉じても席は動き続ける)
+./yamato view layout dev -o ~/yamato/view.kdl
+zellij --session yamato-view --new-session-with-layout ~/yamato/view.kdl
 ```
 
 | コマンド | 内容 |
@@ -49,6 +53,8 @@ cd ~/dev/myapp && claude    # trust のダイアログで承認して終了
 | `pr open <ship> <item> [--title] [--body] [--draft]` | 項目の `branch` から `gh pr create` (base は `git.base`)。項目に `pr` を書き、列に `review` があれば動かし、項目の `reviewer` (無ければ hub) に send する |
 | `pr merge <ship> <item>` | `git.merge_requires` を確かめて `gh pr merge --<git.strategy>`。艦ごとに 1 本ずつ (ロック)。呼び出し元を `merged_by` に残す (誰が打てるかは検査しない)。そのあと他の開いた PR の衝突を `gh pr view` で確かめ、衝突したものは列 `rebase` (あれば) に動かし、`git.conflict` の宛先に send する |
 | `seat-stop <ship> <seat> [--delivered]` | (席が使う) handoff.md の更新を確認して遅延 stop |
+| `view layout <ship>... [-o FILE]` | 艦ごとに 1 タブ、席ごとに 1 ペインの zellij layout (KDL) を出力する。艦は名前 (`ships.json` → `~/yamato/<name>`) かパス |
+| `view attach <ship> <seat> [--poll SEC]` | (layout のペインの中身) 席の今のシフト (roster の sessionId) が生きていれば `claude attach`、シフトが替われば付け直す。止まっている席には attach しない |
 | `hook <event> <ship> <seat>` | (Claude Code の hook から呼ばれる) session-start / user-prompt-submit / stop / wait-deadline / deny-dialog / log-denied |
 
 team.yaml の項目: `name` / `hub` / `workspace` / `roles` (役割ごとに `model`・`shift: per_task|persistent`・`count`・`inject`) / `time_limit` / `grace` / `deny` / `env_unset` / `settings` (席の settings.json に重ねる) / `seat_stop` (終業前の確認) / `inject` (注入の中身と上限) / `notify` (owner 宛ての通知経路) / `board` (`kinds`・`columns`・`fields`・`archive_on_done`) / `git` (`base`・`strategy`・`merge_requires`・`merge_decision`・`conflict`。worktree と pr の道具が読む)。
@@ -88,7 +94,7 @@ notify:
 ## docs
 - [design.md](docs/design.md) — 設計書
 - [research-claude-primitives.md](docs/research-claude-primitives.md) — Claude Code の仕組みの調査 (2.1.282)
-- [spike-zellij-attach.md](docs/spike-zellij-attach.md) — zellij 表示層の検証
+- [spike-zellij-attach.md](docs/spike-zellij-attach.md) — zellij 表示層の検証。実装と使い方は [src/yamato/view/README.md](src/yamato/view/README.md)
 - [review-da-v0.md](docs/review-da-v0.md) — 設計書 v0 への devil's advocate レビュー
 - [verify-p0-a.md](docs/verify-p0-a.md) / [verify-p0-b.md](docs/verify-p0-b.md) — P0 の実機検証 (起動レシピ)
 - [e2e-p0.md](docs/e2e-p0.md) — P0 実装の E2E

@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from .util import YamatoError, resolve_ship
+from .view import cli as view_cli
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -93,6 +94,8 @@ def _parser() -> argparse.ArgumentParser:
     h.add_argument("event")
     h.add_argument("ship")
     h.add_argument("seat")
+
+    view_cli.add_parser(sub)
 
     w = sub.add_parser("_watchdog")
     w.add_argument("ship")
@@ -200,6 +203,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.cmd == "hook":
             return _hook(args)
+        if args.cmd == "view":
+            return view_cli.run(args)
         if args.cmd == "ship":
             from . import ship
 

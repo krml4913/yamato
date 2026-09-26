@@ -1,9 +1,9 @@
-"""zellij view layer (design §10): windows onto the ships' seats.
+"""zellij view layer (design §10): windows onto the ships' seats. Run as ``yamato view ...``.
 
-- ``attach``: ``seat-attach`` — follow a seat's current shift and ``claude attach`` to it
-- ``layout``: one zellij tab per ship, one pane per seat (KDL)
-- ``shipfiles``: the only place that reads the ship folder (roster.json, team.yaml)
+- ``attach``: ``yamato view attach`` — follow a seat's current shift and ``claude attach`` to it
+- ``layout``: ``yamato view layout`` — one zellij tab per ship, one pane per seat (KDL)
+- ``cli``: the ``view`` subcommand's parser and runner (``yamato.cli`` only calls these two)
 
-Kept independent of the P0 modules on purpose; wiring into the ``yamato`` CLI
-comes after P0 is merged.
+Nothing here reads the ship folder itself: ships, seats and the current shift come
+from ``util.resolve_ship``, ``team.runtime_team`` and ``roster``.
 """
