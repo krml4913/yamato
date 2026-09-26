@@ -229,7 +229,7 @@ def close_decision(shipdir: Path, team: dict, dec_id: str, *, choice: str, reaso
                    now: float | None = None) -> dict:
     """Close the D item, append to decisions/log.md and release the tasks.
 
-    Returns ``{meta, unblocked: [task meta], by_decider}``; sending to the
+    Returns ``{meta, unblocked: [task meta], by_decider, choice}``; sending to the
     released tasks' seats is ``deliver_close``'s job (outside the lock).
     """
     now = time.time() if now is None else now
@@ -283,7 +283,7 @@ def close_decision(shipdir: Path, team: dict, dec_id: str, *, choice: str, reaso
                     data={"decider": decider, "closed_by": by, "on_behalf_of": on_behalf_of,
                           "by_decider": by_decider, "choice": choice.strip(), "reason": reason.strip(),
                           "unblocked": [t["id"] for t in unblocked], "was_blocking": [t["id"] for t in stopped]})
-    return {"meta": meta, "unblocked": unblocked, "by_decider": by_decider}
+    return {"meta": meta, "unblocked": unblocked, "by_decider": by_decider, "choice": choice.strip()}
 
 
 def _write_section(body: str, text: str) -> str:
@@ -320,10 +320,13 @@ def _append_log(shipdir: Path, meta: dict, choice: str, reason: str, stopped: li
 
 
 def deliver_close(shipdir: Path, team: dict, result: dict, out=print) -> None:
-    """Tell each released task's assignee (the hub when there is none) (§1.2 step 4)."""
+    """Tell each released task's assignee (the hub when there is none) (§1.2 step 4),
+    and the seat that opened it: a merge decision holds nothing (``--links``), so
+    without this nobody hears that the owner closed it from the terminal (e2e-p1)."""
     from . import seat as seatmod
 
     meta = result["meta"]
+    told = set()
     for t in result["unblocked"]:
         to = t.get("assignee") or team["hub"]
         still = t.get("state") == "blocked"
@@ -336,6 +339,13 @@ def deliver_close(shipdir: Path, team: dict, result: dict, out=print) -> None:
             out(f"{t['id']} の担当 ({to}) は閉じた本人なので送らない。")
             continue
         seatmod.send(shipdir, to, text, meta["closed_by"])
+        told.add(to)
+    opener = meta.get("opened_by")
+    if opener in team["seats"] and opener != meta["closed_by"] and opener not in told:
+        links = f" 結んだ項目: {', '.join(meta['links'])}。" if meta.get("links") else ""
+        text = (f"{meta['id']} が決まった ({meta['title']}): {meta.get('on_behalf_of')} の決定「{result['choice']}」。"
+                f"{links}理由は `{YAMATO_BIN} board show {shipdir} {meta['id']}` で読める")
+        seatmod.send(shipdir, opener, text, meta["closed_by"])
 
 
 # --- list --------------------------------------------------------------------

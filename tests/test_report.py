@@ -102,6 +102,15 @@ class BuildTest(ReportTestCase):
         self.assertEqual(secs["使用量"], "- シフト 2 回 / 合計 入力 1.2M・出力 86k・cache 0 トークン (席別は usage.jsonl)")
         self.assertLessEqual(len(text.splitlines()), report.MAX_LINES)
 
+    def test_span_runs_to_now_while_a_seat_is_still_on_shift(self):
+        # e2e-p1: the captain writes the report after the members stopped, before its own seat-stop
+        events.emit(self.shipdir, events.SHIFT_START, seat="pm", now=at(9, 2), data={"shiftNo": 1})
+        events.emit(self.shipdir, events.SHIFT_START, seat="impl", now=at(9, 3), data={"shiftNo": 1})
+        events.emit(self.shipdir, events.SHIFT_END, seat="impl", now=at(9, 30), data={"shiftNo": 1})
+        self.assertTrue(self.build().startswith(f"# t1 日報 {DATE} (稼働 09:02–12:05)"))
+        events.emit(self.shipdir, events.SHIFT_END, seat="pm", now=at(10), data={"shiftNo": 1})
+        self.assertTrue(self.build().startswith(f"# t1 日報 {DATE} (稼働 09:02–10:00)"))
+
     def test_empty_ship(self):
         secs = report.sections(self.build())
         for name in ("owner の判断待ち", "今日終わったもの", "動いているもの・止まっているもの", "異常"):

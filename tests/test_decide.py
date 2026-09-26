@@ -311,6 +311,28 @@ class CloseTest(DecideTestCase):
         self.assertFalse(e["data"]["by_decider"])
         self.assertIn("以外が閉じた", e["summary"])
 
+    def test_the_seat_that_opened_it_hears_when_the_owner_closes_it(self):
+        # e2e-p1: a merge decision only links its task, so nothing is released and
+        # without this the captain that opened it never learns the owner said yes
+        t = self.task(assignee="impl", state="active")
+        self.open(sid=SID_PM, category="merge", title="入れるか", links=[t["id"]])
+        with mock.patch("yamato.seat.wake", return_value=("alive", {"shortId": "pppppppp"})):
+            self.close("D-001", sid="h" * 36, on_behalf_of="owner", choice="merge する")
+        [msg] = inbox.entries(self.shipdir, "pm")
+        self.assertEqual(msg["from"], "owner")
+        self.assertIn("D-001 が決まった (入れるか): owner の決定「merge する」。 結んだ項目: T-001。", msg["text"])
+        self.assertEqual(inbox.entries(self.shipdir, "impl"), [])
+
+    def test_the_opener_is_told_once_and_not_when_it_closed_it(self):
+        t = self.task(assignee="impl", state="active")
+        self.open(blocks=[t["id"]])                     # impl opens, decider pm
+        self.close("D-001", sid=SID_PM)
+        self.assertEqual(len(inbox.entries(self.shipdir, "impl")), 1)   # the release, not twice
+        t2 = self.task(assignee="impl", state="active")
+        self.open(sid=SID_PM, category="merge", links=[t2["id"]])
+        self.close("D-002", sid=SID_PM, on_behalf_of="owner")
+        self.assertFalse(any("D-002 が決まった" in m["text"] for m in inbox.entries(self.shipdir, "pm")))
+
     def test_only_the_last_blocker_releases_the_task(self):
         t = self.task(state="active")
         self.open(blocks=[t["id"]])
