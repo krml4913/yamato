@@ -60,7 +60,10 @@ def seat_of_session(shipdir: Path, session_id: str | None) -> str | None:
 
 
 def start_shift(shipdir: Path, name: str, *, session_id: str, short_id: str, session_name: str,
-                how: str, now: float | None = None) -> dict:
+                how: str, now: float | None = None, cwd: str | None = None,
+                rotated: list[str] | None = None) -> dict:
+    """``cwd``: the shift runs somewhere other than the workspace (``send --cwd``).
+    ``rotated``: why a persistent seat got a new shift instead of a resume (design-p1 §5.3)."""
     now = time.time() if now is None else now
     with ship_lock(shipdir):
         data = load(shipdir)
@@ -82,15 +85,20 @@ def start_shift(shipdir: Path, name: str, *, session_id: str, short_id: str, ses
             "endReason": None,
             "handoffWritten": None,
             "note": None,
+            "cwd": cwd,
+            "rotated": rotated or None,
+            "rotateRequested": None,   # the mark of seat-stop --rotate is used up (design-p1 §5.4)
         })
-        data["shifts"].append({
-            "seat": name, "shiftNo": rec["shiftNo"], "sessionId": session_id,
-            "how": how, "startedAt": now, "endedAt": None, "endReason": None,
-        })
+        shift = {"seat": name, "shiftNo": rec["shiftNo"], "sessionId": session_id,
+                 "how": how, "startedAt": now, "endedAt": None, "endReason": None}
+        extra = {k: v for k, v in (("cwd", cwd), ("rotated", rotated)) if v}
+        shift.update(extra)
+        data["shifts"].append(shift)
         save(shipdir, data)
         events.emit(shipdir, events.SHIFT_START, seat=name, now=now,
-                    summary=f"シフト開始 #{rec['shiftNo']} ({how})",
-                    data={"shiftNo": rec["shiftNo"], "how": how, "sessionId": session_id})
+                    summary=f"シフト開始 #{rec['shiftNo']} ({how})"
+                    + (f" 入れ替え: {', '.join(rotated)}" if rotated else ""),
+                    data={"shiftNo": rec["shiftNo"], "how": how, "sessionId": session_id, **extra})
         return dict(rec)
 
 
@@ -118,11 +126,15 @@ def update(shipdir: Path, name: str, **fields) -> dict:
         return dict(rec)
 
 
-def mark_stopping(shipdir: Path, name: str, *, handoff_written: bool, now: float | None = None) -> dict:
+def mark_stopping(shipdir: Path, name: str, *, handoff_written: bool, now: float | None = None,
+                  rotate: bool = False) -> dict:
+    """``rotate``: seat-stop --rotate; the next wake starts a new shift (design-p1 §5.4)."""
     with ship_lock(shipdir):
         data = load(shipdir)
         rec = data["seats"].setdefault(name, {})
         rec.update({"state": STOPPING, "handoffWritten": handoff_written, "stopRequestedAt": time.time() if now is None else now})
+        if rotate:
+            rec["rotateRequested"] = True
         save(shipdir, data)
         return dict(rec)
 

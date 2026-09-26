@@ -8,6 +8,12 @@ talk_default: pm            # yamato talk <ship> で席を省いたときに att
 
 time_limit: 3h               # yamato up からの稼働時間 (up --for で上書き)
 grace: 20m                   # 終業の指示から強制停止までの猶予
+# 最終受付 (design-p1 §9): deadline の min(at_most, time_limit × ratio) 前。過ぎたら captain の最初のターンに
+# 一度だけ注意を注入し、captain の send の本文の先頭に「(終了まで X 分。片付く範囲で)」を足す (拒否はしない)
+# どちらかを off にすればもう一方だけ、`last_call: off` で最終受付なし
+last_call:
+  at_most: 30m
+  ratio: 20%
 
 roles:
   pm:
@@ -15,7 +21,17 @@ roles:
     shift: persistent
     description: captain。owner の依頼を board の task に分けて席に割り振り、成果を確認して回収する
     remote_control: true     # この席だけ --remote-control を付けて起こす (スマホから話せる席を captain に絞る。design-p1 §1.5)
-    inject: [handoff, log_tail, mine, last_report, inbox, memory, knowledge]   # last_report: 前回の日報の「一言」「owner の判断待ち」「明日」
+    inject: [handoff, log_tail, mine, orphans, last_report, inbox, memory, knowledge]   # last_report: 前回の日報の「一言」「owner の判断待ち」「明日」 / orphans: 担当が落ちて active のまま残った項目
+    # persistent の席の入れ替え (design-p1 §5.3, §5.4)。どれも off にできる
+    #   止まっている席への send: 下のどれかに当たれば resume せず新しいシフト (記録から起きる)
+    #     入れ替えの印 (seat-stop --rotate) / context / idle / new_day
+    #   生きている席の Stop hook: context / compaction / hours に当たったら、一度だけ seat-stop --rotate を促す
+    rotate:
+      context: 30%           # 前のシフトの文脈量がモデルの窓 (下の context_windows) のこの割合以上。300k のようにトークン数でも書ける
+      compaction: true       # compaction が起きた (PreCompact hook が印を付ける)
+      hours: 8h              # シフトの長さ
+      idle: 1h               # 止まってからこれ以上たった (resume はキャッシュ切れで高い)
+      new_day: true          # 前のシフトの開始から日付が変わった
   impl:
     model: sonnet
     shift: per_task
@@ -35,6 +51,19 @@ roles:
 # (ほかに権限の確認待ち・API エラーの席も赤)
 watch:
   stale_after: 20m
+  # ここからは send / seat-stop / captain の起動時に見る (design-p1 §5.2, §5.5, §5.6)。記録と警告だけで、拒否はしない
+  captain_gap: 30m           # captain が止まったまま起きていない時間がこれを超えたら events に captain_gap
+  orphan_after: 30m          # active の項目の担当がこれ以上止まっていたら captain の注入に「孤児」と出す
+  spin:                      # 空回りの疑い (events に残し、送り手に警告)。spin: off で見ない
+    window: 10m
+    max_sends: 6             # 同じ送り手 → 宛先が window にこれより多い
+    same_text: true          # 同じ本文を続けて送った
+
+# モデル名 (の一部) → 文脈の窓のトークン数 (rotate.context の割合の分母)。長く一致したものを使う。新しいモデルは足す
+context_windows:
+  haiku: 200000
+  sonnet: 1000000
+  opus: 1000000
 
 # 無人の席にやらせない操作 (Claude Code の permissions.deny)。艦ごとに自由に変えてよい
 # `{{ship}}` は艦フォルダのパスに置き換わる。`ask` ルールは auto モードでも止まるので使わない

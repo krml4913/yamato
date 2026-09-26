@@ -31,6 +31,13 @@ DECISION_CLOSE = "decision_close"   # P1-2
 FORCE_STOP = "force_stop"
 SHIFT_FAILED = "shift_failed"     # a headless shift that failed (design-p1 §4.2, §4.4)
 PERMISSION_DENIED = "permission_denied"
+# P1-5/7 (design-p1 §5.2-5.5, §9): records and warnings, never refusals
+SPIN_SUSPECTED = "spin_suspected"           # one sender -> one recipient, too many sends in a window
+DUPLICATE_SUSPECTED = "duplicate_suspected" # the same text twice in a row to the same recipient
+CAPTAIN_GAP = "captain_gap"                 # the captain has been stopped for longer than watch.captain_gap
+ROTATE_SUGGESTED = "rotate_suggested"       # the Stop hook nudged a live seat to seat-stop --rotate
+ROTATE_REQUESTED = "rotate_requested"       # seat-stop --rotate set the mark
+LAST_CALL = "last_call"                     # the captain was told the last call has passed
 
 SUMMARY_CHARS = 200
 

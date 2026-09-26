@@ -14,17 +14,18 @@ SHIFTS = ("per_task", "persistent", "headless")
 STATES = ("open", "active", "blocked", "done")
 TOP_KEYS = {"name", "hub", "workspace", "charter", "roles", "time_limit", "grace", "deny", "board",
             "settings", "seat_stop", "env_unset", "inject", "notify", "git", "report", "decisions",
-            "watch", "talk_default", "profiles", "memory"}
+            "watch", "talk_default", "profiles", "memory", "last_call", "context_windows"}
 # what SessionStart can inject (design §8.2); the header is always there
-INJECT_PARTS = ("handoff", "log_tail", "mine", "inbox", "memory", "knowledge", "last_report")
-# what a ship that names no parts gets: the captain's report excerpt (design-p1 §2.3) is opt-in
-DEFAULT_INJECT_PARTS = tuple(p for p in INJECT_PARTS if p != "last_report")
+INJECT_PARTS = ("handoff", "log_tail", "mine", "inbox", "memory", "knowledge", "last_report", "orphans")
+# what a ship that names no parts gets: the captain's report excerpt (design-p1 §2.3) is opt-in,
+# the orphaned items (§5.6) go to the captain only
+DEFAULT_INJECT_PARTS = tuple(p for p in INJECT_PARTS if p not in ("last_report", "orphans"))
 INJECT_LIMIT_KEYS = ("handoff", "memory", "knowledge", "log_tail", "mine_items", "inbox_messages",
                      "inbox_chars", "total_chars", "last_report")
 RESERVED_SEATS = ("owner",)   # the human's inbox; not a seat
 SEAT_STOP_DEFAULTS = {"require_handoff": True, "require_delivery": True}
 ROLE_KEYS = {"model", "shift", "count", "description", "inject", "max_duration", "max_budget_usd", "report_to",
-             "trust", "remote_control"}
+             "trust", "remote_control", "rotate"}
 # `profiles:` (design-p1 §7.2). yamato only writes a profile out (mode -> permissions.defaultMode,
 # allow / deny -> the seat's settings, tools -> the role's definition) and refuses `yamato send`
 # from a `send: false` seat. What `external` / `clean` hold is the template's business.
@@ -42,8 +43,21 @@ GIT_FALLBACK = {"base": "main", "strategy": "squash", "merge_requires": [], "mer
 # so only seats that run in auto are warned.
 NO_AUTO_MODELS = ("haiku",)
 
-# `watch:` (design-p1 §5.2): what `status` / `ships` show in red
+# `watch:` (design-p1 §5.2, §5.5, §5.6): what `status` / `ships` show in red, and
+# what send / seat-stop / the captain's injection look for. Records and warnings
+# only; nothing here refuses anything.
 WATCH_FALLBACK = {"stale_after": "20m"}
+WATCH_LIFECYCLE_FALLBACK = {"spin": {"window": 600, "max_sends": 6, "same_text": True},
+                            "captain_gap": 1800, "orphan_after": 1800}
+# The lifecycle settings (design-p1 §5.3-5.6, §9). As with `git:`, the values a
+# ship runs with live in the template's team.yaml; these are only what a ship
+# (or a role) that does not write them gets. Every condition can be turned off.
+ROTATE_KEYS = ("context", "compaction", "hours", "idle", "new_day")
+ROTATE_FALLBACK = {"context": {"ratio": 0.3}, "compaction": True, "hours": 8 * 3600, "idle": 3600,
+                   "new_day": True}
+# model name (substring, longest match wins) -> context window in tokens (verify-p1-d V9)
+CONTEXT_WINDOWS_FALLBACK = {"haiku": 200_000, "sonnet": 1_000_000, "opus": 1_000_000}
+LAST_CALL_FALLBACK = {"at_most": 1800, "ratio": 0.2}
 
 NOTIFY_DECISIONS = ("digest", "each")   # human deciders: gather into the daily report / one by one
 DEFAULT_TIME_LIMIT = "3h"
@@ -138,6 +152,7 @@ def validate(data: dict, shipdir: Path) -> dict:
         if remote_control and shift == "headless":
             warnings.append(f"roles.{role}.remote_control は bg の席でだけ効く (headless の -p には付けない)。無視する")
         roles[role] = {
+            "rotate": _rotate(spec.get("rotate"), role),
             "inject": parts,
             "max_duration": max_duration,
             "max_budget_usd": budget,
@@ -220,8 +235,9 @@ def validate(data: dict, shipdir: Path) -> dict:
         raise YamatoError("team.yaml: report は {daily: on_down | off}")
 
     watch = data.get("watch") or {}
-    if not isinstance(watch, dict) or set(watch) - set(WATCH_FALLBACK):
-        raise YamatoError("team.yaml: watch は {stale_after: 20m}")
+    if not isinstance(watch, dict) or set(watch) - {*WATCH_FALLBACK, *WATCH_LIFECYCLE_FALLBACK}:
+        raise YamatoError("team.yaml: watch は {stale_after: 20m, captain_gap: 30m, orphan_after: 30m, "
+                          "spin: {window: 10m, max_sends: 6, same_text: true}}")
     stale_after = parse_duration(watch.get("stale_after") or WATCH_FALLBACK["stale_after"])
 
     talk_default = str(data.get("talk_default") or hub)
@@ -265,9 +281,11 @@ def validate(data: dict, shipdir: Path) -> dict:
         "decisions": _decisions(data.get("decisions"), seats),
         "git": git,
         "report": {"daily": daily},
-        "watch": {"stale_after": stale_after},
+        "watch": {"stale_after": stale_after, **_watch_lifecycle(watch)},
         "talk_default": talk_default,
         "memory": _memory(data.get("memory"), roles),
+        "last_call": _last_call(data.get("last_call")),
+        "context_windows": _context_windows(data.get("context_windows")),
         "warnings": warnings,
     }
 
@@ -335,6 +353,150 @@ def _memory(raw, roles: dict) -> dict:
     return validate_conf(raw, roles)
 
 
+def _off(v) -> bool:
+    """``off`` / ``false`` / ``null`` turn a condition off (an unquoted `off` is false in YAML 1.1)."""
+    return v is None or v is False or (isinstance(v, str) and v.strip().lower() in ("off", "false", "no"))
+
+
+def _ratio(v, where: str) -> float:
+    """``30%`` or ``0.3`` -> 0.3."""
+    try:
+        r = float(v.strip().rstrip("%")) / 100 if isinstance(v, str) and v.strip().endswith("%") else float(v)
+    except (TypeError, ValueError):
+        raise YamatoError(f"team.yaml: {where} は割合 (例 30%) (今: {v!r})") from None
+    if isinstance(v, bool) or not 0 < r <= 1:
+        raise YamatoError(f"team.yaml: {where} は 0 より大きく 100% 以下の割合 (今: {v!r})")
+    return r
+
+
+def _tokens(v, where: str) -> int:
+    """``300000`` or ``300k`` -> 300000."""
+    s = str(v).strip().lower()
+    try:
+        n = int(float(s[:-1]) * 1000) if s.endswith("k") else int(s)
+    except ValueError:
+        raise YamatoError(f"team.yaml: {where} はトークン数 (例 300k) か割合 (例 30%) (今: {v!r})") from None
+    if isinstance(v, bool) or n <= 0:
+        raise YamatoError(f"team.yaml: {where} は正のトークン数 (今: {v!r})")
+    return n
+
+
+def _span(v, where: str, bare_unit: int = 60) -> int | None:
+    """A duration or ``off``. A bare number is in ``bare_unit`` seconds (``hours: 8`` is 8 hours)."""
+    if _off(v):
+        return None
+    secs = int(v * bare_unit) if isinstance(v, (int, float)) and not isinstance(v, bool) else parse_duration(v)
+    if secs <= 0:
+        raise YamatoError(f"team.yaml: {where} は 0 より長くするか off (今: {v!r})")
+    return secs
+
+
+def _rotate(spec, role: str) -> dict:
+    """``roles.<role>.rotate`` (design-p1 §5.3, §5.4): when a persistent seat gets a fresh shift."""
+    spec = spec or {}
+    if not isinstance(spec, dict) or set(spec) - set(ROTATE_KEYS):
+        raise YamatoError(f"team.yaml: roles.{role}.rotate の項目は {', '.join(ROTATE_KEYS)}")
+    out = dict(ROTATE_FALLBACK)
+    where = f"roles.{role}.rotate"
+    if "context" in spec:
+        v = spec["context"]
+        if _off(v):
+            out["context"] = None
+        elif (isinstance(v, str) and v.strip().endswith("%")) or (isinstance(v, float) and 0 < v < 1):
+            # 30% or 0.3 (as last_call.ratio); a whole number is tokens
+            out["context"] = {"ratio": _ratio(v, f"{where}.context")}
+        else:
+            out["context"] = {"tokens": _tokens(v, f"{where}.context")}
+    for k in ("compaction", "new_day"):
+        if k in spec:
+            if _off(spec[k]):
+                out[k] = False
+            elif spec[k] is True:
+                out[k] = True
+            else:
+                raise YamatoError(f"team.yaml: {where}.{k} は true / false (今: {spec[k]!r})")
+    if "hours" in spec:
+        out["hours"] = _span(spec["hours"], f"{where}.hours", bare_unit=3600)
+    if "idle" in spec:
+        out["idle"] = _span(spec["idle"], f"{where}.idle")
+    return out
+
+
+def _watch_lifecycle(spec: dict) -> dict:
+    """``watch.spin`` / ``captain_gap`` / ``orphan_after`` (design-p1 §5.2, §5.5, §5.6)."""
+    out = {**WATCH_LIFECYCLE_FALLBACK, "spin": dict(WATCH_LIFECYCLE_FALLBACK["spin"])}
+    spin = spec.get("spin", {})
+    if _off(spin):
+        out["spin"] = None
+    else:
+        if not isinstance(spin, dict) or set(spin) - set(WATCH_LIFECYCLE_FALLBACK["spin"]):
+            raise YamatoError("team.yaml: watch.spin は {window: 10m, max_sends: 6, same_text: true} か off")
+        if "window" in spin:
+            out["spin"]["window"] = _span(spin["window"], "watch.spin.window")
+        if "max_sends" in spin:
+            n = spin["max_sends"]
+            if _off(n):
+                out["spin"]["max_sends"] = None
+            elif isinstance(n, bool) or not isinstance(n, int) or n < 1:
+                raise YamatoError(f"team.yaml: watch.spin.max_sends は 1 以上の整数か off (今: {n!r})")
+            else:
+                out["spin"]["max_sends"] = n
+        if "same_text" in spin:
+            out["spin"]["same_text"] = not _off(spin["same_text"])
+    for k in ("captain_gap", "orphan_after"):
+        if k in spec:
+            out[k] = _span(spec[k], f"watch.{k}")
+    return out
+
+
+def _last_call(spec) -> dict | None:
+    """``last_call:`` (design-p1 §9): ``min(at_most, ratio x time limit)`` before the deadline."""
+    if spec is not None and _off(spec):
+        return None
+    spec = spec or {}
+    if not isinstance(spec, dict) or set(spec) - set(LAST_CALL_FALLBACK):
+        raise YamatoError("team.yaml: last_call は {at_most: 30m, ratio: 20%} か off")
+    out = dict(LAST_CALL_FALLBACK)
+    if "at_most" in spec:
+        out["at_most"] = _span(spec["at_most"], "last_call.at_most")
+    if "ratio" in spec:
+        out["ratio"] = None if _off(spec["ratio"]) else _ratio(spec["ratio"], "last_call.ratio")
+    if out["at_most"] is None and out["ratio"] is None:
+        return None
+    return out
+
+
+def _context_windows(table) -> dict:
+    table = table or {}
+    if not isinstance(table, dict):
+        raise YamatoError("team.yaml: context_windows は {モデル名の一部: 窓のトークン数} の mapping")
+    return {**CONTEXT_WINDOWS_FALLBACK,
+            **{str(k).lower(): _tokens(v, f"context_windows.{k}") for k, v in table.items()}}
+
+
+def rotate_conf(team: dict, seat: str) -> dict:
+    """The seat's ``rotate:`` (a ``.runtime/team.json`` from before P1-5 has none)."""
+    role = team["roles"].get(team["seats"][seat]["role"], {})
+    return {**ROTATE_FALLBACK, **(role.get("rotate") or {})}
+
+
+def watch_conf(team: dict) -> dict:
+    """``watch:`` with the lifecycle keys (a ``.runtime/team.json`` from before P1-5 has none)."""
+    return {**WATCH_LIFECYCLE_FALLBACK, **(team.get("watch") or {})}
+
+
+def last_call_conf(team: dict) -> dict | None:
+    return team["last_call"] if "last_call" in team else dict(LAST_CALL_FALLBACK)
+
+
+def context_window(team: dict, model: str | None) -> int | None:
+    """The window of ``model`` from the table (substring match, the longest key wins)."""
+    table = team.get("context_windows") or CONTEXT_WINDOWS_FALLBACK
+    m = (model or "").lower()
+    hits = [k for k in table if k and k in m]
+    return table[max(hits, key=len)] if hits else None
+
+
 def _decisions(table, seats: dict) -> dict:
     """``decisions:`` (design-p1 §1.4): category -> {decider, when}.
 
@@ -382,7 +544,9 @@ def inject_parts(team: dict, seat: str) -> list[str]:
     parts = team["roles"].get(role, {}).get("inject")
     if parts is None:
         parts = (team.get("inject") or {}).get("parts")
-    return list(DEFAULT_INJECT_PARTS) if parts is None else parts
+    if parts is None:
+        return [*DEFAULT_INJECT_PARTS, *(("orphans",) if seat == team["hub"] else ())]
+    return parts
 
 
 def git_conf(team: dict) -> dict:

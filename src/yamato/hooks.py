@@ -45,6 +45,9 @@ def session_start(shipdir: Path, seat: str) -> int:
     source = data.get("source") or "startup"
     team = runtime_team(shipdir)
     text, cursor_to = inject.build(shipdir, team, seat, source)
+    notice = _last_call_notice(shipdir, team, seat, "SessionStart")
+    if notice:
+        text = notice + "\n\n" + text
     inbox.mark_read(shipdir, seat, cursor_to)
     append_log(shipdir, seat, f"SessionStart ({source}) session={data.get('session_id', '?')}")
     _emit({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": text}})
@@ -80,21 +83,86 @@ def _wrapup_message(shipdir: Path, seat: str) -> str:
     return deadline.WRAP_UP_MESSAGE.format(yamato=YAMATO_BIN, ship=shipdir, seat=seat)
 
 
+def _last_call_notice(shipdir: Path, team: dict, seat: str, where: str) -> str | None:
+    """The captain's first turn past the last call gets the notice, once (design-p1 §9).
+    Whichever hook sees that turn first (SessionStart / UserPromptSubmit / Stop) gives it."""
+    if seat != team["hub"]:
+        return None
+    dl = deadline.take_last_call_notice(shipdir)
+    if dl is None:
+        return None
+    left = deadline.left(dl)
+    append_log(shipdir, seat, f"{where} hook: 最終受付を過ぎた (終了まで {left}) → 注意を注入")
+    events.emit(shipdir, events.LAST_CALL, seat=seat, summary=f"最終受付の注意 (終了まで {left})",
+                data={"lastCallAt": dl["lastCallAt"], "deadline": dl["deadline"], "hook": where})
+    return deadline.LAST_CALL_NOTICE.format(left=left)
+
+
+def _rotate_notice(shipdir: Path, team: dict, seat: str, rec: dict, data: dict) -> str | None:
+    """A live persistent seat past its ``rotate:`` conditions is told once per shift to
+    ``seat-stop --rotate`` at the next break (design-p1 §5.4). A nudge, never a stop."""
+    from . import rotate
+
+    if team["seats"][seat]["shift"] != "persistent" or rec.get("state") != roster.ON_SHIFT:
+        return None
+    if rec.get("rotateNoticeShift") == rec.get("shiftNo"):
+        return None
+    reasons = rotate.live_reasons(team, seat, rec, data.get("transcript_path"))
+    if not reasons or not rotate.take_notice(shipdir, seat, rec.get("shiftNo")):
+        return None
+    append_log(shipdir, seat, f"Stop hook: 入れ替えの条件 ({', '.join(reasons)}) → seat-stop --rotate を促す")
+    events.emit(shipdir, events.ROTATE_SUGGESTED, seat=seat, summary=f"入れ替えを促した: {', '.join(reasons)}",
+                data={"shiftNo": rec.get("shiftNo"), "reasons": reasons})
+    return rotate.MESSAGE.format(reasons=", ".join(reasons), yamato=YAMATO_BIN, ship=shipdir, seat=seat)
+
+
 def stop(shipdir: Path, seat: str) -> int:
-    """Past the deadline, block the end of the turn with the wrap-up order (§0 B4)."""
+    """Past the deadline, block the end of the turn with the wrap-up order (§0 B4).
+    Otherwise, once each: the captain's last-call notice (design-p1 §9) and the
+    nudge to rotate (§5.4). At most one block per turn end."""
     data = _stdin_json()
     _touch(shipdir, seat)
     need, rec = _needs_wrapup(shipdir, seat)
-    if need and not data.get("stop_hook_active") and take_wrapup_notice(shipdir, seat, rec.get("shiftNo")):
-        append_log(shipdir, seat, "Stop hook: 稼働時間の上限 → 終業を指示")
-        _emit({"decision": "block", "reason": _wrapup_message(shipdir, seat)})
+    if data.get("stop_hook_active"):
+        return 0
+    if need:
+        if take_wrapup_notice(shipdir, seat, rec.get("shiftNo")):
+            append_log(shipdir, seat, "Stop hook: 稼働時間の上限 → 終業を指示")
+            _emit({"decision": "block", "reason": _wrapup_message(shipdir, seat)})
+        return 0
+    if rec.get("state") != roster.ON_SHIFT:
+        return 0
+    team = runtime_team(shipdir)
+    if seat not in team["seats"]:
+        return 0
+    reason = _last_call_notice(shipdir, team, seat, "Stop") or _rotate_notice(shipdir, team, seat, rec, data)
+    if reason:
+        _emit({"decision": "block", "reason": reason})
     return 0
 
 
 def user_prompt_submit(shipdir: Path, seat: str) -> int:
-    """A turn starts (a prompt, or a SendMessage delivered as one): the seat is moving."""
+    """A turn starts (a prompt, or a SendMessage delivered as one): the seat is moving.
+    The captain's first turn past the last call gets the notice (design-p1 §9)."""
     _stdin_json()
     _touch(shipdir, seat)
+    dl = deadline.read(shipdir)
+    if not deadline.in_last_call(dl) or dl.get("lastCallNoticed") == dl.get("lastCallAt"):
+        return 0   # the usual case: no team to read on every prompt
+    team = runtime_team(shipdir)
+    notice = _last_call_notice(shipdir, team, seat, "UserPromptSubmit") if seat in team["seats"] else None
+    if notice:
+        _emit({"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": notice}})
+    return 0
+
+
+def pre_compact(shipdir: Path, seat: str) -> int:
+    """The context is about to be summarised: mark the shift for rotation (design-p1 §5.4)."""
+    from . import rotate
+
+    data = _stdin_json()
+    rotate.mark_compacted(shipdir, seat)
+    append_log(shipdir, seat, f"PreCompact ({data.get('trigger') or '?'}): 入れ替えの印を付けた")
     return 0
 
 
@@ -177,6 +245,7 @@ HOOKS = {
     "session-start": session_start,
     "stop": stop,
     "user-prompt-submit": user_prompt_submit,
+    "pre-compact": pre_compact,
     "wait-deadline": wait_deadline,
     "deny-dialog": deny_dialog,
     "log-denied": log_denied,

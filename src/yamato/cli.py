@@ -40,6 +40,8 @@ def _parser() -> argparse.ArgumentParser:
     se.add_argument("seat", help="席の名前、または owner (人間の受信箱 + notify)")
     se.add_argument("message")
     se.add_argument("--from", dest="sender", default="owner", help="送り手の席名 (既定 owner)")
+    se.add_argument("--cwd", help="宛先の次のシフトをこの dir (例: 項目の worktree) を cwd にして起動する。"
+                                  "per_task / headless の席で使える (bgIsolation: none)")
 
     ib = sub.add_parser("inbox", help="未読を全文で表示して既読にする")
     ib.add_argument("ship")
@@ -91,6 +93,8 @@ def _parser() -> argparse.ArgumentParser:
     ss.add_argument("--after", type=int, default=10, help="何秒後に止めるか")
     ss.add_argument("--delivered", action="store_true",
                     help="生きている宛先への SendMessage を済ませた (未読の送信が残っていても終業する)")
+    ss.add_argument("--rotate", action="store_true",
+                    help="入れ替えの印を立てて終業する (次の send で resume せず新しいシフトになる)")
 
     from . import admiral, pr, report, worktree  # design-p1 §8, §2, §6: the parsers live with the commands
 
@@ -273,9 +277,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd == "down":
             return seat.down(resolve_ship(args.ship), args.force)
         if args.cmd == "send":
-            return seat.send(resolve_ship(args.ship), args.seat, args.message, args.sender)
+            return seat.send(resolve_ship(args.ship), args.seat, args.message, args.sender, args.cwd)
         if args.cmd == "seat-stop":
-            return seat.seat_stop(resolve_ship(args.ship), args.seat, args.after, args.delivered)
+            return seat.seat_stop(resolve_ship(args.ship), args.seat, args.after, args.delivered, args.rotate)
         if args.cmd == "run-headless":
             from . import headless
 
