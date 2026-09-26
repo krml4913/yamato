@@ -90,6 +90,9 @@ def _parser() -> argparse.ArgumentParser:
     worktree.register(sub)
     pr.register(sub)
     report.register(sub)
+    from . import decide  # design-p1 §1
+
+    decide.add_parser(sub)
 
     h = sub.add_parser("hook", help="(Claude Code の hook から呼ばれる)")
     h.add_argument("event")
@@ -225,6 +228,10 @@ def main(argv: list[str] | None = None) -> int:
             from . import pr, report, worktree
 
             return {"worktree": worktree, "pr": pr, "report": report}[args.cmd].run(args)
+        if args.cmd == "decide":
+            from . import decide
+
+            return decide.main(args)
 
         from . import seat
 
