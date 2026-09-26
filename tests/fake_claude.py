@@ -12,6 +12,14 @@ import time
 import uuid
 
 path = os.environ["FAKE_CLAUDE_STATE"]
+argv = sys.argv[1:]
+if "--bg" in argv and "--resume" not in argv:
+    # slow_launch: a launch that takes a while, outside the lock below, so other
+    # callers (``agents``) see the seat not yet alive meanwhile (the review B1 race)
+    try:
+        time.sleep(float(json.load(open(path)).get("mode", {}).get("slow_launch", 0)))
+    except (FileNotFoundError, ValueError):
+        pass
 # serialise whole invocations so parallel callers in a test do not lose writes
 import fcntl
 _lock = open(path + ".lock", "a")
@@ -20,7 +28,6 @@ try:
     st = json.load(open(path))
 except (FileNotFoundError, ValueError):
     st = {"sessions": [], "calls": []}
-argv = sys.argv[1:]
 st["calls"].append({"argv": argv, "cwd": os.getcwd(),
                     "GH_TOKEN": os.environ.get("GH_TOKEN"),
                     "CLAUDE_CODE_SESSION_ID": os.environ.get("CLAUDE_CODE_SESSION_ID")})

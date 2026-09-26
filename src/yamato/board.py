@@ -14,6 +14,7 @@ import re
 import time
 from pathlib import Path
 
+from . import events
 from .util import YamatoError, atomic_write, ship_lock
 
 STATES = ("open", "active", "blocked", "done")
@@ -189,6 +190,8 @@ class Board:
             self._sync_column(meta, changed)
             text = (body.rstrip() + "\n\n" if body.strip() else "") + "## 経緯\n" + _note_line(by, "作成")
             self._write(meta, text)
+            events.emit(self.shipdir, events.BOARD_ADD, seat=meta.get("assignee"), item=item_id, by=by,
+                        summary=f"作成 [{meta['state']}] {meta['title']}", data={"fields": changed})
             return meta
 
     def set(self, item_id: str, fields: dict, note: str | None = None, by: str | None = None) -> dict:
@@ -196,6 +199,7 @@ class Board:
             raise YamatoError("変更する項目 (key=value) か --note を指定してください")
         with ship_lock(self.shipdir):
             meta, body, path = self.read(item_id)
+            before = dict(meta)
             changed = {}
             for k, v in fields.items():
                 meta[k] = changed[k] = self._check(k, v, item_id)
@@ -205,6 +209,13 @@ class Board:
             new_path = self._write(meta, body)
             if new_path != path:
                 path.unlink()
+            diff = {k: [before.get(k), meta.get(k)] for k in meta if before.get(k) != meta.get(k)}
+            words = [f"{k}: {_show(a)}→{_show(b)}" for k, (a, b) in diff.items()]
+            if note:
+                words.append(f"経緯: {note}")
+            events.emit(self.shipdir, events.BOARD_SET, seat=meta.get("assignee"), item=item_id, by=by,
+                        summary=", ".join(words) or "変更なし",
+                        data={"changes": diff, **({"note": note} if note else {})})
             return meta
 
     def _write(self, meta: dict, body: str) -> Path:
@@ -225,6 +236,8 @@ class Board:
                 atomic_write(self.archive_dir / p.name, dumps(meta, body))
                 p.unlink()
                 moved.append(meta["id"])
+                events.emit(self.shipdir, events.BOARD_ARCHIVE, seat=meta.get("assignee"), item=meta["id"],
+                            summary=f"archive へ移した: {meta.get('title')}")
         if item_id and not moved:
             raise YamatoError(f"{item_id} は done の項目として board/items にありません")
         return moved
@@ -236,6 +249,12 @@ class Board:
 def _id_num(item_id: str) -> int:
     m = ID_RE.match(item_id)
     return int(m.group(1)) if m else 0
+
+
+def _show(v) -> str:
+    if v in (None, "", []):
+        return "-"
+    return ",".join(v) if isinstance(v, list) else str(v)
 
 
 def _note_line(by: str | None, text: str) -> str:

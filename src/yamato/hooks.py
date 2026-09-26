@@ -10,7 +10,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import deadline, inbox, inject, roster
+from . import deadline, events, inbox, inject, roster
 from .team import runtime_team
 from .util import YAMATO_BIN, append_log, read_json, ship_lock, write_json
 
@@ -31,8 +31,17 @@ def _emit(obj: dict) -> None:
     sys.stdout.flush()
 
 
+def _touch(shipdir: Path, seat: str) -> None:
+    """roster ``lastActive`` (design-p1 §5.1). A failure must not cost the hook its real job."""
+    try:
+        roster.touch(shipdir, seat)
+    except OSError as e:
+        sys.stderr.write(f"yamato: lastActive を更新できませんでした: {e}\n")
+
+
 def session_start(shipdir: Path, seat: str) -> int:
     data = _stdin_json()
+    _touch(shipdir, seat)
     source = data.get("source") or "startup"
     team = runtime_team(shipdir)
     text, cursor_to = inject.build(shipdir, team, seat, source)
@@ -74,10 +83,18 @@ def _wrapup_message(shipdir: Path, seat: str) -> str:
 def stop(shipdir: Path, seat: str) -> int:
     """Past the deadline, block the end of the turn with the wrap-up order (§0 B4)."""
     data = _stdin_json()
+    _touch(shipdir, seat)
     need, rec = _needs_wrapup(shipdir, seat)
     if need and not data.get("stop_hook_active") and take_wrapup_notice(shipdir, seat, rec.get("shiftNo")):
         append_log(shipdir, seat, "Stop hook: 稼働時間の上限 → 終業を指示")
         _emit({"decision": "block", "reason": _wrapup_message(shipdir, seat)})
+    return 0
+
+
+def user_prompt_submit(shipdir: Path, seat: str) -> int:
+    """A turn starts (a prompt, or a SendMessage delivered as one): the seat is moving."""
+    _stdin_json()
+    _touch(shipdir, seat)
     return 0
 
 
@@ -134,25 +151,32 @@ def deny_dialog(shipdir: Path, seat: str) -> int:
     """PermissionRequest: an unattended seat never waits on a dialog (verify-p0-b Q1)."""
     data = _stdin_json()
     tool = data.get("tool_name", "?")
-    append_log(shipdir, seat, f"権限ダイアログを自動で拒否: {tool} {json.dumps(data.get('tool_input', {}), ensure_ascii=False)[:300]}")
+    tool_input = json.dumps(data.get("tool_input", {}), ensure_ascii=False)[:300]
+    append_log(shipdir, seat, f"権限ダイアログを自動で拒否: {tool} {tool_input}")
     _emit({"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {
         "behavior": "deny",
         "message": "unattended seat: dialog auto-denied by yamato. 別のやり方を取るか、captain に報告してください",
     }}})
+    events.emit(shipdir, events.PERMISSION_DENIED, seat=seat, summary=f"権限ダイアログを自動で拒否: {tool} {tool_input}",
+                data={"source": "dialog", "tool": tool})
     return 0
 
 
 def log_denied(shipdir: Path, seat: str) -> int:
     data = _stdin_json()
-    append_log(shipdir, seat, f"auto mode が拒否: {data.get('tool_name', '?')} "
-                              f"{json.dumps(data.get('tool_input', {}), ensure_ascii=False)[:300]} "
-                              f"reason={str(data.get('reason', ''))[:200]}")
+    tool = data.get("tool_name", "?")
+    tool_input = json.dumps(data.get("tool_input", {}), ensure_ascii=False)[:300]
+    reason = str(data.get("reason", ""))[:200]
+    append_log(shipdir, seat, f"auto mode が拒否: {tool} {tool_input} reason={reason}")
+    events.emit(shipdir, events.PERMISSION_DENIED, seat=seat, summary=f"auto mode が拒否: {tool} {tool_input}",
+                data={"source": "auto", "tool": tool, "reason": reason})
     return 0
 
 
 HOOKS = {
     "session-start": session_start,
     "stop": stop,
+    "user-prompt-submit": user_prompt_submit,
     "wait-deadline": wait_deadline,
     "deny-dialog": deny_dialog,
     "log-denied": log_denied,
