@@ -322,7 +322,13 @@ def _span_label(shipdir: Path, since: float, until: float, now: float) -> str:
     words = []
     if shifts:
         start = shifts[0]["ts"]
-        end = shifts[-1]["ts"] if shifts[-1].get("kind") == events.SHIFT_END else min(now, until)
+        # a seat whose last shift event is a start is still on shift (e2e-p1: the captain
+        # writes the report while the members' shifts have already ended)
+        last = {}
+        for e in shifts:
+            last[e.get("seat")] = e
+        on = any(e.get("kind") == events.SHIFT_START for e in last.values())
+        end = min(now, until) if on else shifts[-1]["ts"]
         words.append(f"稼働 {_hm(start)}–{_hm(end)}")
     dl = read_json(Path(shipdir) / ".runtime" / "deadline", None) or {}
     if dl.get("upAt") and since <= dl["upAt"] < until and dl.get("deadline"):
