@@ -48,10 +48,12 @@ cd ~/dev/myapp && claude    # trust のダイアログで承認して終了
 | `worktree rm <ship> <item> [--force]` | 片付ける。未 commit の変更か、どのリモートにもない commit があれば断る (`--force` で外す) |
 | `pr open <ship> <item> [--title] [--body] [--draft]` | 項目の `branch` から `gh pr create` (base は `git.base`)。項目に `pr` を書き、列に `review` があれば動かし、項目の `reviewer` (無ければ hub) に send する |
 | `pr merge <ship> <item>` | `git.merge_requires` を確かめて `gh pr merge --<git.strategy>`。艦ごとに 1 本ずつ (ロック)。呼び出し元を `merged_by` に残す (誰が打てるかは検査しない)。そのあと他の開いた PR の衝突を `gh pr view` で確かめ、衝突したものは列 `rebase` (あれば) に動かし、`git.conflict` の宛先に send する |
+| `report daily <ship> [--date] [--facts-only] [--force]` | 日報の下書き `reports/daily/<日付>.md` を作る (LLM を使わない)。事実の節 (判断待ち・終わったもの・動いている/止まっているもの・異常・使用量) を board・events.jsonl・usage.jsonl から埋め、「一言」「明日」は captain が書く欄として空ける。60 行まで。`--facts-only` はその 2 欄を「captain が書けなかった」にしてすぐ通知する |
+| `report send <ship> [--date]` | 日報の要約 (一言・判断待ち・異常、20 行まで) を `notify.via` で送る |
 | `seat-stop <ship> <seat> [--delivered]` | (席が使う) handoff.md の更新を確認して遅延 stop |
 | `hook <event> <ship> <seat>` | (Claude Code の hook から呼ばれる) session-start / user-prompt-submit / stop / wait-deadline / deny-dialog / log-denied |
 
-team.yaml の項目: `name` / `hub` / `workspace` / `roles` (役割ごとに `model`・`shift: per_task|persistent`・`count`・`inject`) / `time_limit` / `grace` / `deny` / `env_unset` / `settings` (席の settings.json に重ねる) / `seat_stop` (終業前の確認) / `inject` (注入の中身と上限) / `notify` (owner 宛ての通知経路) / `board` (`kinds`・`columns`・`fields`・`archive_on_done`) / `git` (`base`・`strategy`・`merge_requires`・`merge_decision`・`conflict`。worktree と pr の道具が読む)。
+team.yaml の項目: `name` / `hub` / `workspace` / `roles` (役割ごとに `model`・`shift: per_task|persistent`・`count`・`inject`) / `time_limit` / `grace` / `deny` / `env_unset` / `settings` (席の settings.json に重ねる) / `seat_stop` (終業前の確認) / `inject` (注入の中身と上限) / `notify` (owner 宛ての通知経路) / `board` (`kinds`・`columns`・`fields`・`archive_on_done`) / `git` (`base`・`strategy`・`merge_requires`・`merge_decision`・`conflict`。worktree と pr の道具が読む) / `report` (`daily: on_down|off`)。
 運用の方針 (deny の中身、外す環境変数、worktree の使い方、git の流れ) はコードに持たず、ひな形の team.yaml と役割プロンプト (`roles/<role>.md`) に書いてある。艦ごとに変えてよい。
 
 worktree と pr (design-p1 §8): yamato は道具を出すだけで、誰がいつ使うか (タスク = ブランチ、worktree で作業する、push してよいのは自分のブランチ、merge は owner の了承のあと captain が打つ、など) は dev ひな形の `roles/*.md` と team.yaml の `deny` に書いてある。
@@ -59,7 +61,7 @@ worktree と pr (design-p1 §8): yamato は道具を出すだけで、誰がい�
 - `merge_requires` の `review` は項目の `review=approved`、`ci` は `gh pr checks` (チェックの無い repo は通ったとみなす)、`decision` は項目を `links` に持つ `kind: decision`・`category: merge` の項目が done であること
 - 「worktree を cwd にして新しいシフトを起こす」(`send --cwd`、design-p1 §8.2 の 2) はまだ無い。今はシフトの中で `worktree add` が出したパスに `cd` する
 
-艦フォルダ: `team.yaml`・`charter.md`・`knowledge.md`・`roles/<role>.md`・`board/{items,archive}/`・`seats/<seat>/` (`handoff.md`・`log/<date>.md`・`inbox.jsonl`・`inbox.cursor`・`memory.md`・`memory-inbox.md`)・`roster.json` (席ごとの今のシフトと `lastActive`)・`usage.jsonl` (シフトごとの使用量)・`worktrees/<item>/` (`yamato worktree add` の既定の場所)・`events.jsonl` (艦の出来事の追記ログ。形式は [docs/events.md](docs/events.md))・`.runtime/` (生成物)。
+艦フォルダ: `team.yaml`・`charter.md`・`knowledge.md`・`roles/<role>.md`・`board/{items,archive}/`・`seats/<seat>/` (`handoff.md`・`log/<date>.md`・`inbox.jsonl`・`inbox.cursor`・`memory.md`・`memory-inbox.md`)・`roster.json` (席ごとの今のシフトと `lastActive`)・`usage.jsonl` (シフトごとの使用量)・`worktrees/<item>/` (`yamato worktree add` の既定の場所)・`events.jsonl` (艦の出来事の追記ログ。形式は [docs/events.md](docs/events.md))・`reports/daily/<日付>.md` (日報)・`.runtime/` (生成物)。
 
 ## 通知 (notify)
 
@@ -81,6 +83,7 @@ notify:
 | `command` | `notify.command` をシェルで実行。件名・本文・重要度は stdin の JSON `{"title", "message", "level"}` と環境変数 `YAMATO_TITLE` / `YAMATO_MESSAGE` / `YAMATO_LEVEL`。メールなど上の 3 つ以外はこれで送る (方式は増やさない) |
 
 - best-effort: どれかが失敗しても他は送り、`send` は失敗にならない。失敗は `send` の出力に `通知 <方式>: 失敗 (...)` と出て、`events.jsonl` に `notify_failed` として残る ([docs/events.md](docs/events.md))。webhook の URL は出力にも events にも書かない
+- 日報 (design-p1 §2): `report.daily: on_down` (ひな形の既定) の艦では、`down`・強制停止のときにその日の日報が無ければ事実だけで作り、まだ送っていなければ要約を送る (captain が落ちていても owner に届く安全網)。captain が終業時に「一言」「明日」を書いて `report send` する流れは `roles/pm.md` に書いてある。captain の注入には `inject` の `last_report` で前回の日報の「一言」「owner の判断待ち」「明日」だけが入る
 - `PushNotification` は方式にしない (席の外から出せない。[verify-p1-d](docs/verify-p1-d.md) V11)
 
 テスト: `python3 -m unittest discover`。E2E の手順と結果は [docs/e2e-p0.md](docs/e2e-p0.md)。

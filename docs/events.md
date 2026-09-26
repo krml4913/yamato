@@ -40,6 +40,8 @@ yamato が書くのは次の kind。定数は `src/yamato/events.py`。
 | `force_stop` | `down --force`・猶予超えの強制停止 (このあと `shift_end` も出る) | 席 | ― | ― | `reason`、`shiftNo`、`sessionId` |
 | `permission_denied` | PermissionRequest の deny hook (`source: dialog`)、PermissionDenied hook (`source: auto`、classifier の拒否) | 席 | ― | ― | `source`、`tool`、`reason` (auto のみ) |
 | `notify_failed` | 通知 (`notify.via`、design-p1 §2.4) が 1 方式失敗したとき。方式ごとに 1 行。OS が違うための「送らない」は書かない。定数は `notify.NOTIFY_FAILED` | ― | ― | ― | `via`、`level`、`reason` (webhook の URL は入れない) |
+| `report_made` | `report daily` と日報の安全網 (design-p1 §2.2) が日報を作ったとき | ― | ― | ― | `date`、`factsOnly`、`reason` (facts-only のとき) |
+| `report_sent` | `report send` と安全網が日報の要約を通知したとき。安全網は同じ日付の `report_sent` があれば送らない (通知の前に書く) | ― | ― | ― | `date`、`level` / `by: safety_net` |
 | `decision_open` / `decision_close` | P1-2 の `decide open/close` が書く (口だけ用意) | decider を想定 | 判断の id | 開いた / 閉じた席 | P1-2 で決める |
 
 - deny ルールによる拒否は hook が拾わない (検証 B Q1) ので `permission_denied` には載らない

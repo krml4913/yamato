@@ -12,6 +12,7 @@ roles:
     model: opus
     shift: persistent
     description: captain。owner の依頼を board の task に分けて席に割り振り、成果を確認して回収する
+    inject: [handoff, log_tail, mine, last_report, inbox, memory, knowledge]   # last_report: 前回の日報の「一言」「owner の判断待ち」「明日」
   impl:
     model: sonnet
     shift: per_task
@@ -81,6 +82,7 @@ inject:
     inbox_messages: 10
     inbox_chars: 400         # 1 通あたり
     total_chars: 9500        # 全体 (Claude Code の hook 出力は約 1 万文字で切られる)
+    last_report: [30, 1500]  # 前回の日報の 3 節 (inject に last_report を入れた役割だけ)
 
 # owner 宛ての send (`yamato send <ship> owner "..."`) の通知経路 (design-p1 §2.4)。
 # via に並べた方式すべてに送る (複数可)。どれかが失敗しても他は送り、失敗は events.jsonl (notify_failed) に残る。
@@ -96,6 +98,14 @@ notify:
   slack:
     webhook_env: YAMATO_SLACK_WEBHOOK
   # command: "terminal-notifier -title \"$YAMATO_TITLE\" -message \"$YAMATO_MESSAGE\""
+
+# 日報 (design-p1 §2)。reports/daily/<日付>.md
+#   on_down  yamato down・強制停止のとき、その日の日報がまだ無ければ事実だけの日報 (--facts-only) を作り、
+#            まだ送っていなければ notify.via で要約を送る (captain が落ちていても owner に届く安全網)
+#   off      安全網で作らない (report daily / report send は道具としていつでも使える)
+# captain が終業時に書く流れは roles/pm.md に書く (コードでは強制しない)
+report:
+  daily: on_down
 
 # git の道具 (yamato worktree / pr) の設定 (design-p1 §8.3)。誰がいつ打つかは roles/*.md に書く
 git:

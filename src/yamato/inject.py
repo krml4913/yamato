@@ -21,6 +21,7 @@ LIMITS = {
     "inbox_messages": 10,
     "inbox_chars": 400,        # per message
     "total_chars": 9500,       # hook output is capped by Claude Code around 10k
+    "last_report": (30, 1500), # the previous daily report's 3 sections (design-p1 §2.3)
 }
 
 
@@ -49,6 +50,18 @@ def _file_section(title: str, path: Path, limit: tuple[int, int]) -> str:
     if not text:
         return f"## {title}\n(なし)"
     return f"## {title}\n{cap_text(text, *limit, source=str(path))}"
+
+
+def _last_report(shipdir: Path, limit: tuple[int, int]) -> str:
+    """Only 「一言」「owner の判断待ち」「明日」 of the latest daily report (design-p1 §2.3)."""
+    from . import report
+
+    path = report.latest(shipdir)
+    if path is None:
+        return "## 前回の日報\n(なし)"
+    text = report.excerpt(_read(path)).replace("\n## ", "\n### ")
+    text = text.replace("## ", "### ", 1) if text.startswith("## ") else (text or "(3 節が見つからない)")
+    return f"## 前回の日報 ({path.stem}。全文: {path})\n{cap_text(text, *limit, source=str(path))}"
 
 
 def build(shipdir: Path, team: dict, seat: str, source: str = "startup",
@@ -93,6 +106,9 @@ def build(shipdir: Path, team: dict, seat: str, source: str = "startup",
         if len(mine) > lim["mine_items"]:
             shown.append(f"…ほか {len(mine) - lim['mine_items']} 件 (上限で省略。`{y} board mine {shipdir} {seat}`)")
         parts.append("## 自分の担当 (board mine)\n" + ("\n".join(shown) if shown else "(なし)"))
+
+    if "last_report" in want:
+        parts.append(_last_report(shipdir, lim["last_report"]))
 
     cursor_to = inbox.cursor(shipdir, seat)
     if "inbox" in want:
