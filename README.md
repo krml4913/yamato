@@ -44,9 +44,10 @@ cd ~/dev/myapp && claude    # trust のダイアログで承認して終了
 | `board add\|set\|show\|list\|mine` | board の操作。frontmatter はコマンド経由でのみ変わり、値を検証する。done は `board/archive/` へ |
 | `log <ship> <seat> "<text>"` | 席の作業ログに 1 行 |
 | `seat-stop <ship> <seat> [--delivered]` | (席が使う) handoff.md の更新を確認して遅延 stop |
+| `run-headless <ship> <seat>` | (`send` が切り離して起動する) headless の席の 1 シフトを `claude -p` で回し、使用量・結果の判定・定型文の終了報告まで持つ。記録と結果は [docs/e2e-headless.md](docs/e2e-headless.md) |
 | `hook <event> <ship> <seat>` | (Claude Code の hook から呼ばれる) session-start / user-prompt-submit / stop / wait-deadline / deny-dialog / log-denied |
 
-team.yaml の項目: `name` / `hub` / `workspace` / `roles` (役割ごとに `model`・`shift: per_task|persistent`・`count`・`inject`) / `time_limit` / `grace` / `deny` / `env_unset` / `settings` (席の settings.json に重ねる) / `seat_stop` (終業前の確認) / `inject` (注入の中身と上限) / `notify` (owner 宛ての通知経路) / `board` (`kinds`・`columns`・`fields`・`archive_on_done`)。
+team.yaml の項目: `name` / `hub` / `workspace` / `roles` (役割ごとに `model`・`shift: per_task|persistent|headless`・`count`・`inject`。headless は `max_duration`・`max_budget_usd`・`report_to` も) / `time_limit` / `grace` / `deny` / `env_unset` / `settings` (席の settings.json に重ねる) / `seat_stop` (終業前の確認) / `inject` (注入の中身と上限) / `notify` (owner 宛ての通知経路) / `board` (`kinds`・`columns`・`fields`・`archive_on_done`)。
 運用の方針 (deny の中身、外す環境変数、worktree の使い方、git の流れ) はコードに持たず、ひな形の team.yaml と役割プロンプト (`roles/<role>.md`) に書いてある。艦ごとに変えてよい。
 
 艦フォルダ: `team.yaml`・`charter.md`・`knowledge.md`・`roles/<role>.md`・`board/{items,archive}/`・`seats/<seat>/` (`handoff.md`・`log/<date>.md`・`inbox.jsonl`・`inbox.cursor`・`memory.md`・`memory-inbox.md`)・`roster.json` (席ごとの今のシフトと `lastActive`)・`usage.jsonl` (シフトごとの使用量)・`events.jsonl` (艦の出来事の追記ログ。形式は [docs/events.md](docs/events.md))・`.runtime/` (生成物)。
@@ -61,3 +62,4 @@ team.yaml の項目: `name` / `hub` / `workspace` / `roles` (役割ごとに `mo
 - [verify-p0-a.md](docs/verify-p0-a.md) / [verify-p0-b.md](docs/verify-p0-b.md) — P0 の実機検証 (起動レシピ)
 - [e2e-p0.md](docs/e2e-p0.md) — P0 実装の E2E
 - [events.md](docs/events.md) — events.jsonl の行の形式と読み方、lastActive
+- [e2e-headless.md](docs/e2e-headless.md) — `shift: headless` と `run-headless` の実機確認

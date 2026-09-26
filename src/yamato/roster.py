@@ -85,6 +85,16 @@ def touch(shipdir: Path, name: str, now: float | None = None) -> None:
         save(shipdir, data)
 
 
+def update(shipdir: Path, name: str, **fields) -> dict:
+    """Set extra keys on a seat's record (a headless shift's pids and outcome)."""
+    with ship_lock(shipdir):
+        data = load(shipdir)
+        rec = data["seats"].setdefault(name, {})
+        rec.update(fields)
+        save(shipdir, data)
+        return dict(rec)
+
+
 def mark_stopping(shipdir: Path, name: str, *, handoff_written: bool, now: float | None = None) -> dict:
     with ship_lock(shipdir):
         data = load(shipdir)
@@ -95,17 +105,19 @@ def mark_stopping(shipdir: Path, name: str, *, handoff_written: bool, now: float
 
 
 def end_shift(shipdir: Path, name: str, *, reason: str, handoff_written: bool | None = None,
-              note: str | None = None, now: float | None = None) -> dict:
+              note: str | None = None, now: float | None = None, extra: dict | None = None) -> dict:
+    """``extra`` goes on both the seat and the shift (a headless shift's outcome, rate limit)."""
     now = now or time.time()
     with ship_lock(shipdir):
         data = load(shipdir)
         rec = data["seats"].setdefault(name, {})
         if handoff_written is not None:
             rec["handoffWritten"] = handoff_written
-        rec.update({"state": OFF, "endedAt": now, "endReason": reason, "note": note})
+        rec.update({"state": OFF, "endedAt": now, "endReason": reason, "note": note, **(extra or {})})
         for sh in reversed(data["shifts"]):
             if sh["seat"] == name and sh.get("shiftNo") == rec.get("shiftNo"):
-                sh.update({"endedAt": now, "endReason": reason, "handoffWritten": rec.get("handoffWritten")})
+                sh.update({"endedAt": now, "endReason": reason, "handoffWritten": rec.get("handoffWritten"),
+                           **(extra or {})})
                 if note:
                     sh["note"] = note
                 break

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .util import YamatoError, check_name, parse_duration, read_json
 
-SHIFTS = ("per_task", "persistent")
+SHIFTS = ("per_task", "persistent", "headless")
 STATES = ("open", "active", "blocked", "done")
 TOP_KEYS = {"name", "hub", "workspace", "charter", "roles", "time_limit", "grace", "deny", "board",
             "settings", "seat_stop", "env_unset", "inject", "notify"}
@@ -19,7 +19,7 @@ INJECT_LIMIT_KEYS = ("handoff", "memory", "knowledge", "log_tail", "mine_items",
                      "inbox_chars", "total_chars")
 RESERVED_SEATS = ("owner",)   # the human's inbox; not a seat
 SEAT_STOP_DEFAULTS = {"require_handoff": True, "require_delivery": True}
-ROLE_KEYS = {"model", "shift", "count", "description", "inject"}
+ROLE_KEYS = {"model", "shift", "count", "description", "inject", "max_duration", "max_budget_usd", "report_to"}
 # auto mode is unavailable on Haiku (verify-p0-b §総括 1): the seat would fall
 # back to manual and block on the first dialog.
 NO_AUTO_MODELS = ("haiku",)
@@ -93,8 +93,19 @@ def validate(data: dict, shipdir: Path) -> dict:
         parts = spec.get("inject")
         if parts is not None:
             _check_parts(parts, f"roles.{role}.inject")
+        max_duration = spec.get("max_duration")
+        if max_duration is not None:
+            max_duration = parse_duration(max_duration)
+            if max_duration <= 0:
+                raise YamatoError(f"team.yaml: roles.{role}.max_duration は 0 より長くする")
+        budget = spec.get("max_budget_usd")
+        if budget is not None and (isinstance(budget, bool) or not isinstance(budget, (int, float)) or budget <= 0):
+            raise YamatoError(f"team.yaml: roles.{role}.max_budget_usd は正の数 (今: {budget!r})")
         roles[role] = {
             "inject": parts,
+            "max_duration": max_duration,
+            "max_budget_usd": budget,
+            "report_to": str(spec["report_to"]) if spec.get("report_to") else None,
             "model": model,
             "shift": shift,
             "count": count,
@@ -106,6 +117,11 @@ def validate(data: dict, shipdir: Path) -> dict:
         raise YamatoError(f"team.yaml: hub={hub!r} が roles にありません")
     if roles[hub]["count"] != 1:
         raise YamatoError("team.yaml: hub の役割は count: 1 にする")
+
+    seats = expand_seats(roles)
+    for role, spec in roles.items():
+        if spec["report_to"] and spec["report_to"] not in (*seats, *RESERVED_SEATS):
+            raise YamatoError(f"team.yaml: roles.{role}.report_to={spec['report_to']!r} は席の名前か owner")
 
     ws = data.get("workspace")
     if not ws:
@@ -168,7 +184,7 @@ def validate(data: dict, shipdir: Path) -> dict:
         "settings": settings,
         "seat_stop": {**SEAT_STOP_DEFAULTS, **seat_stop},
         "roles": roles,
-        "seats": expand_seats(roles),
+        "seats": seats,
         "board": {"kinds": [str(k) for k in kinds], "columns": columns, "fields": [str(f) for f in fields],
                   "archive_on_done": archive_on_done},
         "env_unset": env_unset,

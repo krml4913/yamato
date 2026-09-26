@@ -63,10 +63,14 @@ def record(shipdir: Path, seat: str, *, session_id: str, shift_no: int | None,
         "startedAt": since, "endedAt": until, **totals,
         "total_tokens": sum(totals[k] for k in KEYS),
     }
+    append(shipdir, line)
+    return line
+
+
+def append(shipdir: Path, line: dict) -> None:
     with ship_lock(shipdir):
         with open(Path(shipdir) / "usage.jsonl", "a", encoding="utf-8") as f:
             f.write(json.dumps(line, ensure_ascii=False) + "\n")
-    return line
 
 
 def summary(line: dict) -> str:

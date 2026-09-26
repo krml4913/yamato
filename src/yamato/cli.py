@@ -84,6 +84,10 @@ def _parser() -> argparse.ArgumentParser:
     ss.add_argument("--delivered", action="store_true",
                     help="生きている宛先への SendMessage を済ませた (未読の送信が残っていても終業する)")
 
+    rh = sub.add_parser("run-headless", help="(send が切り離して起動する) headless の席の 1 シフトを claude -p で回す")
+    rh.add_argument("ship")
+    rh.add_argument("seat")
+
     h = sub.add_parser("hook", help="(Claude Code の hook から呼ばれる)")
     h.add_argument("event")
     h.add_argument("ship")
@@ -229,6 +233,10 @@ def main(argv: list[str] | None = None) -> int:
             return seat.send(resolve_ship(args.ship), args.seat, args.message, args.sender)
         if args.cmd == "seat-stop":
             return seat.seat_stop(resolve_ship(args.ship), args.seat, args.after, args.delivered)
+        if args.cmd == "run-headless":
+            from . import headless
+
+            return headless.run(resolve_ship(args.ship), args.seat)
         if args.cmd == "_watchdog":
             return seat.watchdog(Path(args.ship), args.token)
         if args.cmd == "_shift-ended":

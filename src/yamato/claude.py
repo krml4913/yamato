@@ -21,6 +21,12 @@ from .util import YamatoError
 # The caller's session identity must not leak into a new seat (technical, not
 # policy). What else to drop (GH_TOKEN, ...) is team.yaml `env_unset`.
 CALLER_ENV = ("CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_ENTRYPOINT")
+# ``-p`` runs in the caller's environment (a bg seat is started by the daemon), so
+# the rest of a calling session's markers must go too: CLAUDE_CODE_CHILD_SESSION
+# turns transcript saving off, which the timeout usage count reads (e2e-headless).
+PRINT_CALLER_ENV = ("CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN",
+                    "CLAUDE_CODE_BRIDGE_SESSION_ID", "CLAUDE_CODE_SESSION_ATTENDED", "CLAUDE_CODE_EXECPATH",
+                    "CLAUDE_PID")
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 _BG_RE = re.compile(r"backgrounded\s+·\s+([0-9a-f]{8})\b")
@@ -177,6 +183,29 @@ def resume(session_id: str, prompt: str, env_unset=(), cwd: str | None = None) -
     if cp.returncode != 0 or "backgrounded" not in out:
         raise YamatoError(f"resume に失敗しました (exit {cp.returncode}): {out.strip()}")
     return out
+
+
+def headless_argv(*, session_id: str, name: str, role: str, agents_json: str, model: str,
+                  settings: str, add_dir: str, prompt: str, max_budget_usd=None) -> list[str]:
+    """One headless shift = one ``claude -p`` (design-p1 §4.2, verify-p1-d V1-V4).
+
+    No ``--bare``: it skips OAuth, so a subscription run ends ``Not logged in``;
+    the caller checks the SessionStart hook_response instead, which also catches
+    a future ``-p`` that turns bare by default. stdin must be /dev/null (else a
+    3 s wait); ``--add-dir`` eats trailing values, so the prompt goes after ``--``.
+    """
+    args = [
+        claude_bin(), "-p", "--session-id", session_id, "--name", name,
+        "--output-format", "stream-json", "--verbose",
+        "--agent", role, "--agents", agents_json,
+        "--model", model,
+        "--setting-sources", "project,local",
+        "--settings", settings,
+        "--permission-prompts", "none",
+    ]
+    if max_budget_usd is not None:
+        args += ["--max-budget-usd", str(max_budget_usd)]
+    return args + ["--add-dir", add_dir, "--", prompt]
 
 
 def stop(short_id: str) -> bool:

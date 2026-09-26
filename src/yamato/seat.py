@@ -161,6 +161,10 @@ def wake(shipdir: Path, team: dict, seat: str, reason: str = "send") -> tuple[st
     concurrent sends to a stopped seat must not launch it twice, or one session
     would be missing from the roster and escape the time limit (review B1).
     """
+    if seat_spec(team, seat)["shift"] == "headless":
+        from . import headless
+
+        return headless.wake(shipdir, team, seat)
     with seat_lock(shipdir, seat):
         listing = claude.agents()
         reconcile(shipdir, team, listing)
@@ -211,15 +215,30 @@ def reconcile(shipdir: Path, team: dict, listing: list[dict]) -> None:
     for seat, rec in roster.load(shipdir)["seats"].items():
         if seat not in team["seats"] or rec.get("state") not in (roster.ON_SHIFT, roster.STOPPING):
             continue
-        if claude.is_alive(by.get(rec.get("sessionId"))):
+        if claude.is_alive(by.get(rec.get("sessionId"))) or _headless_running(shipdir, team, seat):
             continue
         reason = "seat-stop" if rec["state"] == roster.STOPPING else "exited"
         finish_shift(shipdir, seat, reason=reason)
 
 
+def _headless_running(shipdir: Path, team: dict, seat: str) -> bool:
+    """A headless seat is on shift while its wrapper holds the seat (it closes the shift itself)."""
+    if team["seats"][seat]["shift"] != "headless":
+        return False
+    from . import headless
+
+    return headless.running(shipdir, seat)
+
+
 def force_stop_all(shipdir: Path, team: dict, reason: str) -> list[str]:
     stopped = []
     for seat in team["seats"]:
+        if _headless_running(shipdir, team, seat):
+            from . import headless
+
+            headless.terminate(shipdir, seat, reason)   # the wrapper records the forced end
+            stopped.append(seat)
+            continue
         # a launch in flight holds the wake lock: wait for it, then look again
         with seat_lock(shipdir, seat):
             rec = roster.seat(shipdir, seat)
@@ -273,8 +292,9 @@ def up(shipdir: Path, for_: str | None) -> int:
     what, rec = wake(shipdir, team, hub, reason="up")
     spawn_watchdog(shipdir, token)
     out(f"艦 {team['name']} を起動: deadline {fmt_time(dl['deadline'])} (稼働 {fmt_span(limit)}, 猶予 {fmt_span(team['grace'])})")
-    label = {"alive": "すでに動いている", "resumed": "resume した", "started": "新しいシフトを起動した"}[what]
-    out(f"  captain 席 {hub}: {label} (session {rec.get('sessionId')})")
+    label = {"alive": "すでに動いている", "resumed": "resume した", "started": "新しいシフトを起動した",
+             "spawned": "headless のシフトを起動した (run-headless)", "queued": "headless のシフト中"}[what]
+    out(f"  captain 席 {hub}: {label}" + (f" (session {rec['sessionId']})" if what != "spawned" else ""))
     return 0
 
 
@@ -320,11 +340,20 @@ def send(shipdir: Path, seat: str, text: str, sender: str) -> int:
         else:
             out(f"宛先 {seat} は生きている (session {rec.get('shortId')})。inbox に記録済み。"
                 f"すぐ伝えるなら `claude attach {rec.get('shortId')}` で直接話す。")
+    elif what == "spawned":
+        out(f"headless の席 {seat} のシフトを起動した (run-headless。終わると {_report_to(team, seat)} に定型文で報告が届く)。SendMessage は不要。")
+    elif what == "queued":
+        out(f"headless の席 {seat} はシフト中。inbox に積んだので、今のシフトの終わりに未読として続けて読まれる。"
+            f"すぐ伝えるなら SendMessage で to=\"{name}\" に送ってもよい (任意)。")
     elif what == "resumed":
         out(f"止まっていた persistent の席 {seat} を resume した (session {rec['sessionId']})。SendMessage は不要。")
     else:
         out(f"席 {seat} の新しいシフトを起動した (session {rec['sessionId']})。SendMessage は不要。")
     return 0
+
+
+def _report_to(team: dict, seat: str) -> str:
+    return team["roles"][team["seats"][seat]["role"]].get("report_to") or team["hub"]
 
 
 def _send_event(shipdir: Path, to: str, sender: str, entry: dict) -> None:
@@ -359,6 +388,11 @@ def seat_stop(shipdir: Path, seat: str, after: int, delivered: bool = False) -> 
         out(f"注意: handoff.md が {lines} 行ある (注入の上限 {max_lines} 行)。次のシフトでは上限で切られる。")
     roster.mark_stopping(shipdir, seat,
                          handoff_written=handoff_written_since(shipdir, seat, rec.get("shiftStartedAt")))
+    if team["seats"][seat]["shift"] == "headless":
+        # claude -p ends by itself after this turn; run-headless closes the shift
+        append_log(shipdir, seat, "seat-stop: 終業を受け付けた (headless)")
+        out("終業を受け付けた。headless のシフトはこのターンを終えれば終わる。短い一言で終えること (これ以上ツールを使わない)。")
+        return 0
     append_log(shipdir, seat, f"seat-stop: 終業を受け付けた ({after} 秒後に停止)")
     short = sid[:8]
     # delayed stop (verify-p0-a Q3 b): the current turn and its Stop hook finish first
@@ -461,6 +495,8 @@ def status(shipdir: Path) -> int:
         rec = roster.seat(shipdir, seat)
         live = by.get(rec.get("sessionId"))
         alive = claude.is_alive(live)
+        if _headless_running(shipdir, team, seat):
+            alive, live = True, {**(live or {}), "pid": rec.get("pid") or (live or {}).get("pid")}
         last = _last_active(rec)
         cols = [
             f"{seat:<10}",

@@ -28,6 +28,7 @@ SHIFT_END = "shift_end"
 DECISION_OPEN = "decision_open"     # P1-2 (design-p1 §1)
 DECISION_CLOSE = "decision_close"   # P1-2
 FORCE_STOP = "force_stop"
+SHIFT_FAILED = "shift_failed"     # a headless shift that failed (design-p1 §4.2, §4.4)
 PERMISSION_DENIED = "permission_denied"
 
 SUMMARY_CHARS = 200
