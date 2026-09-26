@@ -160,10 +160,13 @@ def resume_shift(shipdir: Path, team: dict, seat: str, rec: dict, reason: str = 
     # resume right after stop starts a flagless copy: wait for the pid to vanish (verify-p0-b Q2)
     if not claude.wait_gone(sid, timeout=30):
         raise YamatoError(f"席 {seat} の前のプロセスがまだ残っているので resume できません ({sid})")
+    # the listing can show the previous shift's record (``state: failed``, no pid) until the
+    # resumed worker gets its pid: judge the resume only by what changes after it
+    before = claude.launch_marks(claude.find(sid))
     started = time.time()
     claude.resume(sid, _resume_prompt(shipdir, seat, reason), env_unset=team.get("env_unset") or (),
                   cwd=team["workspace"])
-    _check_started(shipdir, seat, rec.get("shortId") or sid[:8], sid, started, "resume")
+    _check_started(shipdir, seat, rec.get("shortId") or sid[:8], sid, started, "resume", before)
     new = roster.start_shift(shipdir, seat, session_id=sid, short_id=rec.get("shortId") or sid[:8],
                              session_name=session_name(team, seat), how="resume")
     clear_pending(shipdir, seat)
@@ -171,11 +174,12 @@ def resume_shift(shipdir: Path, team: dict, seat: str, rec: dict, reason: str = 
     return new
 
 
-def _check_started(shipdir: Path, seat: str, short: str, sid: str, started: float, how: str) -> None:
+def _check_started(shipdir: Path, seat: str, short: str, sid: str, started: float, how: str,
+                   before: tuple | None = None) -> None:
     """``claude --bg`` / ``--resume`` exit 0 even when the worker dies before init (verify-p0-c
     Q5): the listing decides. A failure is recorded (roster ``launchFailed``, events
     ``launch_failed``), a session left running is stopped, and the caller gets the error."""
-    why = claude.started_failure(sid, started)
+    why = claude.started_failure(sid, started, before)
     if why is None:
         return
     if claude.is_alive(claude.find(sid)):
@@ -349,13 +353,36 @@ def up(shipdir: Path, for_: str | None) -> int:
     token = uuid.uuid4().hex[:12]
     dl = deadline.write(shipdir, limit=limit, grace=team["grace"], token=token, last_call=last_call_conf(team))
     hub = team["hub"]
-    what, rec = wake(shipdir, team, hub, reason="up")
+    try:
+        what, rec = wake(shipdir, team, hub, reason="up")
+    except BaseException:
+        _unwatched_deadline(shipdir, team, token)
+        raise
     spawn_watchdog(shipdir, token)
     out(f"艦 {team['name']} を起動: deadline {fmt_time(dl['deadline'])} (稼働 {fmt_span(limit)}, 猶予 {fmt_span(team['grace'])})")
     label = {"alive": "すでに動いている", "resumed": "resume した", "started": "新しいシフトを起動した",
              "spawned": "headless のシフトを起動した (run-headless)", "queued": "headless のシフト中"}[what]
     out(f"  captain 席 {hub}: {label}" + (f" (session {rec['sessionId']})" if what != "spawned" else ""))
     return 0
+
+
+def _unwatched_deadline(shipdir: Path, team: dict, token: str) -> None:
+    """The captain did not come up after ``up`` wrote the deadline: no deadline may stay
+    without its watchdog. With no seat alive the ship is simply not up (the deadline goes, so
+    ``status`` / ``ships`` do not show it running); a seat still alive keeps it, watched."""
+    try:
+        by = claude.by_session(claude.agents())
+    except YamatoError:
+        spawn_watchdog(shipdir, token)   # cannot tell what is alive: keep the limit watched
+        return
+    if any(_headless_running(shipdir, team, s) or claude.is_alive(by.get(roster.seat(shipdir, s).get("sessionId")))
+           for s in team["seats"]):
+        spawn_watchdog(shipdir, token)
+        return
+    with ship_lock(shipdir):
+        dl = deadline.read(shipdir)
+        if dl and dl.get("token") == token:
+            deadline.path(shipdir).unlink(missing_ok=True)
 
 
 def send(shipdir: Path, seat: str, text: str, sender: str, cwd: str | None = None) -> int:

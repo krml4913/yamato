@@ -130,9 +130,18 @@ def up(shipdir: Path, for_: str | None, seats: str | None) -> int:
     team = seat.current_team(shipdir)
     label = {"alive": "すでに動いている", "resumed": "resume した", "started": "新しいシフトを起動した",
              "spawned": "headless のシフトを起動した (run-headless)", "queued": "headless のシフト中"}
+    failed = []
     for s in extra:
-        what, rec = seat.wake(shipdir, team, s, reason="up")
+        # one seat that does not come up must not keep the rest down: wake them all, then fail
+        try:
+            what, rec = seat.wake(shipdir, team, s, reason="up")
+        except YamatoError as e:
+            failed.append(s)
+            out(f"  席 {s}: 起動に失敗 ({e})")
+            continue
         out(f"  席 {s}: {label[what]}" + (f" (session {rec.get('sessionId')})" if what != "spawned" else ""))
+    if failed:
+        raise YamatoError(f"起動できなかった席があります: {', '.join(failed)} (ほかの席は起動した)")
     return 0
 
 

@@ -363,7 +363,7 @@ board に入れないもの: 「なぜそうしたか」は decisions (P1)、「
 ### 6.6 memory
 
 - **候補**: 席の `memory-inbox.md` に溜める (§0 I5)。起動時には読まない
-- **memory 本体**: 起動時に注入する。長さの上限は `inject.limits.memory`。置き場は、P0 の実装では `seats/<seat>/memory.md`。design-p1 は、役割の知見として `roles/<role>/memory.md` (同じ役割の席で共有) に置く形にしている。P1 の棚卸しの実装で揃える (§15)
+- **memory 本体**: 起動時に注入する。長さの上限は `memory.limits` (`memory_lines` / `memory_chars`)。置き場は、P0 の実装では `seats/<seat>/memory.md`。design-p1 は、役割の知見として `roles/<role>/memory.md` (同じ役割の席で共有) に置く形にしている。P1 の棚卸しの実装で揃える (§15)
 - **棚卸し** (P1、design-p1 §3): 案を書くのは各役割の headless シフト (`memory.proposed.md`)、反映は `yamato memory apply`。**反映する役は設定 `memory.applier` (既定は hub = captain) と役割プロンプトで表し、コードは呼び出し元を検査しない**。コードが強制するのは、上限を超える案の反映を拒否することだけ (安全網。数値は `memory.limits`)。棚卸しの頻度も設定 (`curate_every` / `curate_at`)
 - 自動で溜めて、次のプロンプトに自動で入れることはしない (腐るため)
 - **自前で置く (2026-09-25 合意)**。Claude Code ネイティブの `memory: project` は使わない。理由: 保存先が作業対象の repo 側になる / 同じ repo で複数チームを動かすと同名の役割で混ざる / エージェントがいつでも書けてしまい、棚卸しで書く方針とぶつかる。注入は handoff と同じ SessionStart hook に 1 ファイル足すだけで済む

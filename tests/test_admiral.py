@@ -87,6 +87,50 @@ class AdmiralTest(ShipTestCase):
         self.assertEqual(wake.call_args.args[2], "researcher")
         self.assertIn("席 researcher: headless のシフトを起動した", out)
 
+    def test_up_seats_wakes_the_rest_when_one_seat_fails(self):
+        ty = self.shipdir / "team.yaml"
+        ty.write_text(ty.read_text().replace("    count: 1 ", "    count: 3 ", 1))
+        real = seat.wake
+
+        def wake(shipdir, team, s, reason="send"):
+            if s == "impl-1":
+                raise YamatoError("席 impl-1 の起動に失敗しました")
+            return real(shipdir, team, s, reason)
+
+        with mock.patch.object(seat, "wake", side_effect=wake):
+            rc, out = self.cli("up", str(self.shipdir), "--for", "1h", "--seats", "impl-1,impl-2,impl-3")
+        self.assertEqual(rc, 1)
+        self.assertEqual(self.bg_names(), ["t1.pm", "t1.impl-2", "t1.impl-3"])
+        self.assertIn("席 impl-1: 起動に失敗", out)
+        self.assertIn("席 impl-3: 新しいシフトを起動した", out)
+        self.assertEqual(deadline.phase(deadline.read(self.shipdir)), deadline.RUNNING)   # the ship is up
+
+    def short_launch_check(self):
+        for name, value in (("LAUNCH_SETTLE", 0), ("LAUNCH_CHECK_TIMEOUT", 0.05), ("LAUNCH_CHECK_POLL", 0.01)):
+            p = mock.patch.object(claude, name, value)
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_up_whose_captain_did_not_come_up_leaves_no_deadline(self):
+        self.short_launch_check()
+        self.set_fake_mode(session={"pid": None, "state": "failed"})
+        rc, _ = self.cli("up", str(self.shipdir), "--for", "1h")
+        self.assertEqual(rc, 1)
+        self.assertIsNone(deadline.read(self.shipdir))   # no deadline left without its watchdog
+        self.assertEqual(self.watchdogs, [])
+        self.assertIn("停止中", admiral.ship_line("t1", self.shipdir, claude.by_session(claude.agents()), time.time()))
+
+    def test_up_whose_captain_did_not_come_up_keeps_a_live_seats_deadline_watched(self):
+        self.short_launch_check()
+        self.cli("up", str(self.shipdir), "--for", "1h", "--seats", "impl")
+        self.stop_session("pm")
+        self.set_fake_mode(session={"pid": None, "state": "failed"})
+        rc, _ = self.cli("up", str(self.shipdir), "--for", "1h")
+        self.assertEqual(rc, 1)
+        self.assertTrue(self.alive("impl"))
+        dl = deadline.read(self.shipdir)
+        self.assertEqual(self.watchdogs[-1], dl["token"])   # impl stays under a watched limit
+
     def test_up_without_seats_starts_only_the_captain(self):
         self.cli("up", str(self.shipdir))
         self.assertEqual(self.bg_names(), ["t1.pm"])

@@ -273,6 +273,24 @@ class SeatTest(_SeatBase):
         rec = roster.seat(self.shipdir, "pm")
         self.assertEqual((rec["shiftNo"], rec["launchFailed"]["how"]), (1, "resume"))
 
+    def test_a_resume_is_not_judged_by_the_previous_shifts_failed_record(self):
+        # the listing keeps the last shift's ``state: failed`` (no pid) until the resumed
+        # worker gets its pid: that must not count as this resume failing
+        self.short_launch_check()
+        for name, value in (("LAUNCH_SETTLE", 0), ("LAUNCH_CHECK_TIMEOUT", 1.0)):
+            p = mock.patch.object(seat.claude, name, value)
+            p.start()
+            self.addCleanup(p.stop)
+        self.up()
+        st = self.fake()
+        st["sessions"][0].update(pid=None, state="failed", detail="API error")
+        st["mode"] = {"resume_lag": 3, "session": {"state": "working", "detail": None}}
+        self.fake_state.write_text(json.dumps(st))
+        self.run_cmd(seat.send, self.shipdir, "pm", "x", "impl")
+        rec = roster.seat(self.shipdir, "pm")
+        self.assertEqual((rec["shiftNo"], rec["how"], rec.get("launchFailed")), (2, "resume", None))
+        self.assertEqual(events.read(self.shipdir, kinds=events.LAUNCH_FAILED), [])
+
     def test_send_to_per_task_starts_a_new_shift_every_time(self):
         self.up()
         self.run_cmd(seat.send, self.shipdir, "impl", "T-001", "pm")

@@ -42,6 +42,7 @@ MEMORY_APPLY = "memory_apply"
 
 SCOPES = ("role", "ship")
 LIMIT_KEYS = ("memory_lines", "memory_chars", "knowledge_lines", "knowledge_chars")
+RENAMED_LIMITS = {"memory_bytes": "memory_chars", "knowledge_bytes": "knowledge_chars"}   # before #26
 # only what a ship without a `memory:` section gets; the template spells them out. The limits
 # are also where the SessionStart injection cuts, in characters as Claude Code counts them:
 # both fit the 10,000 characters of the knowledge hook (verify-p0-c Q1)
@@ -89,6 +90,10 @@ def validate_conf(raw, roles: dict) -> dict:
     if every <= 0 or dur <= 0:
         raise YamatoError("team.yaml: memory.curate_every と memory.max_duration は 0 より長くする")
     limits = raw.get("limits") or {}
+    renamed = [k for k in RENAMED_LIMITS if k in limits] if isinstance(limits, dict) else []
+    if renamed:
+        raise YamatoError("team.yaml: memory.limits の " + " / ".join(f"{k} は {RENAMED_LIMITS[k]}" for k in renamed)
+                          + " に改名した (単位もバイトから文字数に変わった。注入を Claude Code の文字数で切るため)")
     if not isinstance(limits, dict) or set(limits) - set(LIMIT_KEYS) or \
             not all(isinstance(v, int) and not isinstance(v, bool) and v > 0 for v in limits.values()):
         raise YamatoError(f"team.yaml: memory.limits は {', '.join(LIMIT_KEYS)} を正の整数で")
