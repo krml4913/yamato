@@ -7,6 +7,7 @@ import os
 import sys
 from pathlib import Path
 
+from . import banner
 from .util import YamatoError, resolve_ship
 from .view import cli as view_cli
 
@@ -22,11 +23,13 @@ def _parser() -> argparse.ArgumentParser:
     c.add_argument("--workspace", help="席の作業ディレクトリ (作業対象の repo)。repo の無いひな形 (research) では省く")
     c.add_argument("--path", help="艦フォルダの場所 (既定 ~/yamato/<name>)")
     c.add_argument("--template", default="dev", help="dev (開発艦) / research (調査艦)")
+    banner.add_quiet(c)
 
     u = sub.add_parser("up", help="captain の席を起動し、稼働時間の上限を設定する")
     u.add_argument("ship")
     u.add_argument("--for", dest="for_", help="稼働時間 (例 3h, 20m)。既定は team.yaml の time_limit")
     u.add_argument("--seats", help="captain と一緒に起こす席 (カンマ区切り。例 impl,review)")
+    banner.add_quiet(u)
 
     d = sub.add_parser("down", help="終業 (--force で即時に強制停止)")
     d.add_argument("ship")
@@ -232,6 +235,7 @@ def main(argv: list[str] | None = None) -> int:
             from . import ship
 
             path, warnings = ship.create(args.name, args.workspace, args.path, args.template)
+            banner.show("create", path, template=args.template, quiet=args.quiet)
             print(f"艦 {args.name} を作った: {path}")
             for w in warnings:
                 print(f"注意: {w}")
@@ -273,7 +277,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd == "up":
             from . import admiral
 
-            return admiral.up(resolve_ship(args.ship), args.for_, args.seats)
+            shipdir = resolve_ship(args.ship)
+            banner.show("up", shipdir, span=args.for_, quiet=args.quiet)
+            return admiral.up(shipdir, args.for_, args.seats)
         if args.cmd == "down":
             return seat.down(resolve_ship(args.ship), args.force)
         if args.cmd == "send":
