@@ -18,9 +18,9 @@ from pathlib import Path
 
 from .util import YamatoError
 
-# Variables a seat must not inherit from whoever runs `yamato` (verify-p0-b Q3;
-# the CLAUDE_CODE_* ones belong to the calling session, not to the new seat).
-STRIP_ENV = ("GH_TOKEN", "GITHUB_TOKEN", "CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_ENTRYPOINT")
+# The caller's session identity must not leak into a new seat (technical, not
+# policy). What else to drop (GH_TOKEN, ...) is team.yaml `env_unset`.
+CALLER_ENV = ("CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_ENTRYPOINT")
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 _BG_RE = re.compile(r"backgrounded\s+·\s+([0-9a-f]{8})\b")
@@ -46,9 +46,9 @@ def _output(cp) -> str:
     return _ANSI_RE.sub("", (cp.stdout or "") + (cp.stderr or ""))
 
 
-def seat_env() -> dict:
+def seat_env(unset: list[str] | tuple = ()) -> dict:
     env = dict(os.environ)
-    for k in STRIP_ENV:
+    for k in (*CALLER_ENV, *unset):
         env.pop(k, None)
     return env
 
@@ -132,7 +132,7 @@ def is_trusted(workspace: Path) -> bool:
 # --- lifecycle -------------------------------------------------------------
 
 def launch(*, cwd: str, name: str, role: str, agents_json: str, model: str,
-           settings: str, add_dir: str, prompt: str) -> tuple[str, str]:
+           settings: str, add_dir: str, prompt: str, env_unset=()) -> tuple[str, str]:
     """Start a new background session; returns (short id, full sessionId)."""
     args = [
         "--bg", "--name", name,
@@ -144,7 +144,7 @@ def launch(*, cwd: str, name: str, role: str, agents_json: str, model: str,
         "--", prompt,
     ]
     started = time.time()
-    cp = _run(args, cwd=cwd, env=seat_env())
+    cp = _run(args, cwd=cwd, env=seat_env(env_unset))
     out = _output(cp)
     if "Workspace not trusted" in out:
         raise YamatoError(untrusted_message(Path(cwd)))
@@ -166,9 +166,9 @@ def launch(*, cwd: str, name: str, role: str, agents_json: str, model: str,
     raise YamatoError(f"起動した席 {short} が claude agents に見つかりません")
 
 
-def resume(session_id: str, prompt: str) -> str:
+def resume(session_id: str, prompt: str, env_unset=()) -> str:
     """Wake a stopped session under its own id. Raises if Claude started a copy."""
-    cp = _run(["--resume", session_id, "--bg", "--", prompt], env=seat_env())
+    cp = _run(["--resume", session_id, "--bg", "--", prompt], env=seat_env(env_unset))
     out = _output(cp)
     copy = _COPY_RE.search(out)
     if copy:

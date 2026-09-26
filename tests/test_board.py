@@ -70,6 +70,21 @@ class BoardTest(unittest.TestCase):
         self.assertTrue((self.ship / "board/items/T-001.md").exists())
         self.assertFalse((self.ship / "board/archive/T-001.md").exists())
 
+    def test_archive_on_done_false_keeps_items_until_archived(self):
+        team = dict(TEAM, board=dict(TEAM["board"], archive_on_done=False))
+        b = Board(self.ship, team)
+        b.add("one")
+        b.add("two")
+        b.set("T-001", {"state": "done"})
+        self.assertTrue((self.ship / "board/items/T-001.md").exists())
+        self.assertEqual(b.archive(), ["T-001"])
+        self.assertTrue((self.ship / "board/archive/T-001.md").exists())
+        with self.assertRaises(YamatoError):
+            b.archive("T-002")  # not done
+
+    def test_owner_can_be_assigned(self):
+        self.b.add("decide", {"assignee": "owner"})
+
     def test_mine(self):
         self.b.add("a", {"assignee": "impl-1"})
         self.b.add("b", {"assignee": "impl-2"})

@@ -29,6 +29,23 @@ class InjectTest(ShipTestCase):
             self.assertIn(s, text)
         self.assertEqual(cur, 1)
 
+    def test_parts_follow_team_yaml(self):
+        (self.sdir / "handoff.md").write_text("HANDOFF-X")
+        (self.shipdir / "knowledge.md").write_text("KNOW-X")
+        self.t["roles"]["impl"]["inject"] = ["knowledge"]
+        text, _ = self.build()
+        self.assertIn("KNOW-X", text)
+        self.assertNotIn("HANDOFF-X", text)
+        self.assertNotIn("未読の inbox", text)
+        self.assertIn("あなたの席: impl", text)  # the header is always there
+
+    def test_limits_from_team_yaml(self):
+        (self.sdir / "handoff.md").write_text("\n".join(f"line{i}" for i in range(100)))
+        self.t["inject"]["limits"]["handoff"] = [3, 1000]
+        text, _ = self.build()
+        self.assertIn("line2", text)
+        self.assertNotIn("line3", text)
+
     def test_handoff_capped_by_lines(self):
         (self.sdir / "handoff.md").write_text("\n".join(f"line{i}" for i in range(100)))
         text, _ = self.build(handoff=(40, 10000))

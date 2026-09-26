@@ -131,7 +131,7 @@ class Board:
         if key == "assignee":
             if value in (None, "", "-"):
                 return None
-            if value not in self.team["seats"]:
+            if value not in self.team["seats"] and value != "owner":
                 raise YamatoError(f"assignee は席の名前 ({', '.join(self.team['seats'])}) (今: {value})")
             return value
         if key == "parent":
@@ -208,10 +208,26 @@ class Board:
             return meta
 
     def _write(self, meta: dict, body: str) -> Path:
-        d = self.archive_dir if meta.get("state") == "done" else self.items_dir
+        archive = self.team.get("board", {}).get("archive_on_done", True)
+        d = self.archive_dir if meta.get("state") == "done" and archive else self.items_dir
         p = d / f"{meta['id']}.md"
         atomic_write(p, dumps(meta, body))
         return p
+
+    def archive(self, item_id: str | None = None) -> list[str]:
+        """Move done items (all, or one) to archive/ (for ships with archive_on_done: false)."""
+        moved = []
+        with ship_lock(self.shipdir):
+            for p in self._all_paths(False):
+                meta, body = loads(p.read_text(encoding="utf-8"))
+                if (item_id and meta["id"] != item_id) or meta.get("state") != "done":
+                    continue
+                atomic_write(self.archive_dir / p.name, dumps(meta, body))
+                p.unlink()
+                moved.append(meta["id"])
+        if item_id and not moved:
+            raise YamatoError(f"{item_id} は done の項目として board/items にありません")
+        return moved
 
     def mine(self, seat: str) -> list[dict]:
         return [m for m in self.items() if m.get("assignee") == seat and m.get("state") != "done"]

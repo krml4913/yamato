@@ -94,8 +94,25 @@ def build_settings(shipdir: Path, team: dict, seat: str) -> dict:
             "PermissionDenied": [{"hooks": [hook("log-denied")]}],
         },
     }
+    if needs_no_isolation(shipdir, team):
+        mech["worktree"] = {"bgIsolation": "none"}
     # team.yaml `settings:` goes underneath; yamato's own keys win
     return _merge(team.get("settings") or {}, mech)
+
+
+def needs_no_isolation(shipdir: Path, team: dict) -> bool:
+    """No repo, or the ship folder inside the workspace repo: an automatic worktree
+    would strand the records (verify-p0-b Q4 b/c). A fact, not a policy (audit D9)."""
+    from .claude import git_root
+
+    root = git_root(Path(team["workspace"]))
+    if root is None:
+        return True
+    try:
+        Path(shipdir).resolve().relative_to(root)
+        return True
+    except ValueError:
+        return False
 
 def generate(shipdir: Path, team: dict) -> None:
     rd = runtime_dir(shipdir)

@@ -34,7 +34,7 @@ def _parser() -> argparse.ArgumentParser:
 
     se = sub.add_parser("send", help="席にメッセージを送る (inbox に記録し、止まっていれば起こす)")
     se.add_argument("ship")
-    se.add_argument("seat")
+    se.add_argument("seat", help="席の名前、または owner (人間の受信箱 + notify)")
     se.add_argument("message")
     se.add_argument("--from", dest="sender", default="owner", help="送り手の席名 (既定 owner)")
 
@@ -70,6 +70,9 @@ def _parser() -> argparse.ArgumentParser:
     bl.add_argument("--all", action="store_true", help="archive も含める")
     bl.add_argument("--state")
     bl.add_argument("--assignee")
+    bar = bs.add_parser("archive", help="done の項目を archive へ移す (archive_on_done: false の艦向け)")
+    bar.add_argument("ship")
+    bar.add_argument("id", nargs="?")
     bm = bs.add_parser("mine", help="席の担当 (done 以外)")
     bm.add_argument("ship")
     bm.add_argument("seat")
@@ -135,6 +138,9 @@ def _board(args) -> int:
         if args.assignee:
             items = [m for m in items if m.get("assignee") == args.assignee]
         print("\n".join(bmod.format_item(m) for m in items) if items else "(項目なし)")
+    elif args.board_cmd == "archive":
+        moved = brd.archive(args.id)
+        print(f"archive へ移した: {', '.join(moved) if moved else '(なし)'}")
     elif args.board_cmd == "mine":
         items = brd.mine(args.seat)
         print("\n".join(bmod.format_item(m) for m in items) if items else "(担当なし)")
@@ -147,7 +153,8 @@ def _inbox(args) -> int:
     from .team import seat_spec
 
     shipdir = resolve_ship(args.ship)
-    seat_spec(current_team(shipdir), args.seat)
+    if args.seat != inbox.OWNER:
+        seat_spec(current_team(shipdir), args.seat)
     if args.all:
         items = inbox.entries(shipdir, args.seat)
     else:
@@ -191,8 +198,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd == "ship":
             from . import ship
 
-            path = ship.create(args.name, args.workspace, args.path, args.template)
+            path, warnings = ship.create(args.name, args.workspace, args.path, args.template)
             print(f"艦 {args.name} を作った: {path}")
+            for w in warnings:
+                print(f"注意: {w}")
             print(f"  次: team.yaml と charter.md を確認し、`yamato up {args.name}` で起動する")
             return 0
         if args.cmd == "board":

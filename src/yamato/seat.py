@@ -16,12 +16,13 @@ import time
 import uuid
 from pathlib import Path
 
-from . import claude, deadline, inbox, roster, runtime, usage
+from . import claude, deadline, inbox, notify, roster, runtime, usage
 from .team import load_team, seat_spec
 from .util import (YAMATO_BIN, YamatoError, append_log, fmt_span, fmt_time, read_json,
                    ship_lock, write_json)
 
 SEAT_FILES = ("memory.md", "memory-inbox.md")
+OWNER = inbox.OWNER
 WATCHDOG_POLL = 30
 HANDOFF_MAX_LINES = 40
 
@@ -104,7 +105,13 @@ def _first_prompt(shipdir: Path, seat: str) -> str:
             f"役割どおりに仕事を進めてください。未読の続きは `{YAMATO_BIN} inbox {shipdir} {seat}` で読めます。")
 
 
-def _resume_prompt(shipdir: Path, seat: str) -> str:
+def _resume_prompt(shipdir: Path, seat: str, reason: str = "send") -> str:
+    if reason == "up":
+        # E2E run 6: resumed with the "new message" prompt, the captain kept its old
+        # conclusion ("no time left") and stopped again at once. Say what changed.
+        return (f"[yamato] 艦が起動された ({deadline.describe(deadline.read(shipdir))})。"
+                f"前のシフトの時間の判断は忘れ、SessionStart で注入された引き継ぎ・担当・未読 inbox を確認して、"
+                f"引き継ぎの「次にやること」から仕事を再開してください。")
     return (f"[yamato] inbox に新しいメッセージがあります。`{YAMATO_BIN} inbox {shipdir} {seat}` で読んで対応してください。")
 
 
@@ -120,7 +127,7 @@ def start_new_shift(shipdir: Path, team: dict, seat: str) -> dict:
         cwd=str(workspace), name=name, role=spec["role"],
         agents_json=runtime.agents_path(shipdir).read_text(encoding="utf-8"),
         model=spec["model"], settings=str(runtime.settings_path(shipdir, seat)),
-        add_dir=str(shipdir), prompt=_first_prompt(shipdir, seat),
+        add_dir=str(shipdir), prompt=_first_prompt(shipdir, seat), env_unset=team.get("env_unset") or (),
     )
     rec = roster.start_shift(shipdir, seat, session_id=full, short_id=short, session_name=name, how="new")
     clear_pending(shipdir, seat)
@@ -128,12 +135,12 @@ def start_new_shift(shipdir: Path, team: dict, seat: str) -> dict:
     return rec
 
 
-def resume_shift(shipdir: Path, team: dict, seat: str, rec: dict) -> dict:
+def resume_shift(shipdir: Path, team: dict, seat: str, rec: dict, reason: str = "send") -> dict:
     sid = rec["sessionId"]
     # resume right after stop starts a flagless copy: wait for the pid to vanish (verify-p0-b Q2)
     if not claude.wait_gone(sid, timeout=30):
         raise YamatoError(f"席 {seat} の前のプロセスがまだ残っているので resume できません ({sid})")
-    claude.resume(sid, _resume_prompt(shipdir, seat))
+    claude.resume(sid, _resume_prompt(shipdir, seat, reason), env_unset=team.get("env_unset") or ())
     new = roster.start_shift(shipdir, seat, session_id=sid, short_id=rec.get("shortId") or sid[:8],
                              session_name=session_name(team, seat), how="resume")
     clear_pending(shipdir, seat)
@@ -141,7 +148,7 @@ def resume_shift(shipdir: Path, team: dict, seat: str, rec: dict) -> dict:
     return new
 
 
-def wake(shipdir: Path, team: dict, seat: str, listing: list[dict]) -> tuple[str, dict]:
+def wake(shipdir: Path, team: dict, seat: str, listing: list[dict], reason: str = "send") -> tuple[str, dict]:
     """Bring a seat on shift. Returns (what happened, roster record)."""
     rec = roster.seat(shipdir, seat)
     live = claude.by_session(listing).get(rec.get("sessionId"))
@@ -157,7 +164,7 @@ def wake(shipdir: Path, team: dict, seat: str, listing: list[dict]) -> tuple[str
         return "alive", rec
     spec = seat_spec(team, seat)
     if spec["shift"] == "persistent" and rec.get("sessionId"):
-        return "resumed", resume_shift(shipdir, team, seat, rec)
+        return "resumed", resume_shift(shipdir, team, seat, rec, reason)
     return "started", start_new_shift(shipdir, team, seat)
 
 
@@ -234,6 +241,8 @@ def up(shipdir: Path, for_: str | None) -> int:
     from .util import parse_duration
 
     team = prepare(shipdir)
+    for w in team.get("warnings") or []:
+        out(f"注意: {w}")
     workspace = Path(team["workspace"])
     if not workspace.is_dir():
         raise YamatoError(f"workspace がありません: {workspace}")
@@ -245,7 +254,7 @@ def up(shipdir: Path, for_: str | None) -> int:
     token = uuid.uuid4().hex[:12]
     dl = deadline.write(shipdir, limit=limit, grace=team["grace"], token=token)
     hub = team["hub"]
-    what, rec = wake(shipdir, team, hub, listing)
+    what, rec = wake(shipdir, team, hub, listing, reason="up")
     spawn_watchdog(shipdir, token)
     out(f"艦 {team['name']} を起動: deadline {fmt_time(dl['deadline'])} (稼働 {fmt_span(limit)}, 猶予 {fmt_span(team['grace'])})")
     label = {"alive": "すでに動いている", "resumed": "resume した", "started": "新しいシフトを起動した"}[what]
@@ -255,9 +264,15 @@ def up(shipdir: Path, for_: str | None) -> int:
 
 def send(shipdir: Path, seat: str, text: str, sender: str) -> int:
     team = current_team(shipdir)
-    seat_spec(team, seat)
     if not text.strip():
         raise YamatoError("本文が空です")
+    if seat == OWNER:
+        entry = inbox.append(shipdir, OWNER, sender, text)
+        out(f"owner の inbox に記録した: #{entry['n']} (`{YAMATO_BIN} inbox {shipdir} owner` で読む)")
+        for line in notify.notify(team, f"yamato {team['name']}: {sender} から", text):
+            out(line)
+        return 0
+    seat_spec(team, seat)
     entry = inbox.append(shipdir, seat, sender, text)
     out(f"inbox に記録した: {seat} #{entry['n']}")
     y = YAMATO_BIN

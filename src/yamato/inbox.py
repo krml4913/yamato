@@ -8,8 +8,11 @@ from pathlib import Path
 from .util import atomic_write, ship_lock
 
 
+OWNER = "owner"   # the human: its inbox lives at <ship>/owner/, not under seats/
+
+
 def seat_dir(shipdir: Path, seat: str) -> Path:
-    return Path(shipdir) / "seats" / seat
+    return Path(shipdir) / (OWNER if seat == OWNER else f"seats/{seat}")
 
 
 def _inbox(shipdir: Path, seat: str) -> Path:

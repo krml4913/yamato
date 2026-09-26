@@ -37,7 +37,7 @@ class ShipTestCase(unittest.TestCase):
 
         from yamato import ship
 
-        self.shipdir = ship.create("t1", str(self.workspace), None, "dev")
+        self.shipdir, self.create_warnings = ship.create("t1", str(self.workspace), None, "dev")
         if self.team_yaml_extra:
             ty = self.shipdir / "team.yaml"
             ty.write_text(ty.read_text() + self.team_yaml_extra)

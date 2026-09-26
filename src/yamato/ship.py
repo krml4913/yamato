@@ -9,7 +9,7 @@ from .util import YamatoError, check_name, register_ship, yamato_home
 TEMPLATES = Path(__file__).resolve().parent / "templates"
 
 
-def create(name: str, workspace: str, path: str | None, template: str) -> Path:
+def create(name: str, workspace: str, path: str | None, template: str) -> tuple[Path, list[str]]:
     check_name("艦", name)
     tdir = TEMPLATES / template
     if not tdir.is_dir():
@@ -35,4 +35,9 @@ def create(name: str, workspace: str, path: str | None, template: str) -> Path:
 
     ensure_seat_dirs(shipdir, team)
     register_ship(name, shipdir)
-    return shipdir
+    warnings = list(team.get("warnings") or [])
+    from .claude import is_trusted, untrusted_message
+
+    if not is_trusted(ws):
+        warnings.append(untrusted_message(ws))
+    return shipdir, warnings

@@ -30,6 +30,9 @@ class RuntimeTest(ShipTestCase):
         self.assertTrue(set(s["hooks"]) >= {"SessionStart", "Stop", "PermissionRequest", "PermissionDenied"})
 
     def test_policy_is_whatever_team_yaml_says(self):
+        import subprocess
+
+        subprocess.run(["git", "init", "-q", str(self.workspace)], check=True)
         team = self.team()
         team["deny"] = []
         team["settings"] = {"worktree": {"bgIsolation": "auto"}, "language": "English",
@@ -44,6 +47,17 @@ class RuntimeTest(ShipTestCase):
         self.assertEqual(s["permissions"]["defaultMode"], "auto")
         self.assertEqual(s["crossSessionInbound"], "accept")
         self.assertIn("SessionStart", s["hooks"])
+
+    def test_no_repo_or_ship_inside_repo_forces_no_isolation(self):
+        import subprocess
+
+        team = self.team()
+        team["settings"] = {"worktree": {"bgIsolation": "auto"}}
+        # workspace is not a git repo
+        self.assertEqual(runtime.build_settings(self.shipdir, team, "impl")["worktree"], {"bgIsolation": "none"})
+        # ship folder inside the workspace repo
+        subprocess.run(["git", "init", "-q", str(self.tmp)], check=True)
+        self.assertEqual(runtime.build_settings(self.shipdir, team, "impl")["worktree"], {"bgIsolation": "none"})
 
     def test_agents_json_renders_placeholders(self):
         team = self.team()

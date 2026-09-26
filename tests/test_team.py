@@ -46,7 +46,6 @@ class TeamTest(unittest.TestCase):
         cases = [
             base(hub="nope"),
             base(extra=1),
-            base(roles={"pm": {"model": "haiku", "shift": "persistent"}}),
             base(roles={"pm": {"shift": "sometimes"}}),
             base(roles={"pm": {"count": 0}}),
             base(roles={"pm": {"count": 2}}),          # hub must be a single seat
@@ -61,6 +60,27 @@ class TeamTest(unittest.TestCase):
         for data in cases:
             with self.subTest(data=data), self.assertRaises(YamatoError):
                 validate(data, Path("/ship"))
+
+    def test_haiku_is_a_warning_not_an_error(self):
+        t = validate(base(roles={"pm": {"model": "haiku", "shift": "persistent"}}), Path("/ship"))
+        self.assertEqual(len(t["warnings"]), 1)
+        self.assertIn("auto", t["warnings"][0])
+
+    def test_owner_is_reserved(self):
+        with self.assertRaises(YamatoError):
+            validate(base(hub="owner", roles={"owner": {}}), Path("/ship"))
+
+    def test_inject_settings(self):
+        from yamato.team import inject_parts
+
+        t = validate(base(inject={"parts": ["handoff", "inbox"], "limits": {"handoff": [10, 500], "mine_items": 3}},
+                          roles={"pm": {"shift": "persistent", "inject": ["inbox"]}, "impl": {}}), Path("/ship"))
+        self.assertEqual(inject_parts(t, "pm"), ["inbox"])
+        self.assertEqual(inject_parts(t, "impl"), ["handoff", "inbox"])
+        self.assertEqual(t["inject"]["limits"], {"handoff": (10, 500), "mine_items": 3})
+        for bad in ({"parts": ["nope"]}, {"limits": {"x": 1}}, {"limits": {"handoff": "big"}}, {"other": 1}):
+            with self.subTest(bad=bad), self.assertRaises(YamatoError):
+                validate(base(inject=bad), Path("/ship"))
 
     def test_duplicate_seat_names(self):
         with self.assertRaises(YamatoError):

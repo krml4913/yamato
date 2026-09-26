@@ -78,6 +78,40 @@ class SeatTest(ShipTestCase):
         rec = roster.seat(self.shipdir, "pm")
         self.assertEqual(rec["sessionId"], self.fake()["sessions"][0]["sessionId"])
 
+    def test_env_unset_comes_from_team_yaml(self):
+        os.environ["GH_TOKEN"] = "secret"
+        self.addCleanup(os.environ.pop, "GH_TOKEN", None)
+        ty = self.shipdir / "team.yaml"
+        ty.write_text(ty.read_text().replace("env_unset: [GH_TOKEN, GITHUB_TOKEN]", "env_unset: []"))
+        os.environ["CLAUDE_CODE_SESSION_ID"] = "caller"
+        self.addCleanup(os.environ.pop, "CLAUDE_CODE_SESSION_ID", None)
+        self.up()
+        [call] = self.bg_calls()
+        self.assertEqual(call["GH_TOKEN"], "secret")
+        self.assertIsNone(call["CLAUDE_CODE_SESSION_ID"])  # the caller's identity never leaks
+
+    def test_up_resumes_a_stopped_hub_with_an_up_prompt(self):
+        self.up()
+        self.stop_session("pm")
+        out = self.up()
+        [call] = self.resume_calls()
+        self.assertIn("艦が起動された", call["argv"][-1])
+        self.assertIn("resume した", out)
+
+    def test_send_to_owner_records_and_notifies(self):
+        marker = self.tmp / "notified"
+        ty = self.shipdir / "team.yaml"
+        ty.write_text(ty.read_text().replace("  via: []", f'  via: [command, slack]\n  command: "echo $YAMATO_MESSAGE > {marker}"'))
+        self.up()
+        out = self.run_cmd(seat.send, self.shipdir, "owner", "判断ください", "pm")
+        self.assertIn("owner の inbox に記録した", out)
+        self.assertIn("通知 command: exit 0", out)
+        self.assertIn("通知 slack: P1", out)
+        self.assertEqual(marker.read_text().strip(), "判断ください")
+        from yamato import inbox
+        self.assertEqual(inbox.unread(self.shipdir, "owner")[0]["from"], "pm")
+        self.assertTrue((self.shipdir / "owner" / "inbox.jsonl").is_file())
+
     def test_up_twice_does_not_start_a_second_hub(self):
         self.up()
         out = self.up()
