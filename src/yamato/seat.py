@@ -145,6 +145,14 @@ def wake(shipdir: Path, team: dict, seat: str, listing: list[dict]) -> tuple[str
     """Bring a seat on shift. Returns (what happened, roster record)."""
     rec = roster.seat(shipdir, seat)
     live = claude.by_session(listing).get(rec.get("sessionId"))
+    if claude.is_alive(live) and rec.get("state") == roster.STOPPING:
+        # E2E run 3: a message SendMessage'd into the delayed-stop window is lost
+        # when the stop lands. Wait for the stop, then wake a fresh shift.
+        if not claude.wait_gone(rec["sessionId"], timeout=60):
+            raise YamatoError(f"席 {seat} は終業処理中ですが、止まるのを待てませんでした ({rec['sessionId']})")
+        finish_shift(shipdir, seat, reason="seat-stop")
+        rec = roster.seat(shipdir, seat)
+        live = None
     if claude.is_alive(live):
         return "alive", rec
     spec = seat_spec(team, seat)

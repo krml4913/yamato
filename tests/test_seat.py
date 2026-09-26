@@ -261,6 +261,27 @@ class SeatTest(ShipTestCase):
         self.run_cmd(seat.send, self.shipdir, "impl", "T-002", "pm")
         self.assertEqual(seat.unresolved_pending(self.shipdir, "impl"), [])
 
+    def test_send_to_a_seat_in_its_stop_delay_waits_and_starts_a_new_shift(self):
+        self.up()
+        self.run_cmd(seat.send, self.shipdir, "impl", "T-001", "pm")
+        first = roster.seat(self.shipdir, "impl")["sessionId"]
+        roster.mark_stopping(self.shipdir, "impl", handoff_written=True)
+        waited = []
+
+        def fake_wait(sid, timeout=30):
+            waited.append(sid)
+            self.stop_session("impl")  # the delayed stop lands
+            return True
+
+        with mock.patch("yamato.claude.wait_gone", side_effect=fake_wait):
+            out = self.run_cmd(seat.send, self.shipdir, "impl", "差し戻し", "pm")
+        self.assertEqual(waited[0], first)
+        rec = roster.seat(self.shipdir, "impl")
+        self.assertNotEqual(rec["sessionId"], first)
+        self.assertEqual(rec["shiftNo"], 2)
+        self.assertIn("新しいシフトを起動した", out)
+        self.assertNotIn("SendMessage ツールで", out)
+
     def test_reconcile_closes_shifts_whose_process_vanished(self):
         self.up()
         self.stop_session("pm")
