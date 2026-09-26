@@ -41,22 +41,11 @@ _NEXT_SECTION_RE = re.compile(r"^## ", re.M)
 # --- who is calling ----------------------------------------------------------
 
 def caller(shipdir: Path) -> str:
-    """The seat whose session runs this command (design-p1 §0.1). Used for the record only.
-
-    Outside any Claude session it is the human at the terminal (``owner``); a
-    session roster does not know (another ship, the admiral) is ``session:<8>``.
-    """
-    sid = os.environ.get("CLAUDE_CODE_SESSION_ID")
-    if not sid:
-        return OWNER
-    data = roster.load(shipdir)
-    for name, rec in data["seats"].items():
-        if rec.get("sessionId") == sid:
-            return name
-    for sh in reversed(data["shifts"]):
-        if sh.get("sessionId") == sid:
-            return sh["seat"]
-    return f"session:{sid[:8]}"
+    """Who runs this command, for the record only: the seat whose shift is
+    ``$CLAUDE_CODE_SESSION_ID``, else the human (owner, at a terminal or in their
+    own Claude Code session, which is not in the roster). Same rule as
+    ``worktree.caller`` / ``pr``."""
+    return roster.seat_of_session(shipdir, os.environ.get("CLAUDE_CODE_SESSION_ID")) or OWNER
 
 
 # --- the table in team.yaml --------------------------------------------------
@@ -189,8 +178,12 @@ def open_decision(shipdir: Path, team: dict, *, category: str, title: str, block
         brd._write(meta, text)
         for t in tasks:
             fields = {"blocked_on": ",".join(list(t.get("blocked_on") or []) + [dec_id]), "state": "blocked"}
+            # restored when blocked_on empties (§1.2). A task already blocked by hand (no earlier
+            # decision saved a state) stays blocked when this decision closes.
             if t.get("state") != "blocked":
-                fields["pre_blocked_state"] = t.get("state")   # restored when blocked_on empties (§1.2)
+                fields["pre_blocked_state"] = t.get("state")
+            elif t.get("pre_blocked_state") is None:
+                fields["pre_blocked_state"] = "blocked"
             brd.set(t["id"], fields, note=f"{dec_id} の判断待ち: {meta['title']}", by=by)
         events.emit(shipdir, events.DECISION_OPEN, seat=decider, item=dec_id, by=by,
                     summary=f"判断を開いた ({category} → {decider}){' [急ぎ]' if urgent else ''} {meta['title']}",
@@ -333,8 +326,11 @@ def deliver_close(shipdir: Path, team: dict, result: dict, out=print) -> None:
     meta = result["meta"]
     for t in result["unblocked"]:
         to = t.get("assignee") or team["hub"]
+        still = t.get("state") == "blocked"
         text = (f"{meta['id']} が決まった ({meta['title']}): {meta.get('on_behalf_of')} の決定。"
-                f"{t['id']} の止まりが解けた (state={t.get('state')})。決定と理由は "
+                + (f"{t['id']} は判断の前から blocked だったので blocked のまま。" if still
+                   else f"{t['id']} の止まりが解けた (state={t.get('state')})。")
+                + "決定と理由は "
                 f"`{YAMATO_BIN} board show {shipdir} {meta['id']}` で読める")
         if to == meta["closed_by"]:
             out(f"{t['id']} の担当 ({to}) は閉じた本人なので送らない。")
@@ -449,7 +445,8 @@ def main(args: argparse.Namespace) -> int:
         if not result["by_decider"]:
             print(f"注意: decider ({meta['decider']}) 以外が閉じた。events に記録した")
         for t in result["unblocked"]:
-            print(f"止まりが解けた: {bmod.format_item(t)}")
+            head = "判断の前から blocked (そのまま)" if t.get("state") == "blocked" else "止まりが解けた"
+            print(f"{head}: {bmod.format_item(t)}")
         deliver_close(shipdir, team, result)
     elif args.decide_cmd == "list":
         brd = bmod.Board(shipdir, team)

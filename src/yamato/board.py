@@ -235,7 +235,8 @@ class Board:
         """Move done items (all, or one) to archive/ (for ships with archive_on_done: false)."""
         moved = []
         with ship_lock(self.shipdir):
-            for p in self._all_paths(False):
+            closed_decisions = sorted(self.items_dir.glob("D-*.md")) if self.items_dir.is_dir() else []
+            for p in self._all_paths(False) + closed_decisions:
                 meta, body = loads(p.read_text(encoding="utf-8"))
                 if (item_id and meta["id"] != item_id) or meta.get("state") != "done":
                     continue

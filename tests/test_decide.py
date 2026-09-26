@@ -126,7 +126,7 @@ class CallerTest(DecideTestCase):
         with self.as_seat(SID_IMPL):
             self.assertEqual(decide.caller(self.shipdir), "impl")
         with self.as_seat("x" * 36):
-            self.assertEqual(decide.caller(self.shipdir), "session:xxxxxxxx")
+            self.assertEqual(decide.caller(self.shipdir), "owner")   # the human's own Claude Code session
         roster.start_shift(self.shipdir, "impl", session_id="n" * 36, short_id="nnnnnnnn",
                            session_name="t1.impl", how="new")
         with self.as_seat(SID_IMPL):   # an earlier shift of the seat
@@ -182,6 +182,19 @@ class OpenTest(DecideTestCase):
         m, _, _ = self.brd.read(t["id"])
         self.assertEqual((m["blocked_on"], m["pre_blocked_state"]), (["D-001", "D-002"], "active"))
 
+    def test_task_blocked_by_hand_stays_blocked_after_the_close(self):
+        t = self.task(assignee="impl", state="active")
+        self.brd.set(t["id"], {"state": "blocked"}, note="外部 API 待ち", by="impl")
+        self.open(sid=SID_PM, blocks=[t["id"]])
+        m, _, _ = self.brd.read(t["id"])
+        self.assertEqual(m["pre_blocked_state"], "blocked")
+        result, _ = self.close("D-001", sid=SID_PM)
+        m, _, _ = self.brd.read(t["id"])
+        self.assertEqual((m["state"], m["blocked_on"]), ("blocked", []))
+        [msg] = [x for x in inbox.entries(self.shipdir, "impl") if "D-001 が決まった" in x["text"]]
+        self.assertIn("blocked のまま", msg["text"])
+        self.assertNotIn("止まりが解けた", msg["text"])
+
     def test_refusals_write_nothing(self):
         done = self.task(state="done")
         cases = [dict(blocks=["T-404"]), dict(blocks=[done["id"]]), dict(due="来週"), dict(title=" "),
@@ -209,6 +222,8 @@ class OpenTest(DecideTestCase):
             _, out = self.open(category="merge", title="急ぎ", urgent=True)
         n.assert_called_once()
         self.assertIn("判断待ち D-001", n.call_args[0][1])
+        self.assertEqual(n.call_args[0][3], "waiting")
+        self.assertEqual(n.call_args.kwargs["shipdir"], self.shipdir)   # failures go to events (notify_failed)
         self.assertIn("通知 mac: exit 0", out)
 
         ty = self.shipdir / "team.yaml"
@@ -259,6 +274,12 @@ class CloseTest(DecideTestCase):
         self.assertEqual((e["seat"], e["item"], e["by"]), ("pm", "D-001", "pm"))
         self.assertEqual(e["data"]["unblocked"], ["T-001", "T-002"])
         self.assertTrue(e["data"]["by_decider"])
+
+    def test_owner_in_their_own_claude_session_closes_as_the_decider(self):
+        self.open(sid=SID_PM, category="merge")        # decider owner
+        result, _ = self.close("D-001", sid="h" * 36)  # a session roster does not know
+        self.assertTrue(result["by_decider"])
+        self.assertEqual((result["meta"]["closed_by"], result["meta"]["on_behalf_of"]), ("owner", "owner"))
 
     def test_unassigned_task_goes_to_the_hub(self):
         t = self.task()
@@ -324,6 +345,17 @@ class CloseTest(DecideTestCase):
         self.assertEqual(d2["supersedes"], "D-001")
         self.close(d2["id"])
         self.assertIn("覆したもの: D-001", (self.shipdir / "decisions/log.md").read_text())
+
+    def test_board_archive_moves_closed_decisions_too(self):
+        ty = self.shipdir / "team.yaml"
+        ty.write_text(ty.read_text().replace("archive_on_done: true", "archive_on_done: false"))
+        self.open()
+        self.close("D-001")
+        self.assertTrue((self.shipdir / "board/items/D-001.md").exists())
+        brd = board.Board(self.shipdir, self.team())
+        self.assertEqual(brd.archive(), ["D-001"])
+        self.assertTrue((self.shipdir / "board/archive/D-001.md").exists())
+        self.assertFalse((self.shipdir / "board/items/D-001.md").exists())
 
     def test_board_set_on_an_open_decision(self):
         self.open()
@@ -442,3 +474,17 @@ class PrMergeRequiresTest(DecideTestCase):
         self.assertEqual(pr.unmet(self.shipdir, team, meta), [])
         with self.assertRaises(YamatoError):
             self.open(links=["T-404"])
+
+
+class DailyReportTest(DecideTestCase):
+    def test_the_daily_report_lists_open_decisions_for_the_owner(self):
+        from yamato import report
+
+        self.open(sid=SID_PM, category="merge", title="入れるか",
+                  body="## 背景\nx\n## 選択肢と推し\n- 入れる (推し)\n")
+        self.open(category="design", title="pm が決める")          # decider pm: not the owner's
+        self.open(sid=SID_PM, category="scope_change", title="閉じる")
+        self.close("D-003", sid=SID_PM, on_behalf_of="owner")
+        [line] = report.decision_lines(self.shipdir, self.team(), "2026-09-26", time.time())
+        self.assertTrue(line.startswith("- D-001 入れるか (待ち "))
+        self.assertIn("推し: 入れる (推し)", line)

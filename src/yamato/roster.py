@@ -43,12 +43,19 @@ def seat(shipdir: Path, name: str) -> dict:
 
 
 def seat_of_session(shipdir: Path, session_id: str | None) -> str | None:
-    """The seat whose current shift is ``session_id`` (who called a command; for the record only)."""
+    """The seat whose shift is ``session_id`` (who called a command; for the record only).
+
+    The current shift first, then the seat's earlier shifts (a session that
+    outlived its shift is still that seat's)."""
     if not session_id:
         return None
-    for name, rec in load(shipdir)["seats"].items():
+    data = load(shipdir)
+    for name, rec in data["seats"].items():
         if rec.get("sessionId") == session_id:
             return name
+    for sh in reversed(data["shifts"]):
+        if sh.get("sessionId") == session_id:
+            return sh["seat"]
     return None
 
 

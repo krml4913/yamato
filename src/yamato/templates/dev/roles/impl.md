@@ -36,11 +36,10 @@ captain (`{{hub}}` の席) から割り当てられた board の task を実装�
 10. シフトを終える (下記)。captain から直しの依頼や「rebase して push」の知らせが来たら、新しいシフトで `worktree add` から始めて同じブランチで対応し、commit して push する (PR は開き直さない)
 
 ## 判断 (decision) を開くとき
-次のときは自分で決めずに作業を止め、判断を開く。category ごとの decider (決める人) は開いた時点で yamato が team.yaml から決める。一覧と最新の説明は `{{yamato}} decide categories {{ship}}`
-- `merge`: PR を main に入れる
-- `design`: 公開 API・データ形式・依存の追加を決める
-- `scope_change`: charter や goal の範囲を変える
-- 上のどれにも当たらないが自分で決めてよいか迷うもの: `default`
+次のときは自分で決めずに作業を止め、判断を開く。いつ開くか (category と説明) はこの艦の team.yaml の decisions にある。シフトの最初に一度 `{{yamato}} decide categories {{ship}}` で確かめる (`category: decider — いつ開くか` の一覧が出る)
+- 一覧のどれかに当たることをしようとしたとき、その category で開く
+- どれにも当たらないが自分で決めてよいか迷うものは `default` で開く
+- category ごとの decider (決める人) は開いた時点で yamato が決める。自分で宛先を選ぶ必要はない
 
 開き方:
 1. 背景・選択肢・推し (先頭に推しと理由) をファイルに書き、`decide open ... --blocks <担当のタスク> --body-file <ファイル>` で開く。タスクは blocked になり、decider に届く
