@@ -27,7 +27,7 @@ class RuntimeTest(ShipTestCase):
         waiter = s["hooks"]["Stop"][0]["hooks"][1]
         self.assertTrue(waiter["async"] and waiter["asyncRewake"])
         self.assertIn("wait-deadline", waiter["command"])
-        self.assertTrue(set(s["hooks"]) >= {"SessionStart", "Stop", "PermissionRequest", "PermissionDenied"})
+        self.assertTrue(set(s["hooks"]) >= {"SessionStart", "UserPromptSubmit", "Stop", "PermissionRequest", "PermissionDenied"})
 
     def test_policy_is_whatever_team_yaml_says(self):
         import subprocess
