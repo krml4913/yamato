@@ -87,6 +87,13 @@ class ConfTest(_Base):
             with self.assertRaises(YamatoError, msg=bad):
                 validate(d, Path("/ship"))
 
+    def test_the_old_byte_limits_name_their_new_keys(self):
+        d = {"name": "dev", "hub": "pm", "workspace": "/tmp", "roles": {"pm": {}},
+             "memory": {"limits": {"memory_bytes": 8192, "knowledge_bytes": 12288}}}
+        with self.assertRaises(YamatoError) as cm:
+            validate(d, Path("/ship"))
+        self.assertIn("memory_bytes は memory_chars / knowledge_bytes は knowledge_chars に改名した", str(cm.exception))
+
 
 class MigrateTest(_Base):
     def test_seat_memory_moves_to_the_role_and_is_kept(self):

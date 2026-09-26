@@ -80,7 +80,18 @@ def _handle(argv, st, path, cwd, alive_pid, out, err) -> int:
         return s
 
     if argv[:1] == ["agents"]:
-        print(json.dumps(st["sessions"]), file=out)
+        # resume_lag: the listing shows the pre-resume record for that many more calls
+        shown = []
+        for s in st["sessions"]:
+            if s.get("_lag"):
+                s["_lag"] -= 1
+                shown.append(s["_before"])
+                if not s["_lag"]:
+                    del s["_lag"], s["_before"]
+            else:
+                shown.append(s)
+        _save(path, st)
+        print(json.dumps(shown), file=out)
     elif argv[:1] == ["stop"]:
         s = find(argv[1])
         if s:
@@ -102,7 +113,10 @@ def _handle(argv, st, path, cwd, alive_pid, out, err) -> int:
                   file=out)
             print(f"backgrounded · {c['id']} · copy", file=out)
         else:
+            if mode.get("resume_lag"):
+                s["_before"], s["_lag"] = dict(s), mode["resume_lag"]
             s["pid"] = alive_pid
+            s["startedAt"] = int(time.time() * 1000)   # updated on resume (verify-p0-a Q3)
             s.update(mode.get("session") or {})
             _save(path, st)
             print(f"note: woke session {sid[:8]} with its saved options (--name, --agent, --settings).", file=out)

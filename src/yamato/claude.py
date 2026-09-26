@@ -99,22 +99,38 @@ LAUNCH_CHECK_TIMEOUT = 20.0
 LAUNCH_CHECK_POLL = 0.5
 
 
-def started_failure(session_id: str, since: float) -> str | None:
+# what a resume changes in the listing: a new pid, and startedAt is updated (verify-p0-a Q3)
+_LAUNCH_MARKS = ("pid", "state", "status", "startedAt", "detail")
+
+
+def launch_marks(rec: dict | None) -> tuple | None:
+    """The listing fields to compare before and after a resume (``started_failure``'s ``before``)."""
+    return None if rec is None else tuple(rec.get(k) for k in _LAUNCH_MARKS)
+
+
+def started_failure(session_id: str, since: float, before: tuple | None = None) -> str | None:
     """Why the session launched or resumed at ``since`` did not come up, or None when it did
     (a pid, no ``state: failed``, and a ``status`` or ``LAUNCH_SETTLE`` seconds on). ``failed``
-    with no pid is a worker that died before init: ``claude --bg`` said ``backgrounded`` and exit 0."""
+    with no pid is a worker that died before init: ``claude --bg`` said ``backgrounded`` and exit 0.
+
+    ``before``: ``launch_marks`` of the session just before a resume. Until the listing
+    differs from it, the record is still the previous shift's (e.g. its ``state: failed``
+    with no pid) and says nothing about this resume."""
     while True:
         rec = find(session_id)
         now = time.time()
+        stale = before is not None and launch_marks(rec) == before
         alive, failed = is_alive(rec), (rec or {}).get("state") == "failed"
         detail = f": {rec['detail']}" if (rec or {}).get("detail") else ""
-        if alive and not failed and (rec.get("status") or now >= since + LAUNCH_SETTLE):
+        if not stale and alive and not failed and (rec.get("status") or now >= since + LAUNCH_SETTLE):
             return None
-        if now >= since + LAUNCH_SETTLE and failed and not alive:
+        if not stale and now >= since + LAUNCH_SETTLE and failed and not alive:
             return f"worker が起動しなかった (state: failed, pid なし){detail}"
         if now >= since + LAUNCH_CHECK_TIMEOUT:
             if rec is None:
                 return "claude agents にセッションが見つからない"
+            if stale:
+                return f"resume のあと claude agents の記録が変わらない (state: {rec.get('state') or '-'})"
             if failed:
                 return f"セッションがエラーで止まっている (state: failed{detail})。モデル名などを確かめる"
             return f"pid が付かない (state: {rec.get('state') or '-'})"
