@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .notify import CHANNELS as NOTIFY_CHANNELS
 from .util import YamatoError, check_name, parse_duration, read_json
 
 SHIFTS = ("per_task", "persistent")
@@ -148,7 +149,16 @@ def validate(data: dict, shipdir: Path) -> dict:
 
     notify = data.get("notify") or {}
     if not isinstance(notify, dict) or not isinstance(notify.get("via") or [], list):
-        raise YamatoError("team.yaml: notify は {via: [command, mac, ...], command: \"...\"}")
+        raise YamatoError(f"team.yaml: notify は {{via: [{', '.join(NOTIFY_CHANNELS)}], "
+                          "slack: {webhook_env: ...}, command: \"...\"}")
+    slack = notify.get("slack") or {}
+    if not isinstance(slack, dict) or not isinstance(slack.get("webhook_env") or "", str):
+        raise YamatoError("team.yaml: notify.slack は {webhook_env: webhook の URL が入った環境変数の名前}")
+    if not isinstance(notify.get("command") or "", str):
+        raise YamatoError("team.yaml: notify.command はシェルのコマンド (文字列)")
+    for via in notify.get("via") or []:
+        if via not in NOTIFY_CHANNELS:
+            warnings.append(f"notify.via の {via!r} は知らない経路 (選べるのは {' / '.join(NOTIFY_CHANNELS)})。送れず events に残る")
 
     git = _git(data.get("git"))
 
@@ -182,7 +192,8 @@ def validate(data: dict, shipdir: Path) -> dict:
                   "archive_on_done": archive_on_done},
         "env_unset": env_unset,
         "inject": {"parts": inject.get("parts"), "limits": _limits(limits)},
-        "notify": {"via": [str(v) for v in notify.get("via") or []], "command": notify.get("command")},
+        "notify": {"via": [str(v) for v in notify.get("via") or []], "command": notify.get("command"),
+                   "slack": {"webhook_env": slack.get("webhook_env")}},
         "git": git,
         "warnings": warnings,
     }

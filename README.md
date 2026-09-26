@@ -61,6 +61,28 @@ worktree と pr (design-p1 §8): yamato は道具を出すだけで、誰がい�
 
 艦フォルダ: `team.yaml`・`charter.md`・`knowledge.md`・`roles/<role>.md`・`board/{items,archive}/`・`seats/<seat>/` (`handoff.md`・`log/<date>.md`・`inbox.jsonl`・`inbox.cursor`・`memory.md`・`memory-inbox.md`)・`roster.json` (席ごとの今のシフトと `lastActive`)・`usage.jsonl` (シフトごとの使用量)・`worktrees/<item>/` (`yamato worktree add` の既定の場所)・`events.jsonl` (艦の出来事の追記ログ。形式は [docs/events.md](docs/events.md))・`.runtime/` (生成物)。
 
+## 通知 (notify)
+
+owner 宛ての `send` は inbox に記録したうえで、`team.yaml` の `notify.via` に並べた方式すべてに通知する (省略か `[]` なら通知せず inbox にだけ残る)。件名・本文・重要度 (`success` / `waiting` / `progress` / `error` / `info`) を全方式に同じ形で渡す。
+
+```yaml
+notify:
+  via: [slack, mac]        # slack / mac / windows / command (複数可)
+  slack:
+    webhook_env: YAMATO_SLACK_WEBHOOK   # incoming webhook の URL が入った環境変数の名前。URL は艦フォルダに書かない
+  command: "mail-me"       # via に command を並べたときだけ実行する
+```
+
+| 方式 | 中身 |
+|---|---|
+| `slack` | incoming webhook に POST。重要度で色と絵文字が付く。環境変数が空・URL が http(s) でないときは失敗 |
+| `mac` | `osascript` の `display notification` (macOS 以外では送らない) |
+| `windows` | PowerShell の toast (Windows 以外では送らない)。クリックで開く先はまだ無い |
+| `command` | `notify.command` をシェルで実行。件名・本文・重要度は stdin の JSON `{"title", "message", "level"}` と環境変数 `YAMATO_TITLE` / `YAMATO_MESSAGE` / `YAMATO_LEVEL`。メールなど上の 3 つ以外はこれで送る (方式は増やさない) |
+
+- best-effort: どれかが失敗しても他は送り、`send` は失敗にならない。失敗は `send` の出力に `通知 <方式>: 失敗 (...)` と出て、`events.jsonl` に `notify_failed` として残る ([docs/events.md](docs/events.md))。webhook の URL は出力にも events にも書かない
+- `PushNotification` は方式にしない (席の外から出せない。[verify-p1-d](docs/verify-p1-d.md) V11)
+
 テスト: `python3 -m unittest discover`。E2E の手順と結果は [docs/e2e-p0.md](docs/e2e-p0.md)。
 
 ## docs

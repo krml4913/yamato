@@ -286,7 +286,7 @@ def send(shipdir: Path, seat: str, text: str, sender: str) -> int:
         entry = inbox.append(shipdir, OWNER, sender, text)
         _send_event(shipdir, OWNER, sender, entry)
         out(f"owner の inbox に記録した: #{entry['n']} (`{YAMATO_BIN} inbox {shipdir} owner` で読む)")
-        for line in notify.notify(team, f"yamato {team['name']}: {sender} から", text):
+        for line in notify.notify(team, f"yamato {team['name']}: {sender} から", text, shipdir=shipdir):
             out(line)
         return 0
     seat_spec(team, seat)
