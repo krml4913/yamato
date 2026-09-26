@@ -391,7 +391,7 @@ class SeatTest(ShipTestCase):
         self.up()
         out = self.run_cmd(seat.status, self.shipdir)
         self.assertIn("生存=yes", out)
-        self.assertIn("!!! 詰まり: pm", out)
+        self.assertIn("!!! pm: 詰まり", out)
         self.assertIn("残り", out)
 
 

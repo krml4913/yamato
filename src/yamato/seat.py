@@ -510,6 +510,8 @@ def down(shipdir: Path, force: bool) -> int:
 
 
 def status(shipdir: Path) -> int:
+    from . import admiral
+
     team = current_team(shipdir)
     listing = claude.agents()
     reconcile(shipdir, team, listing)
@@ -544,8 +546,8 @@ def status(shipdir: Path) -> int:
         if rec.get("note"):
             cols.append(f"[{rec['note']}]")
         out("  " + "  ".join(cols))
-        if waiting and "permission" in str(waiting):
-            out(f"  !!! 詰まり: {seat} が権限の確認で止まっている (claude attach {rec.get('shortId')} で確認)")
+        for flag in admiral.red_flags(team, rec, live, now):   # design-p1 §5.2
+            out(f"  !!! {seat}: {flag} (claude attach {rec.get('shortId')} で確認)")
     unread = {s: len(inbox.unread(shipdir, s)) for s in team["seats"]}
     if any(unread.values()):
         out("  未読 inbox: " + ", ".join(f"{s}={n}" for s, n in unread.items() if n))

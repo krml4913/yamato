@@ -62,6 +62,26 @@ def end_now(shipdir: Path, now: float | None = None) -> dict | None:
         return data
 
 
+def extend(shipdir: Path, seconds: int, now: float | None = None) -> tuple[dict | None, bool]:
+    """``yamato extend`` (design-p1 §6.2): move the deadline later. Data only; the
+    watchdog and the hooks' watcher re-read the file on every poll.
+
+    Counted from the current deadline, or from now once it has passed (after
+    ``down`` or past the limit, "1h more" means an hour from now). Returns
+    (the new data, whether the deadline had already passed).
+    """
+    now = now or time.time()
+    with ship_lock(shipdir):
+        data = read(shipdir)
+        if not data:
+            return None, False
+        was_over = data["deadline"] <= now
+        data["deadline"] = max(data["deadline"], now) + seconds
+        data["graceUntil"] = data["deadline"] + data.get("grace", 0)
+        write_json(path(shipdir), data)
+        return data, was_over
+
+
 def phase(data: dict | None, now: float | None = None) -> str:
     if not data:
         return NOT_UP
