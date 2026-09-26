@@ -75,6 +75,20 @@ def _last_report(shipdir: Path, limit: tuple[int, int]) -> str:
     return f"## 前回の日報 ({path.stem}。全文: {path})\n{cap_text(text, *limit, source=str(path))}"
 
 
+def _orphans(shipdir: Path, team: dict, max_items: int, y: str) -> str:
+    """active items whose assignee fell over (design-p1 §5.6): reassign or wake the seat again."""
+    from . import monitor
+
+    found = monitor.orphans(shipdir, team)
+    if not found:
+        return "## 孤児の項目 (active のまま担当が止まっている)\n(なし)"
+    lines = [f"- {board_mod.format_item(m)} ← {why}" for m, why in found[:max_items]]
+    if len(found) > max_items:
+        lines.append(f"…ほか {len(found) - max_items} 件 (`{y} board list {shipdir} --state active`)")
+    return ("## 孤児の項目 (active のまま担当が止まっている)\n" + "\n".join(lines)
+            + "\n割り当て直すか、同じ席に send して起こし直す")
+
+
 def build(shipdir: Path, team: dict, seat: str, source: str = "startup",
           limits: dict | None = None) -> tuple[str, int]:
     """Returns (context text, inbox cursor to advance to)."""
@@ -117,6 +131,9 @@ def build(shipdir: Path, team: dict, seat: str, source: str = "startup",
         if len(mine) > lim["mine_items"]:
             shown.append(f"…ほか {len(mine) - lim['mine_items']} 件 (上限で省略。`{y} board mine {shipdir} {seat}`)")
         parts.append("## 自分の担当 (board mine)\n" + ("\n".join(shown) if shown else "(なし)"))
+
+    if "orphans" in want:
+        parts.append(_orphans(shipdir, team, lim["mine_items"], y))
 
     if "last_report" in want:
         parts.append(_last_report(shipdir, lim["last_report"]))

@@ -47,7 +47,7 @@ zellij --session yamato-view --new-session-with-layout ~/yamato/view.kdl
 | `extend <ship> <期間>` | (admiral) deadline を延ばす (データの書き換えだけ。過ぎていれば今から数える) |
 | `halt <ship>` | (admiral) 緊急停止。猶予なしで全席を強制停止し、日報の安全網を通す |
 | `talk <ship> [<seat>]` | (admiral) 席に `claude attach` する (既定は team.yaml の `talk_default`、省略時 hub)。止まっている席は send と同じ規則で起こしてから。headless の席は attach できないので断る (send で頼む)。使い方は [docs/admiral.md](docs/admiral.md) |
-| `send <ship> <seat\|owner> "<msg>" [--from <seat>]` | inbox に記録 → 宛先が生きていれば何もしない (送り手が SendMessage で届ける) / 止まった persistent は resume / per_task と未起動は新しいシフト。`--from` の席か呼び出した席の trust のプロファイルが `send: false` なら断る |
+| `send <ship> <seat\|owner> "<msg>" [--from <seat>] [--cwd <path>]` | inbox に記録 → 宛先が生きていれば何もしない (送り手が SendMessage で届ける) / 止まった persistent は resume。ただし役割の `rotate:` の条件 (入れ替えの印・前のシフトの文脈量・止まってからの時間・日付の変わり目) に当たれば resume せず新しいシフト (design-p1 §5.3) / per_task と未起動は新しいシフト。`--cwd` は次のシフトをその dir (項目の worktree など) で `bgIsolation: none` で起動する (per_task / headless。main repo が trust 済みなら worktree は trust 不要)。同じ送り手→宛先の送りすぎ・同じ本文の連続は events に残して警告するだけ (`watch.spin`)。最終受付のあとの captain の send は本文の先頭に「(終了まで X 分。片付く範囲で)」が付く。`--from` の席か呼び出した席の trust のプロファイルが `send: false` なら断る |
 | `inbox <ship> <seat> [--all]` | 未読を全文で表示して既読にする |
 | `board add\|set\|show\|list\|mine` | board の操作。frontmatter はコマンド経由でのみ変わり、値を検証する。done は `board/archive/` へ |
 | `board note <ship> <item> "<text>" [--by <seat>]` | 項目の本文 (`## 経緯` の上) に追記し、経緯に 1 行残す。frontmatter (state・assignee など) は変えない。外を読む役割 (調査艦の researcher・fact-checker) が使う |
@@ -62,7 +62,7 @@ zellij --session yamato-view --new-session-with-layout ~/yamato/view.kdl
 | `decide open <ship> --category <c> --title "<t>" [--blocks T-1,T-2] [--links T-3] [--due YYYY-MM-DD] [--body-file <f>] [--urgent] [--supersedes D-n]` | 判断の項目 `D-NNN` (`kind: decision`) を開く。decider は team.yaml の `decisions` から開いた時点で決めて固定する (表にない category は `default`、それも無ければ hub)。`--blocks` のタスクは `state: blocked` にして `blocked_on` に足す (`--links` は止めずに結ぶだけ)。decider が席なら send、owner なら owner の inbox に記録し、`notify.decisions: each` か `--urgent` のときだけ通知する (既定の `digest` は日報にまとめる)。開いた本人が decider なら送らない |
 | `decide close <ship> <D> --choice "<決定>" --reason "<理由>" [--by <決めた人>]` | 項目の「## 決定」を書いて閉じ (`closed_by` = 呼び出し元、`on_behalf_of` = `--by` か呼び出し元)、`decisions/log.md` に追記する。decider 以外が閉じても断らず、events と項目に記録する。`blocked_on` が空になったタスクは元の state に戻し、担当 (無ければ hub) に send する。閉じた判断は書き換えない (覆すなら `--supersedes`) |
 | `decide list <ship> [--decider <d>] [--stale 2d] [--all]` / `decide categories <ship>` | 待ちの判断の一覧 (待ち時間・期限・止めているタスクつき) / team.yaml の decisions の表 |
-| `seat-stop <ship> <seat> [--delivered]` | (席が使う) handoff.md の更新を確認して遅延 stop |
+| `seat-stop <ship> <seat> [--delivered] [--rotate]` | (席が使う) handoff.md の更新を確認して遅延 stop。`--rotate` は入れ替えの印を立てる (次の send で新しいシフト。その場では起こさない)。persistent の席の Stop hook は `rotate:` の条件 (文脈量・compaction・シフトの長さ) に当たると一度だけこれを促す |
 | `view layout <ship>... [-o FILE]` | 艦ごとに 1 タブ、席ごとに 1 ペインの zellij layout (KDL) を出力する。艦は名前 (`ships.json` → `~/yamato/<name>`) かパス |
 | `view attach <ship> <seat> [--poll SEC]` | (layout のペインの中身) 席の今のシフト (roster の sessionId) が生きていれば `claude attach`、シフトが替われば付け直す。止まっている席には attach しない |
 | `memo "<本文>" [--item T-1] [--scope role\|ship] [--ship <ship>] [--seat <seat>]` | memory の候補を 1 行、呼び出した席 (`$CLAUDE_CODE_SESSION_ID` の席) の `seats/<seat>/memory-inbox.md` に足す。席の外からは `--ship` と `--seat` で書く。席の中で `--seat` が違えば断る |

@@ -269,7 +269,11 @@ def run_shift(shipdir: Path, team: dict, seat: str) -> dict:
     role = team["roles"][spec["role"]]
     sid = str(uuid.uuid4())
     name = seat_mod.session_name(team, seat)
-    rec = roster.start_shift(shipdir, seat, session_id=sid, short_id=sid[:8], session_name=name, how="headless")
+    cwd = roster.seat(shipdir, seat).get("nextCwd")   # send --cwd (design-p1 §8.2 の 2), used up here
+    if cwd:
+        roster.update(shipdir, seat, nextCwd=None)
+    rec = roster.start_shift(shipdir, seat, session_id=sid, short_id=sid[:8], session_name=name, how="headless",
+                             cwd=cwd)
     started, no = rec["shiftStartedAt"], rec["shiftNo"]
     seat_mod.clear_pending(shipdir, seat)
     out_dir = inbox.seat_dir(shipdir, seat) / "headless"
@@ -280,13 +284,13 @@ def run_shift(shipdir: Path, team: dict, seat: str) -> dict:
         model=spec["model"], settings=str(runtime.settings_path(shipdir, seat)),
         add_dir=str(shipdir), prompt=first_prompt(shipdir, seat), max_budget_usd=role.get("max_budget_usd"),
     )
-    append_log(shipdir, seat, f"シフト開始 #{no} (headless) session={sid}")
+    append_log(shipdir, seat, f"シフト開始 #{no} (headless) session={sid}" + (f" cwd={cwd}" if cwd else ""))
     stream = _Stream([], out_dir / f"shift-{no}.jsonl")
     killed, kill_reason, rc, launch_error = None, None, None, None
     try:
         with open(out_dir / f"shift-{no}.stderr", "a", encoding="utf-8") as err:
             env = claude.seat_env([*claude.PRINT_CALLER_ENV, *(team.get("env_unset") or ())])
-            proc = subprocess.Popen(argv, cwd=team["workspace"], env=env,
+            proc = subprocess.Popen(argv, cwd=cwd or team["workspace"], env=env,
                                     stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=err,
                                     text=True, encoding="utf-8", errors="replace")
     except OSError as e:

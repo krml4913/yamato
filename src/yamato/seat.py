@@ -16,8 +16,8 @@ import time
 import uuid
 from pathlib import Path
 
-from . import claude, deadline, events, inbox, notify, report, roster, runtime, usage
-from .team import load_team, profile_of, seat_spec
+from . import claude, deadline, events, inbox, monitor, notify, report, roster, rotate, runtime, usage
+from .team import last_call_conf, load_team, profile_of, seat_spec
 from .util import (YAMATO_BIN, YamatoError, append_log, fmt_span, fmt_time, read_json,
                    seat_lock, ship_lock, write_json)
 
@@ -120,24 +120,35 @@ def _resume_prompt(shipdir: Path, seat: str, reason: str = "send") -> str:
     return (f"[yamato] inbox に新しいメッセージがあります。`{YAMATO_BIN} inbox {shipdir} {seat}` で読んで対応してください。")
 
 
-def start_new_shift(shipdir: Path, team: dict, seat: str) -> dict:
+def start_new_shift(shipdir: Path, team: dict, seat: str, rotated: list[str] | None = None) -> dict:
+    """``rotated``: why a persistent seat gets this instead of a resume (design-p1 §5.3).
+    A ``nextCwd`` left by ``send --cwd`` is used (and used up) here (§8.2 の 2)."""
     spec = seat_spec(team, seat)
-    workspace = Path(team["workspace"])
+    cwd = roster.seat(shipdir, seat).get("nextCwd")
+    workspace = Path(cwd or team["workspace"])
     if not workspace.is_dir():
-        raise YamatoError(f"workspace がありません: {workspace}")
+        raise YamatoError(f"{'--cwd の場所' if cwd else 'workspace'}がありません: {workspace}")
     if not claude.is_trusted(workspace):
         raise YamatoError(claude.untrusted_message(workspace))
+    settings = runtime.settings_path(shipdir, seat)
+    if cwd:
+        # in a worktree already: Claude Code must not cut another one from it (bgIsolation: none)
+        settings = runtime.write_cwd_settings(shipdir, team, seat)
     name = session_name(team, seat)
     short, full = claude.launch(
         cwd=str(workspace), name=name, role=spec["role"],
         agents_json=runtime.agents_path(shipdir).read_text(encoding="utf-8"),
-        model=spec["model"], settings=str(runtime.settings_path(shipdir, seat)),
+        model=spec["model"], settings=str(settings),
         add_dir=str(shipdir), prompt=_first_prompt(shipdir, seat), env_unset=team.get("env_unset") or (),
         remote_control=bool(team["roles"][spec["role"]].get("remote_control")),
     )
-    rec = roster.start_shift(shipdir, seat, session_id=full, short_id=short, session_name=name, how="new")
+    if cwd:
+        roster.update(shipdir, seat, nextCwd=None)
+    rec = roster.start_shift(shipdir, seat, session_id=full, short_id=short, session_name=name, how="new",
+                             cwd=cwd, rotated=rotated)
     clear_pending(shipdir, seat)
-    append_log(shipdir, seat, f"シフト開始 #{rec['shiftNo']} (new) session={full}")
+    append_log(shipdir, seat, f"シフト開始 #{rec['shiftNo']} (new) session={full}"
+               + (f" cwd={cwd}" if cwd else "") + (f" 入れ替え: {', '.join(rotated)}" if rotated else ""))
     return rec
 
 
@@ -183,7 +194,11 @@ def wake(shipdir: Path, team: dict, seat: str, reason: str = "send") -> tuple[st
             return "alive", rec
         spec = seat_spec(team, seat)
         if spec["shift"] == "persistent" and rec.get("sessionId"):
-            return "resumed", resume_shift(shipdir, team, seat, rec, reason)
+            # resume, or a new shift from the records (design-p1 §5.3, roles.<role>.rotate)
+            reasons = rotate.resume_reasons(team, seat, rec)
+            if not reasons:
+                return "resumed", resume_shift(shipdir, team, seat, rec, reason)
+            return "started", start_new_shift(shipdir, team, seat, rotated=reasons)
         return "started", start_new_shift(shipdir, team, seat)
 
 
@@ -310,7 +325,7 @@ def up(shipdir: Path, for_: str | None) -> int:
     listing = claude.agents()
     reconcile(shipdir, team, listing)
     token = uuid.uuid4().hex[:12]
-    dl = deadline.write(shipdir, limit=limit, grace=team["grace"], token=token)
+    dl = deadline.write(shipdir, limit=limit, grace=team["grace"], token=token, last_call=last_call_conf(team))
     hub = team["hub"]
     what, rec = wake(shipdir, team, hub, reason="up")
     spawn_watchdog(shipdir, token)
@@ -321,24 +336,39 @@ def up(shipdir: Path, for_: str | None) -> int:
     return 0
 
 
-def send(shipdir: Path, seat: str, text: str, sender: str) -> int:
+def send(shipdir: Path, seat: str, text: str, sender: str, cwd: str | None = None) -> int:
     team = current_team(shipdir)
     if not text.strip():
         raise YamatoError("本文が空です")
     _check_may_send(shipdir, team, sender)
     if seat == OWNER:
+        if cwd:
+            raise YamatoError("--cwd は席への send でだけ使える")
         entry = inbox.append(shipdir, OWNER, sender, text)
         _send_event(shipdir, OWNER, sender, entry)
         out(f"owner の inbox に記録した: #{entry['n']} (`{YAMATO_BIN} inbox {shipdir} owner` で読む)")
+        _watch_send(shipdir, team, sender, OWNER, entry, text)
         for line in notify.notify(team, f"yamato {team['name']}: {sender} から", text, shipdir=shipdir):
             out(line)
         return 0
-    seat_spec(team, seat)
-    entry = inbox.append(shipdir, seat, sender, text)
-    _send_event(shipdir, seat, sender, entry)
-    out(f"inbox に記録した: {seat} #{entry['n']}")
-    y = YAMATO_BIN
+    spec = seat_spec(team, seat)
+    if cwd:
+        cwd = _check_cwd(spec, seat, cwd)
+    original = text
     dl = deadline.read(shipdir)
+    if sender == team["hub"] and deadline.in_last_call(dl):
+        # past the last call the captain's assignments carry the time left (design-p1 §9). Never refused
+        text = deadline.LAST_CALL_PREFIX.format(left=deadline.left(dl)) + text
+    entry = inbox.append(shipdir, seat, sender, text)
+    _send_event(shipdir, seat, sender, entry, original)
+    out(f"inbox に記録した: {seat} #{entry['n']}")
+    if text != original:
+        out(f"最終受付を過ぎているので、本文の先頭に「{text[:len(text) - len(original)].strip()}」を足した")
+    _watch_send(shipdir, team, sender, seat, entry, original)
+    if cwd:
+        roster.update(shipdir, seat, nextCwd=cwd)
+        out(f"次のシフトは {cwd} を cwd にして起動する (bgIsolation: none)")
+    y = YAMATO_BIN
     ph = deadline.phase(dl)
     if ph == deadline.NOT_UP:
         out(f"艦は起動していないので宛先は起こさない。`{y} up {shipdir}` で起動すると、宛先の席が起きたときに読まれる。")
@@ -355,6 +385,8 @@ def send(shipdir: Path, seat: str, text: str, sender: str) -> int:
 
     what, rec = wake(shipdir, team, seat)
     name = session_name(team, seat)
+    if cwd and what in ("alive", "queued"):
+        out(f"宛先 {seat} はシフト中なので、--cwd は次のシフトから効く")
     if what == "alive":
         if sender in team["seats"]:
             add_pending(shipdir, sender, seat, entry["n"], name)
@@ -371,6 +403,9 @@ def send(shipdir: Path, seat: str, text: str, sender: str) -> int:
             f"すぐ伝えるなら SendMessage で to=\"{name}\" に送ってもよい (任意)。")
     elif what == "resumed":
         out(f"止まっていた persistent の席 {seat} を resume した (session {rec['sessionId']})。SendMessage は不要。")
+    elif rec.get("rotated"):
+        out(f"persistent の席 {seat} を resume せず、新しいシフトを起動した (入れ替え: {', '.join(rec['rotated'])}。"
+            f"session {rec['sessionId']})。SendMessage は不要。")
     else:
         out(f"席 {seat} の新しいシフトを起動した (session {rec['sessionId']})。SendMessage は不要。")
     return 0
@@ -393,16 +428,41 @@ def _check_may_send(shipdir: Path, team: dict, sender: str) -> None:
                               "(終わりの報告は yamato が定型文で送る)")
 
 
+def _check_cwd(spec: dict, seat: str, cwd: str) -> str:
+    """``send --cwd`` (design-p1 §8.2 の 2): the next shift starts in ``cwd``. A resume keeps
+    its session's own directory, so a persistent seat cannot take it."""
+    if spec["shift"] == "persistent":
+        raise YamatoError(f"--cwd は per_task / headless の席で使える (席 {seat} は persistent で、resume は元の場所で起きる)")
+    path = Path(cwd).expanduser().resolve()
+    if not path.is_dir():
+        raise YamatoError(f"--cwd の場所がありません: {path}")
+    if spec["shift"] != "headless" and not claude.is_trusted(path):
+        raise YamatoError(claude.untrusted_message(path))
+    return str(path)
+
+
+def _watch_send(shipdir: Path, team: dict, sender: str, to: str, entry: dict, text: str) -> None:
+    """Looking where the work flows (design-p1 §5.2, §5.5): warnings, never refusals."""
+    for w in monitor.check_send(shipdir, team, sender, to, entry, monitor.digest(text)):
+        out(f"注意: {w}")
+    if deadline.phase(deadline.read(shipdir)) == deadline.RUNNING:
+        gap = monitor.check_captain_gap(shipdir, team)
+        if gap:
+            out(f"注意: {gap['summary']} (events に記録した)")
+
+
 def _report_to(team: dict, seat: str) -> str:
     return team["roles"][team["seats"][seat]["role"]].get("report_to") or team["hub"]
 
 
-def _send_event(shipdir: Path, to: str, sender: str, entry: dict) -> None:
+def _send_event(shipdir: Path, to: str, sender: str, entry: dict, text: str | None = None) -> None:
+    """``digest``: of the text as the sender wrote it, for the duplicate check (design-p1 §5.5)."""
     events.emit(shipdir, events.SEND, seat=to, by=sender, summary=entry["text"],
-                data={"n": entry["n"], "chars": len(entry["text"])})
+                data={"n": entry["n"], "chars": len(entry["text"]),
+                      "digest": monitor.digest(entry["text"] if text is None else text)})
 
 
-def seat_stop(shipdir: Path, seat: str, after: int, delivered: bool = False) -> int:
+def seat_stop(shipdir: Path, seat: str, after: int, delivered: bool = False, rotate_: bool = False) -> int:
     team = current_team(shipdir)
     seat_spec(team, seat)
     sid = os.environ.get("CLAUDE_CODE_SESSION_ID")
@@ -428,7 +488,18 @@ def seat_stop(shipdir: Path, seat: str, after: int, delivered: bool = False) -> 
     if lines > max_lines:
         out(f"注意: handoff.md が {lines} 行ある (注入の上限 {max_lines} 行)。次のシフトでは上限で切られる。")
     roster.mark_stopping(shipdir, seat,
-                         handoff_written=handoff_written_since(shipdir, seat, rec.get("shiftStartedAt")))
+                         handoff_written=handoff_written_since(shipdir, seat, rec.get("shiftStartedAt")),
+                         rotate=rotate_)
+    if rotate_:
+        # the next shift is not started here: the next send wakes a new one (design-p1 §5.3 の 1, §5.4)
+        append_log(shipdir, seat, "seat-stop --rotate: 入れ替えの印を立てた (次の send で新しいシフト)")
+        events.emit(shipdir, events.ROTATE_REQUESTED, seat=seat, summary=f"入れ替えの印 (シフト #{rec.get('shiftNo')})",
+                    data={"shiftNo": rec.get("shiftNo")})
+        out("入れ替えの印を立てた。次に誰かがこの席に send したとき、resume せず新しいシフトとして記録から起きる。")
+    if seat != team["hub"] and deadline.phase(deadline.read(shipdir)) == deadline.RUNNING:
+        gap = monitor.check_captain_gap(shipdir, team)   # design-p1 §5.2
+        if gap:
+            out(f"注意: {gap['summary']} (events に記録した)")
     if team["seats"][seat]["shift"] == "headless":
         # claude -p ends by itself after this turn; run-headless closes the shift
         append_log(shipdir, seat, "seat-stop: 終業を受け付けた (headless)")

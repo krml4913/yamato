@@ -109,6 +109,7 @@ def build_settings(shipdir: Path, team: dict, seat: str) -> dict:
         "hooks": {
             "SessionStart": [{"hooks": [hook("session-start")]}],
             "UserPromptSubmit": [{"hooks": [hook("user-prompt-submit")]}],
+            "PreCompact": [{"hooks": [hook("pre-compact")]}],
             "Stop": [{"hooks": [
                 hook("stop"),
                 {**hook("wait-deadline"), "async": True, "asyncRewake": True, "timeout": HOOK_TIMEOUT_WAIT},
@@ -121,6 +122,20 @@ def build_settings(shipdir: Path, team: dict, seat: str) -> dict:
         mech["worktree"] = {"bgIsolation": "none"}
     # team.yaml `settings:` goes underneath; yamato's own keys win
     return _merge(team.get("settings") or {}, mech)
+
+
+def cwd_settings_path(shipdir: Path, seat: str) -> Path:
+    return runtime_dir(shipdir) / f"settings-{seat}.cwd.json"
+
+
+def write_cwd_settings(shipdir: Path, team: dict, seat: str) -> Path:
+    """The seat's settings with ``bgIsolation: none``, for a shift started in a given
+    directory (``send --cwd``, design-p1 §8.2 の 2): the worktree is already there."""
+    data = build_settings(shipdir, team, seat)
+    data["worktree"] = {**(data.get("worktree") or {}), "bgIsolation": "none"}
+    path = cwd_settings_path(shipdir, seat)
+    write_json(path, data)
+    return path
 
 
 def needs_no_isolation(shipdir: Path, team: dict) -> bool:

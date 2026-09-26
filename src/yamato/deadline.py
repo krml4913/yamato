@@ -21,6 +21,13 @@ WRAP_UP_MESSAGE = (
 )
 
 
+LAST_CALL_NOTICE = (
+    "[yamato] 最終受付を過ぎました (艦の終了まで {left})。新しい大きな割り当てはやめ、"
+    "今の仕事を片付けて日報の準備をしてください。"
+)
+LAST_CALL_PREFIX = "(終了まで {left}。片付く範囲で) "
+
+
 def path(shipdir: Path) -> Path:
     return Path(shipdir) / ".runtime" / "deadline"
 
@@ -29,7 +36,21 @@ def read(shipdir: Path) -> dict | None:
     return read_json(path(shipdir), None)
 
 
-def write(shipdir: Path, *, limit: int, grace: int, token: str, now: float | None = None) -> dict:
+def last_call_before(limit: int, conf: dict | None) -> int | None:
+    """How long before the deadline the last call is (design-p1 §9): ``min(at_most,
+    ratio x limit)``, whichever of the two is set; None when ``last_call: off``."""
+    if not conf:
+        return None
+    cands = []
+    if conf.get("at_most"):
+        cands.append(int(conf["at_most"]))
+    if conf.get("ratio"):
+        cands.append(int(limit * conf["ratio"]))
+    return min(cands) if cands else None
+
+
+def write(shipdir: Path, *, limit: int, grace: int, token: str, now: float | None = None,
+          last_call: dict | None = None) -> dict:
     now = now or time.time()
     data = {
         "upAt": now,
@@ -38,6 +59,10 @@ def write(shipdir: Path, *, limit: int, grace: int, token: str, now: float | Non
         "grace": grace,
         "token": token,
     }
+    before = last_call_before(limit, last_call)
+    if before is not None:
+        data["lastCallBefore"] = before
+        data["lastCallAt"] = data["deadline"] - before
     with ship_lock(shipdir):
         write_json(path(shipdir), data)
     return data
@@ -58,6 +83,8 @@ def end_now(shipdir: Path, now: float | None = None) -> dict | None:
         if data["deadline"] > now:
             data["deadline"] = now
             data["graceUntil"] = now + data.get("grace", 0)
+            if data.get("lastCallAt") is not None:
+                data["lastCallAt"] = min(data["lastCallAt"], now)
         write_json(path(shipdir), data)
         return data
 
@@ -78,6 +105,8 @@ def extend(shipdir: Path, seconds: int, now: float | None = None) -> tuple[dict 
         was_over = data["deadline"] <= now
         data["deadline"] = max(data["deadline"], now) + seconds
         data["graceUntil"] = data["deadline"] + data.get("grace", 0)
+        if data.get("lastCallBefore") is not None:
+            data["lastCallAt"] = data["deadline"] - data["lastCallBefore"]
         write_json(path(shipdir), data)
         return data, was_over
 
@@ -93,13 +122,39 @@ def phase(data: dict | None, now: float | None = None) -> str:
     return FORCE
 
 
+def in_last_call(data: dict | None, now: float | None = None) -> bool:
+    """Past the last call and still before the deadline (design-p1 §9)."""
+    now = now or time.time()
+    return (phase(data, now) == RUNNING and data.get("lastCallAt") is not None
+            and now >= data["lastCallAt"])
+
+
+def take_last_call_notice(shipdir: Path, now: float | None = None) -> dict | None:
+    """Once per last call (a new one after ``extend``): returns the deadline data the
+    first time it is asked past the last call, None afterwards (design-p1 §9)."""
+    with ship_lock(shipdir):
+        data = read(shipdir)
+        if not in_last_call(data, now) or data.get("lastCallNoticed") == data["lastCallAt"]:
+            return None
+        data["lastCallNoticed"] = data["lastCallAt"]
+        write_json(path(shipdir), data)
+        return data
+
+
+def left(data: dict, now: float | None = None) -> str:
+    """Time to the deadline, in minutes, for the last-call notices."""
+    now = now or time.time()
+    return f"{max(0, int((data['deadline'] - now + 59) // 60))} 分"
+
+
 def describe(data: dict | None, now: float | None = None) -> str:
     now = now or time.time()
     p = phase(data, now)
     if p == NOT_UP:
         return "未起動 (deadline なし)"
     if p == RUNNING:
-        return f"deadline {fmt_time(data['deadline'])} (残り {fmt_span(data['deadline'] - now)})"
+        tail = " / 最終受付を過ぎた" if in_last_call(data, now) else ""
+        return f"deadline {fmt_time(data['deadline'])} (残り {fmt_span(data['deadline'] - now)}{tail})"
     if p == OVER:
         return f"終業中: deadline {fmt_time(data['deadline'])} を過ぎた (強制停止まで {fmt_span(data['graceUntil'] - now)})"
     return f"強制停止の時刻 {fmt_time(data['graceUntil'])} を過ぎた"

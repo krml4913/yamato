@@ -58,7 +58,14 @@ yamato が書くのは次の kind。定数は `src/yamato/events.py` (`notify_fa
 | `decision_open` | `decide open` | decider | 判断の id | 開いた席 (呼び出し元) | `category`、`decider`、`blocks` (blocked にしたタスク)、`links`、`urgent`、`due`、`supersedes` |
 | `decision_close` | `decide close` | decider | 判断の id | 閉じた席 (呼び出し元) | `decider`、`closed_by`、`on_behalf_of` (`--by`)、`by_decider` (false = decider 以外が閉じた。日報の「異常」の材料)、`choice`、`reason`、`was_blocking` (止めていたタスク)、`unblocked` (止まりが解けたタスク) |
 
-- `worktree_*` / `pr_*` の `by` は呼び出し元 (`worktree.caller`: `--by`、無ければ `$CLAUDE_CODE_SESSION_ID` の席、無ければ `owner`)。記録だけで誰が打てるかは検査しない (design-p1 §0.3)。日報 (design-p1 §2) は `pr_merge` を「今日終わったもの」に、`pr_conflict` と `by_decider: false` の `decision_close` を「異常」に載せる
+- `worktree_*` / `pr_*` の `by` は呼び出し元 (`worktree.caller`: `--by`、無ければ `$CLAUDE_CODE_SESSION_ID` の席、無ければ `owner`)。記録だけで誰が打てるかは検査しない (design-p1 §0.3)。日報 (design-p1 §2) は `pr_merge` を「今日終わったもの」に、`pr_conflict` と `by_decider: false` の `decision_close` を「異常」に載せる| `spin_suspected` | `send` (design-p1 §5.5)。同じ送り手 → 宛先が `watch.spin.window` に `max_sends` 通を超えた。送りは止めない | 宛先 | ― | 送り手 | `count`、`window`、`max_sends`、`n` |
+| `duplicate_suspected` | `send` (§5.5)。同じ送り手 → 宛先に直前と同じ本文 (`send` の `data.digest` で比べる) | 宛先 | ― | 送り手 | `n`、`prevN` |
+| `captain_gap` | `send` / `seat-stop` のついで (§5.2)。captain が止まってから `watch.captain_gap` を超えて起きていない。1 回の停止につき 1 行 | captain | ― | ― | `endedAt`、`shiftNo`、`limit` |
+| `rotate_suggested` | persistent の席の Stop hook (§5.4)。`rotate:` の条件に当たり、`seat-stop --rotate` を促した (1 シフトに 1 回) | 席 | ― | ― | `shiftNo`、`reasons` |
+| `rotate_requested` | `seat-stop --rotate` (§5.4)。roster に入れ替えの印 (`rotateRequested`) を立てた | 席 | ― | ― | `shiftNo` |
+| `last_call` | captain の hook (SessionStart / UserPromptSubmit / Stop のうち最初のもの) が最終受付の注意を注入した (§9。最終受付 1 回につき 1 行) | captain | ― | ― | `lastCallAt`、`deadline`、`hook` |
+
+- `send` の `data` には `digest` (本文の sha1 の先頭 16 桁。最終受付の注記を足す前の本文) も入る。`shift_start` の `data` には、`send --cwd` のとき `cwd`、persistent の席が resume でなく新しいシフトになったとき `rotated` (理由の文のリスト) が入る
 - deny ルールによる拒否は hook が拾わない (検証 B Q1) ので `permission_denied` には載らない
 - **記録は道具** (project memory mechanism-not-policy): `emit` はどの kind も受け付け、誰が書くかを検査しない。上の表は yamato 自身が書くものの一覧で、制限ではない
 - 書き込みは ship_lock (design §0 I1) を通す。書けなかったときは stderr に出すだけで、呼んだコマンドや hook は失敗させない

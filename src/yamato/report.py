@@ -248,7 +248,7 @@ def anomaly_lines(shipdir: Path, team: dict, since: float, until: float, live: b
         elif kind == events.SHIFT_END and d.get("handoffWritten") is False \
                 and d.get("reason") not in FORCED_KINDS and (e.get("seat"), d.get("shiftNo")) not in forced:
             lines.append(f"- {e.get('seat')} が {_hm(e['ts'])} に引き継ぎなしで終了 ({d.get('reason') or '?'})")
-        elif kind == notify.NOTIFY_FAILED:
+        elif kind in (notify.NOTIFY_FAILED, events.CAPTAIN_GAP):
             lines.append(f"- {_hm(e['ts'])} {e.get('summary')}")
         elif kind == events.DECISION_CLOSE and d.get("by_decider") is False:
             on = f"。--by は {d['on_behalf_of']}" if d.get("on_behalf_of") else ""
@@ -271,6 +271,15 @@ def anomaly_lines(shipdir: Path, team: dict, since: float, until: float, live: b
                 counts[t] = counts.get(t, 0) + 1
             per.append(f"{seat}: " + ", ".join(f"{t} ×{n}" for t, n in counts.items()))
         lines.append(f"- 権限の拒否 {total} 件 ({' / '.join(per)})")
+    # design-p1 §5.5: one line per sender -> recipient, however many sends tripped it
+    loops: dict = {}
+    for e in evs:
+        if e.get("kind") in (events.SPIN_SUSPECTED, events.DUPLICATE_SUSPECTED):
+            k = loops.setdefault((e.get("by") or "?", e.get("seat") or "?"), {"spin": 0, "dup": 0})
+            k["spin" if e["kind"] == events.SPIN_SUSPECTED else "dup"] += 1
+    for (by, to), n in loops.items():
+        what = [f"送りすぎ {n['spin']} 回" if n["spin"] else "", f"同じ本文の連続 {n['dup']} 回" if n["dup"] else ""]
+        lines.append(f"- 空回りの疑い {by} → {to} ({'、'.join(w for w in what if w)})")
     if live:
         lines += _permission_prompt_seats(team, shipdir)
     return lines
