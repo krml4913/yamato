@@ -11,6 +11,7 @@ import json
 import os
 import re
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -91,30 +92,48 @@ def write_json(path: Path, data) -> None:
     atomic_write(path, json.dumps(data, ensure_ascii=False, indent=2) + "\n")
 
 
-_lock_depth: dict[str, int] = {}
-_lock_files: dict[str, object] = {}
+_held = threading.local()   # per thread: path -> depth (re-entrancy is per thread)
 
 
 @contextlib.contextmanager
 def ship_lock(shipdir: Path):
-    """The single write lock of a ship (design §0 I1). Re-entrant within a process."""
+    """The single write lock of a ship (design §0 I1). Re-entrant within a thread."""
     key = str(Path(shipdir).resolve())
-    if _lock_depth.get(key):
-        _lock_depth[key] += 1
+    depth = getattr(_held, "depth", None)
+    if depth is None:
+        depth = _held.depth = {}
+    if depth.get(key):
+        depth[key] += 1
         try:
             yield
         finally:
-            _lock_depth[key] -= 1
+            depth[key] -= 1
         return
-    f = open(Path(key) / ".lock", "a")
-    fcntl.flock(f, fcntl.LOCK_EX)
-    _lock_depth[key] = 1
-    _lock_files[key] = f
+    with _flock(Path(key) / ".lock"):
+        depth[key] = 1
+        try:
+            yield
+        finally:
+            depth[key] = 0
+
+
+@contextlib.contextmanager
+def seat_lock(shipdir: Path, seat: str):
+    """Serialises bringing one seat on shift (check alive -> launch/resume -> roster),
+    so two senders cannot start the same seat twice. Separate from ship_lock: a
+    launch takes seconds and the new seat's own hooks need ship_lock meanwhile."""
+    with _flock(Path(shipdir) / ".runtime" / f"wake-{seat}.lock"):
+        yield
+
+
+@contextlib.contextmanager
+def _flock(path: Path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    f = open(path, "a")
     try:
+        fcntl.flock(f, fcntl.LOCK_EX)
         yield
     finally:
-        _lock_depth[key] = 0
-        _lock_files.pop(key, None)
         fcntl.flock(f, fcntl.LOCK_UN)
         f.close()
 

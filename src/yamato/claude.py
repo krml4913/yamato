@@ -166,9 +166,9 @@ def launch(*, cwd: str, name: str, role: str, agents_json: str, model: str,
     raise YamatoError(f"起動した席 {short} が claude agents に見つかりません")
 
 
-def resume(session_id: str, prompt: str, env_unset=()) -> str:
+def resume(session_id: str, prompt: str, env_unset=(), cwd: str | None = None) -> str:
     """Wake a stopped session under its own id. Raises if Claude started a copy."""
-    cp = _run(["--resume", session_id, "--bg", "--", prompt], env=seat_env(env_unset))
+    cp = _run(["--resume", session_id, "--bg", "--", prompt], cwd=cwd, env=seat_env(env_unset))
     out = _output(cp)
     copy = _COPY_RE.search(out)
     if copy:

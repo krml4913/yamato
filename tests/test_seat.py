@@ -149,6 +149,41 @@ class SeatTest(ShipTestCase):
         self.assertIn("起動していない", out)
         self.assertEqual(self.fake()["calls"], [])
 
+    def test_concurrent_sends_to_a_stopped_seat_launch_it_once(self):
+        """Review B1: two senders racing must not start the seat twice."""
+        import threading
+
+        self.up()
+        self.set_fake_mode(slow_launch=0.5)
+        errors = []
+
+        def send(text):
+            try:
+                seat.send(self.shipdir, "impl", text, "pm")
+            except Exception as e:  # pragma: no cover - surfaced below
+                errors.append(e)
+
+        with mock.patch.object(seat, "out"):
+            threads = [threading.Thread(target=send, args=(f"msg{i}",)) for i in range(3)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+        self.assertEqual(errors, [])
+        impl_launches = [c for c in self.bg_calls() if c["argv"][c["argv"].index("--name") + 1] == "t1.impl"]
+        self.assertEqual(len(impl_launches), 1)
+        impl_sessions = [x for x in self.fake()["sessions"] if x["name"] == "t1.impl"]
+        self.assertEqual(roster.seat(self.shipdir, "impl")["sessionId"], impl_sessions[0]["sessionId"])
+        from yamato import inbox
+        self.assertEqual([e["n"] for e in inbox.entries(self.shipdir, "impl")], [1, 2, 3])
+
+    def test_resume_runs_in_the_workspace(self):
+        self.up()
+        self.stop_session("pm")
+        self.run_cmd(seat.send, self.shipdir, "pm", "x", "owner")
+        [call] = self.resume_calls()
+        self.assertEqual(call["cwd"], str(self.workspace))
+
     def test_send_to_live_seat_does_not_wake_it(self):
         self.up()
         out = self.run_cmd(seat.send, self.shipdir, "pm", "report", "impl")
@@ -328,6 +363,17 @@ class SeatTest(ShipTestCase):
         self.assertEqual(rec["shiftNo"], 2)
         self.assertIn("新しいシフトを起動した", out)
         self.assertNotIn("SendMessage ツールで", out)
+
+    def test_long_handoff_warns_with_the_inject_limit_but_does_not_fail(self):
+        ty = self.shipdir / "team.yaml"
+        ty.write_text(ty.read_text().replace("handoff: [40, 2000]", "handoff: [5, 2000]"))
+        self.up()
+        rec = roster.seat(self.shipdir, "pm")
+        (self.shipdir / "seats/pm/handoff.md").write_text("\n".join(f"l{i}" for i in range(8)))
+        with mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": rec["sessionId"]}):
+            out = self.run_cmd(seat.seat_stop, self.shipdir, "pm", 10)
+        self.assertIn("8 行ある (注入の上限 5 行)", out)
+        self.assertEqual(roster.seat(self.shipdir, "pm")["state"], roster.STOPPING)
 
     def test_reconcile_closes_shifts_whose_process_vanished(self):
         self.up()

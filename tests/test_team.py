@@ -82,6 +82,11 @@ class TeamTest(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(YamatoError):
                 validate(base(inject=bad), Path("/ship"))
 
+    def test_zero_is_not_the_default(self):
+        with self.assertRaises(YamatoError):
+            validate(base(time_limit=0), Path("/ship"))
+        self.assertEqual(validate(base(grace=0), Path("/ship"))["grace"], 0)
+
     def test_duplicate_seat_names(self):
         with self.assertRaises(YamatoError):
             expand_seats({"a-1": {"model": "sonnet", "shift": "per_task", "count": 1},

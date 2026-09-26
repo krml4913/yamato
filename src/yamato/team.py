@@ -62,6 +62,10 @@ def validate(data: dict, shipdir: Path) -> dict:
     name = check_name("艦", str(data.get("name") or ""))
 
     warnings: list[str] = []
+    # `0` must not silently become the default (review N4)
+    time_limit = parse_duration(DEFAULT_TIME_LIMIT if data.get("time_limit") is None else data["time_limit"])
+    if time_limit <= 0:
+        raise YamatoError("team.yaml: time_limit は 0 より長くする")
     roles_in = data.get("roles")
     if not isinstance(roles_in, dict) or not roles_in:
         raise YamatoError("team.yaml: roles が空です")
@@ -158,8 +162,8 @@ def validate(data: dict, shipdir: Path) -> dict:
         "hub": hub,
         "workspace": str(wpath.resolve()),
         "charter": str(data.get("charter") or "charter.md"),
-        "time_limit": parse_duration(data.get("time_limit") or DEFAULT_TIME_LIMIT),
-        "grace": parse_duration(data.get("grace") or DEFAULT_GRACE),
+        "time_limit": time_limit,
+        "grace": parse_duration(DEFAULT_GRACE if data.get("grace") is None else data["grace"]),
         "deny": deny,
         "settings": settings,
         "seat_stop": {**SEAT_STOP_DEFAULTS, **seat_stop},

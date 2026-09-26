@@ -40,7 +40,8 @@ def entries(shipdir: Path, seat: str) -> list[dict]:
 
 def append(shipdir: Path, seat: str, sender: str, text: str) -> dict:
     with ship_lock(shipdir):
-        n = len(entries(shipdir, seat)) + 1
+        # the last valid number + 1: a torn line must not reuse a number
+        n = max((e.get("n", 0) for e in entries(shipdir, seat)), default=0) + 1
         entry = {"n": n, "ts": time.time(), "from": sender, "text": text}
         path = _inbox(shipdir, seat)
         path.parent.mkdir(parents=True, exist_ok=True)

@@ -12,7 +12,7 @@ from pathlib import Path
 
 from . import deadline, inbox, inject, roster
 from .team import runtime_team
-from .util import YAMATO_BIN, append_log, read_json, write_json
+from .util import YAMATO_BIN, append_log, read_json, ship_lock, write_json
 
 MAX_WRAPUP_NOTICES = 3   # per shift; after that the grace-period force stop takes over
 WAIT_POLL = 5            # seconds between deadline checks in the async watcher
@@ -49,14 +49,15 @@ def _notice_path(shipdir: Path, seat: str) -> Path:
 def take_wrapup_notice(shipdir: Path, seat: str, shift_no) -> bool:
     """Count wrap-up notices per shift so a seat that ignores them is not nudged forever."""
     path = _notice_path(shipdir, seat)
-    rec = read_json(path, {}) or {}
-    if rec.get("shiftNo") != shift_no:
-        rec = {"shiftNo": shift_no, "count": 0}
-    if rec["count"] >= MAX_WRAPUP_NOTICES:
-        return False
-    rec["count"] += 1
-    write_json(path, rec)
-    return True
+    with ship_lock(shipdir):   # the Stop hook and the async watcher may count at once
+        rec = read_json(path, {}) or {}
+        if rec.get("shiftNo") != shift_no:
+            rec = {"shiftNo": shift_no, "count": 0}
+        if rec["count"] >= MAX_WRAPUP_NOTICES:
+            return False
+        rec["count"] += 1
+        write_json(path, rec)
+        return True
 
 
 def _needs_wrapup(shipdir: Path, seat: str) -> tuple[bool, dict]:

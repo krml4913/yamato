@@ -32,6 +32,11 @@ class InboxTest(unittest.TestCase):
         with open(self.ship / "seats/impl/inbox.jsonl", "a") as f:
             f.write('{"n": 2, "te\n')
         self.assertEqual([x["text"] for x in inbox.unread(self.ship, "impl")], ["ok"])
+        # numbering continues from the last valid entry, never reusing a number
+        self.assertEqual(inbox.append(self.ship, "impl", "pm", "next")["n"], 2)
+        with open(self.ship / "seats/impl/inbox.jsonl", "a") as f:
+            f.write("garbage\n")
+        self.assertEqual(inbox.append(self.ship, "impl", "pm", "after")["n"], 3)
 
     def test_format_truncates(self):
         e = {"n": 1, "ts": 0, "from": "pm", "text": "x" * 50}

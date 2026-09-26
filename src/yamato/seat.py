@@ -19,12 +19,11 @@ from pathlib import Path
 from . import claude, deadline, inbox, notify, roster, runtime, usage
 from .team import load_team, seat_spec
 from .util import (YAMATO_BIN, YamatoError, append_log, fmt_span, fmt_time, read_json,
-                   ship_lock, write_json)
+                   seat_lock, ship_lock, write_json)
 
 SEAT_FILES = ("memory.md", "memory-inbox.md")
 OWNER = inbox.OWNER
 WATCHDOG_POLL = 30
-HANDOFF_MAX_LINES = 40
 
 
 def out(msg: str = "") -> None:
@@ -59,6 +58,12 @@ def current_team(shipdir: Path) -> dict:
 
 def session_name(team: dict, seat: str) -> str:
     return f"{team['name']}.{seat}"
+
+
+def handoff_max_lines(team: dict) -> int:
+    from .inject import LIMITS
+
+    return ((team.get("inject") or {}).get("limits") or {}).get("handoff", LIMITS["handoff"])[0]
 
 
 def _handoff(shipdir: Path, seat: str) -> Path:
@@ -140,7 +145,8 @@ def resume_shift(shipdir: Path, team: dict, seat: str, rec: dict, reason: str = 
     # resume right after stop starts a flagless copy: wait for the pid to vanish (verify-p0-b Q2)
     if not claude.wait_gone(sid, timeout=30):
         raise YamatoError(f"席 {seat} の前のプロセスがまだ残っているので resume できません ({sid})")
-    claude.resume(sid, _resume_prompt(shipdir, seat, reason), env_unset=team.get("env_unset") or ())
+    claude.resume(sid, _resume_prompt(shipdir, seat, reason), env_unset=team.get("env_unset") or (),
+                  cwd=team["workspace"])
     new = roster.start_shift(shipdir, seat, session_id=sid, short_id=rec.get("shortId") or sid[:8],
                              session_name=session_name(team, seat), how="resume")
     clear_pending(shipdir, seat)
@@ -148,24 +154,32 @@ def resume_shift(shipdir: Path, team: dict, seat: str, rec: dict, reason: str = 
     return new
 
 
-def wake(shipdir: Path, team: dict, seat: str, listing: list[dict], reason: str = "send") -> tuple[str, dict]:
-    """Bring a seat on shift. Returns (what happened, roster record)."""
-    rec = roster.seat(shipdir, seat)
-    live = claude.by_session(listing).get(rec.get("sessionId"))
-    if claude.is_alive(live) and rec.get("state") == roster.STOPPING:
-        # E2E run 3: a message SendMessage'd into the delayed-stop window is lost
-        # when the stop lands. Wait for the stop, then wake a fresh shift.
-        if not claude.wait_gone(rec["sessionId"], timeout=60):
-            raise YamatoError(f"席 {seat} は終業処理中ですが、止まるのを待てませんでした ({rec['sessionId']})")
-        finish_shift(shipdir, seat, reason="seat-stop")
+def wake(shipdir: Path, team: dict, seat: str, reason: str = "send") -> tuple[str, dict]:
+    """Bring a seat on shift. Returns (what happened, roster record).
+
+    Under the seat's wake lock, liveness and the roster are read afresh: two
+    concurrent sends to a stopped seat must not launch it twice, or one session
+    would be missing from the roster and escape the time limit (review B1).
+    """
+    with seat_lock(shipdir, seat):
+        listing = claude.agents()
+        reconcile(shipdir, team, listing)
         rec = roster.seat(shipdir, seat)
-        live = None
-    if claude.is_alive(live):
-        return "alive", rec
-    spec = seat_spec(team, seat)
-    if spec["shift"] == "persistent" and rec.get("sessionId"):
-        return "resumed", resume_shift(shipdir, team, seat, rec, reason)
-    return "started", start_new_shift(shipdir, team, seat)
+        live = claude.by_session(listing).get(rec.get("sessionId"))
+        if claude.is_alive(live) and rec.get("state") == roster.STOPPING:
+            # E2E run 3: a message SendMessage'd into the delayed-stop window is lost
+            # when the stop lands. Wait for the stop, then wake a fresh shift.
+            if not claude.wait_gone(rec["sessionId"], timeout=60):
+                raise YamatoError(f"席 {seat} は終業処理中ですが、止まるのを待てませんでした ({rec['sessionId']})")
+            finish_shift(shipdir, seat, reason="seat-stop")
+            rec = roster.seat(shipdir, seat)
+            live = None
+        if claude.is_alive(live):
+            return "alive", rec
+        spec = seat_spec(team, seat)
+        if spec["shift"] == "persistent" and rec.get("sessionId"):
+            return "resumed", resume_shift(shipdir, team, seat, rec, reason)
+        return "started", start_new_shift(shipdir, team, seat)
 
 
 def finish_shift(shipdir: Path, seat: str, *, reason: str, forced: bool = False) -> dict | None:
@@ -204,17 +218,18 @@ def reconcile(shipdir: Path, team: dict, listing: list[dict]) -> None:
 
 
 def force_stop_all(shipdir: Path, team: dict, listing: list[dict], reason: str) -> list[str]:
-    by = claude.by_session(listing)
     stopped = []
     for seat in team["seats"]:
-        rec = roster.seat(shipdir, seat)
-        live = by.get(rec.get("sessionId"))
-        if not claude.is_alive(live):
-            continue
-        claude.stop(rec.get("shortId") or rec["sessionId"][:8])
-        claude.wait_gone(rec["sessionId"], timeout=30)
-        finish_shift(shipdir, seat, reason=reason, forced=True)
-        stopped.append(seat)
+        # a launch in flight holds the wake lock: wait for it, then look again
+        with seat_lock(shipdir, seat):
+            rec = roster.seat(shipdir, seat)
+            live = claude.find(rec["sessionId"]) if rec.get("sessionId") else None
+            if not claude.is_alive(live):
+                continue
+            claude.stop(rec.get("shortId") or rec["sessionId"][:8])
+            claude.wait_gone(rec["sessionId"], timeout=30)
+            finish_shift(shipdir, seat, reason=reason, forced=True)
+            stopped.append(seat)
     return stopped
 
 
@@ -254,7 +269,7 @@ def up(shipdir: Path, for_: str | None) -> int:
     token = uuid.uuid4().hex[:12]
     dl = deadline.write(shipdir, limit=limit, grace=team["grace"], token=token)
     hub = team["hub"]
-    what, rec = wake(shipdir, team, hub, listing, reason="up")
+    what, rec = wake(shipdir, team, hub, reason="up")
     spawn_watchdog(shipdir, token)
     out(f"艦 {team['name']} を起動: deadline {fmt_time(dl['deadline'])} (稼働 {fmt_span(limit)}, 猶予 {fmt_span(team['grace'])})")
     label = {"alive": "すでに動いている", "resumed": "resume した", "started": "新しいシフトを起動した"}[what]
@@ -291,9 +306,7 @@ def send(shipdir: Path, seat: str, text: str, sender: str) -> int:
             out(deadline.WRAP_UP_MESSAGE.format(yamato=y, ship=shipdir, seat=sender))
         return 0
 
-    listing = claude.agents()
-    reconcile(shipdir, team, listing)
-    what, rec = wake(shipdir, team, seat, listing)
+    what, rec = wake(shipdir, team, seat)
     name = session_name(team, seat)
     if what == "alive":
         if sender in team["seats"]:
@@ -333,8 +346,9 @@ def seat_stop(shipdir: Path, seat: str, after: int, delivered: bool = False) -> 
                           f"{listing}\n"
                           "SendMessage で届けていなければ今届けてから、届けたなら `seat-stop --delivered` で終業してください")
     lines = len(_handoff(shipdir, seat).read_text(encoding="utf-8").splitlines()) if _handoff(shipdir, seat).exists() else 0
-    if lines > HANDOFF_MAX_LINES:
-        out(f"注意: handoff.md が {lines} 行ある (目安 {HANDOFF_MAX_LINES} 行)。次のシフトでは上限で切られる。")
+    max_lines = handoff_max_lines(team)
+    if lines > max_lines:
+        out(f"注意: handoff.md が {lines} 行ある (注入の上限 {max_lines} 行)。次のシフトでは上限で切られる。")
     roster.mark_stopping(shipdir, seat,
                          handoff_written=handoff_written_since(shipdir, seat, rec.get("shiftStartedAt")))
     append_log(shipdir, seat, f"seat-stop: 終業を受け付けた ({after} 秒後に停止)")

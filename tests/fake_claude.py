@@ -12,6 +12,10 @@ import time
 import uuid
 
 path = os.environ["FAKE_CLAUDE_STATE"]
+# serialise whole invocations so parallel callers in a test do not lose writes
+import fcntl
+_lock = open(path + ".lock", "a")
+fcntl.flock(_lock, fcntl.LOCK_EX)
 try:
     st = json.load(open(path))
 except (FileNotFoundError, ValueError):
