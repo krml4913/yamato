@@ -247,6 +247,19 @@ class SeatTest(ShipTestCase):
             self.run_cmd(seat.seat_stop, self.shipdir, "impl", 10)
         self.assertEqual(roster.seat(self.shipdir, "impl")["state"], roster.STOPPING)
 
+    def test_seat_stop_checks_can_be_turned_off_in_team_yaml(self):
+        ty = self.shipdir / "team.yaml"
+        ty.write_text(ty.read_text().replace("require_handoff: true", "require_handoff: false")
+                      .replace("require_delivery: true", "require_delivery: false"))
+        self.up()
+        self.run_cmd(seat.send, self.shipdir, "impl", "T-001", "pm")
+        self.run_cmd(seat.send, self.shipdir, "pm", "done", "impl")
+        impl = roster.seat(self.shipdir, "impl")
+        with mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": impl["sessionId"]}):
+            self.run_cmd(seat.seat_stop, self.shipdir, "impl", 10)  # no handoff, report unread
+        rec = roster.seat(self.shipdir, "impl")
+        self.assertEqual((rec["state"], rec["handoffWritten"]), (roster.STOPPING, False))
+
     def test_seat_stop_delivered_flag(self):
         self.up()
         self.run_cmd(seat.send, self.shipdir, "impl", "T-001", "pm")

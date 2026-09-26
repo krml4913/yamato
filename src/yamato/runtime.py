@@ -12,17 +12,10 @@ from pathlib import Path
 
 from .util import YAMATO_BIN, YamatoError, atomic_write, write_json
 
-# verify-p0-b "settings.json のひな形" plus yamato's own lifecycle commands:
-# a seat stops itself only through `yamato seat-stop` (verify-p0-a Q3).
-BASE_DENY = [
-    "Bash(git push --force*)", "Bash(git push -f*)", "Bash(git reset --hard*)",
-    "Bash(gh pr merge*)",
-    "Bash(claude stop*)", "Bash(claude rm*)", "Bash(claude --resume*)",
-    "Edit(.claude/**)", "Write(.claude/**)",
-]
-# ship files that only yamato commands may change
-PROTECTED = ["team.yaml", "roster.json", "usage.jsonl", ".runtime/**",
-             "seats/*/inbox.jsonl", "seats/*/inbox.cursor"]
+# Policy (the deny list, worktree isolation, ...) lives in team.yaml, seeded by
+# the template (mechanism-not-policy). The code only adds what the mechanism
+# itself needs: accept cross-session messages, auto mode, the hooks, and the
+# allow rule for the delayed self-stop (verify-p0-a Q3).
 HOOK_TIMEOUT_WAIT = 86400  # the async deadline watcher sleeps until the deadline
 
 
@@ -63,24 +56,34 @@ def build_agents(shipdir: Path, team: dict) -> dict:
     return out
 
 
+def _merge(base: dict, extra: dict) -> dict:
+    out = dict(base)
+    for k, v in extra.items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = _merge(out[k], v)
+        elif isinstance(v, list) and isinstance(out.get(k), list):
+            out[k] = out[k] + [x for x in v if x not in out[k]]
+        else:
+            out[k] = v
+    return out
+
+
 def build_settings(shipdir: Path, team: dict, seat: str) -> dict:
     ship = str(Path(shipdir))
     y = str(YAMATO_BIN)
-    protected = [f"{tool}(/{ship}/{p})" for p in PROTECTED for tool in ("Edit", "Write")]
+    # `{{ship}}` in a rule is the ship folder, so a template can protect its records
+    deny = [r.replace("{{ship}}", ship) for r in team.get("deny") or []]
 
     def hook(*args: str) -> dict:
         return {"type": "command", "command": _cmd(y, "hook", *args, ship, seat)}
 
-    return {
+    mech = {
         "crossSessionInbound": "accept",
         "permissions": {
             "defaultMode": "auto",
-            # the only allow rule: the delayed self-stop (verify-p0-a Q3)
             "allow": [f"Bash({y} seat-stop:*)"],
-            "deny": BASE_DENY + protected + list(team.get("deny") or []),
+            "deny": deny,
         },
-        # workspace and ship folder may be the same repo; keep records in place (§0 I3)
-        "worktree": {"bgIsolation": "none"},
         "hooks": {
             "SessionStart": [{"hooks": [hook("session-start")]}],
             "Stop": [{"hooks": [
@@ -91,7 +94,8 @@ def build_settings(shipdir: Path, team: dict, seat: str) -> dict:
             "PermissionDenied": [{"hooks": [hook("log-denied")]}],
         },
     }
-
+    # team.yaml `settings:` goes underneath; yamato's own keys win
+    return _merge(team.get("settings") or {}, mech)
 
 def generate(shipdir: Path, team: dict) -> None:
     rd = runtime_dir(shipdir)

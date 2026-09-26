@@ -18,11 +18,43 @@ roles:
     count: 1                 # 2 以上にすると席は impl-1, impl-2, ... になる
     description: 実装担当。割り当てられた task を実装してテストし、captain に報告する
 
-# 無人の席にやらせない操作 (yamato 既定の deny に追加される)
+# 無人の席にやらせない操作 (Claude Code の permissions.deny)。艦ごとに自由に変えてよい
+# `{{ship}}` は艦フォルダのパスに置き換わる。`ask` ルールは auto モードでも止まるので使わない
 deny:
+  # git: 頼まれていない push・PR・merge、履歴の破壊
   - "Bash(git push*)"
   - "Bash(gh pr create*)"
+  - "Bash(gh pr merge*)"
+  - "Bash(git reset --hard*)"
+  # 席の出入りは yamato を通す (自分を止めるのは seat-stop だけ)
+  - "Bash(claude stop*)"
+  - "Bash(claude rm*)"
+  - "Bash(claude --resume*)"
+  # 作業 repo の Claude Code 設定
+  - "Edit(.claude/**)"
+  - "Write(.claude/**)"
+  # yamato のコマンドだけが書く記録
+  - "Edit(/{{ship}}/team.yaml)"
+  - "Write(/{{ship}}/team.yaml)"
+  - "Edit(/{{ship}}/roster.json)"
+  - "Write(/{{ship}}/roster.json)"
+  - "Edit(/{{ship}}/usage.jsonl)"
+  - "Write(/{{ship}}/usage.jsonl)"
+  - "Edit(/{{ship}}/.runtime/**)"
+  - "Write(/{{ship}}/.runtime/**)"
+  - "Edit(/{{ship}}/seats/*/inbox.*)"
+  - "Write(/{{ship}}/seats/*/inbox.*)"
+
+# 席の settings.json に重ねる中身 (yamato が要る hooks・auto・受信の設定はその上に載る)
+settings:
+  worktree:
+    bgIsolation: none        # 席は workspace を共有し、自動 worktree を作らない (design §0 I3)
+
+# seat-stop が終業前に確かめること
+seat_stop:
+  require_handoff: true      # handoff.md が今回のシフトで更新されていること
+  require_delivery: true     # 生きている宛先への送信が読まれているか、--delivered が付いていること
 
 board:
-  kinds: [task]
-  fields: [branch]
+  kinds: [task]              # 最初の値が board add の既定。ほかの値も自由に使える
+  fields: [branch]           # 目安 (board は固定項目以外を検証しない)

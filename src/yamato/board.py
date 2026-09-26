@@ -1,8 +1,11 @@
 """The board: one markdown file per item, frontmatter changed only through commands.
 
-P0 scope (design §0): a single level of ``task`` items and the fixed fields
-plus the team-defined ``column`` and extra fields. The body is free text.
-Items that reach ``state: done`` move to ``board/archive/``.
+P0 scope (design §0): a single level of items. The commands check only the
+integrity of the fixed fields (state, assignee, parent / blocked_on
+references, the id); kinds, columns and any extra fields are the team's own
+free text. When the team defines ``board.columns``, a known column and the
+state are kept in step. The body is free. ``state: done`` moves an item to
+``board/archive/``.
 """
 from __future__ import annotations
 
@@ -18,6 +21,7 @@ FIXED = ("id", "title", "kind", "parent", "assignee", "state", "blocked_on", "li
 LIST_FIELDS = ("blocked_on", "links")
 ID_PREFIX = "T-"
 ID_RE = re.compile(r"^T-(\d+)$")
+KEY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
 _PLAIN_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_./#-]*$")
 
 
@@ -109,8 +113,6 @@ class Board:
 
     # validation
     def _check(self, key: str, value, item_id: str | None):
-        board = self.team.get("board", {})
-        columns = board.get("columns") or []
         if key == "id":
             raise YamatoError("id は変更できません")
         if key == "title":
@@ -118,10 +120,10 @@ class Board:
                 raise YamatoError("title は空にできません")
             return str(value)
         if key == "kind":
-            kinds = board.get("kinds") or ["task"]
-            if value not in kinds:
-                raise YamatoError(f"kind は {' / '.join(kinds)} のどれか (今: {value})")
-            return value
+            # the kinds a team uses are its own business; only a value is required
+            if not value:
+                raise YamatoError("kind は空にできません")
+            return str(value)
         if key == "state":
             if value not in STATES:
                 raise YamatoError(f"state は {' / '.join(STATES)} のどれか (今: {value})")
@@ -145,25 +147,20 @@ class Board:
                     if v == item_id or not self.exists(v):
                         raise YamatoError(f"blocked_on={v} が board にありません")
             return vals
-        if key == "column":
-            names = [c["name"] for c in columns]
-            if not names:
-                raise YamatoError("このチームは board.columns を定義していません")
-            if value not in names:
-                raise YamatoError(f"column は {' / '.join(names)} のどれか (今: {value})")
-            return value
-        if key in (board.get("fields") or []):
-            return None if value in (None, "") else str(value)
-        allowed = list(FIXED[1:]) + (["column"] if columns else []) + list(board.get("fields") or [])
-        raise YamatoError(f"{key} は変更できる項目ではありません (項目: {', '.join(allowed)})")
+        # column and team-defined fields are free text (mechanism-not-policy)
+        if not KEY_RE.match(key):
+            raise YamatoError(f"項目名が不正です: {key!r} (英数字・_・-)")
+        return None if value in (None, "") else str(value)
 
     def _sync_column(self, meta: dict, changed: dict) -> None:
         columns = self.team.get("board", {}).get("columns") or []
         if not columns:
             return
         by_name = {c["name"]: c["state"] for c in columns}
-        if "column" in changed and meta.get("column"):
+        if "column" in changed and meta.get("column") in by_name:
             meta["state"] = by_name[meta["column"]]
+        elif "column" in changed:
+            return  # a column the team did not define: free text, state untouched
         elif "state" in changed and by_name.get(meta.get("column")) != meta["state"]:
             meta["column"] = next((c["name"] for c in columns if c["state"] == meta["state"]), meta.get("column"))
 

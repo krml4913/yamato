@@ -32,13 +32,18 @@ class BoardTest(unittest.TestCase):
     def test_validation(self):
         self.b.add("one")
         bad = [
-            {"state": "doing"}, {"assignee": "nobody"}, {"kind": "epic"}, {"id": "T-9"},
+            {"state": "doing"}, {"assignee": "nobody"}, {"kind": ""}, {"id": "T-9"},
             {"parent": "T-404"}, {"blocked_on": "T-404"}, {"blocked_on": "T-001"},
-            {"column": "x"}, {"priority": "high"}, {"title": ""},
+            {"bad key": "x"}, {"title": ""},
         ]
         for fields in bad:
             with self.subTest(fields=fields), self.assertRaises(YamatoError):
                 self.b.set("T-001", fields)
+
+    def test_kinds_columns_and_extra_fields_are_free(self):
+        self.b.add("one")
+        m = self.b.set("T-001", {"kind": "epic", "column": "whatever", "priority": "high"})
+        self.assertEqual((m["kind"], m["column"], m["priority"], m["state"]), ("epic", "whatever", "high", "open"))
 
     def test_set_fields_lists_and_clear(self):
         self.b.add("one")

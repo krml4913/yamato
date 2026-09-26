@@ -31,6 +31,8 @@ class TeamTest(unittest.TestCase):
         self.assertEqual(t["grace"], 20 * 60)
         self.assertEqual(t["board"]["kinds"], ["task"])
         self.assertEqual(t["deny"], [])
+        self.assertEqual(t["settings"], {})
+        self.assertEqual(t["seat_stop"], {"require_handoff": True, "require_delivery": True})
 
     def test_relative_workspace_is_under_ship(self):
         t = validate(base(workspace="work"), Path("/ship"))
@@ -52,6 +54,9 @@ class TeamTest(unittest.TestCase):
             base(name="Bad Name"),
             base(deny="Bash(x)"),
             base(board={"columns": [{"name": "x", "state": "weird"}]}),
+            base(settings=["x"]),
+            base(seat_stop={"require_handoff": "no"}),
+            base(seat_stop={"other": True}),
         ]
         for data in cases:
             with self.subTest(data=data), self.assertRaises(YamatoError):

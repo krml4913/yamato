@@ -11,7 +11,9 @@ from .util import YamatoError, check_name, parse_duration, read_json
 
 SHIFTS = ("per_task", "persistent")
 STATES = ("open", "active", "blocked", "done")
-TOP_KEYS = {"name", "hub", "workspace", "charter", "roles", "time_limit", "grace", "deny", "board"}
+TOP_KEYS = {"name", "hub", "workspace", "charter", "roles", "time_limit", "grace", "deny", "board",
+            "settings", "seat_stop"}
+SEAT_STOP_DEFAULTS = {"require_handoff": True, "require_delivery": True}
 ROLE_KEYS = {"model", "shift", "count", "description"}
 # auto mode is unavailable on Haiku (verify-p0-b §総括 1): the seat would fall
 # back to manual and block on the first dialog.
@@ -99,6 +101,14 @@ def validate(data: dict, shipdir: Path) -> dict:
     if not isinstance(deny, list) or not all(isinstance(x, str) for x in deny):
         raise YamatoError("team.yaml: deny は文字列のリスト")
 
+    settings = data.get("settings") or {}
+    if not isinstance(settings, dict):
+        raise YamatoError("team.yaml: settings は mapping (Claude Code の settings.json に重ねる中身)")
+    seat_stop = data.get("seat_stop") or {}
+    if not isinstance(seat_stop, dict) or set(seat_stop) - set(SEAT_STOP_DEFAULTS) \
+            or not all(isinstance(v, bool) for v in seat_stop.values()):
+        raise YamatoError(f"team.yaml: seat_stop は {{{', '.join(SEAT_STOP_DEFAULTS)}: true|false}}")
+
     board = data.get("board") or {}
     if not isinstance(board, dict):
         raise YamatoError("team.yaml: board が mapping ではありません")
@@ -118,6 +128,8 @@ def validate(data: dict, shipdir: Path) -> dict:
         "time_limit": parse_duration(data.get("time_limit") or DEFAULT_TIME_LIMIT),
         "grace": parse_duration(data.get("grace") or DEFAULT_GRACE),
         "deny": deny,
+        "settings": settings,
+        "seat_stop": {**SEAT_STOP_DEFAULTS, **seat_stop},
         "roles": roles,
         "seats": expand_seats(roles),
         "board": {"kinds": [str(k) for k in kinds], "columns": columns, "fields": [str(f) for f in fields]},

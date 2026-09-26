@@ -16,10 +16,11 @@ class RuntimeTest(ShipTestCase):
         self.assertEqual(s["permissions"]["allow"], [f"Bash({YAMATO_BIN} seat-stop:*)"])
         self.assertNotIn("ask", s["permissions"])
         deny = s["permissions"]["deny"]
-        for rule in ("Bash(git push --force*)", "Bash(claude stop*)", "Edit(.claude/**)",
-                     "Bash(git push*)", "Bash(gh pr create*)", f"Edit(/{self.shipdir}/roster.json)"):
+        # the deny list comes from the template's team.yaml ({{ship}} expanded), not from code
+        for rule in ("Bash(git push*)", "Bash(git reset --hard*)", "Bash(claude stop*)", "Edit(.claude/**)",
+                     "Bash(gh pr create*)", f"Edit(/{self.shipdir}/roster.json)"):
             self.assertIn(rule, deny)
-        self.assertEqual(s["worktree"], {"bgIsolation": "none"})
+        self.assertEqual(s["worktree"], {"bgIsolation": "none"})  # template `settings:`
         cmds = [h["command"] for ev in s["hooks"].values() for grp in ev for h in grp["hooks"]]
         self.assertTrue(all(c.startswith(str(YAMATO_BIN) + " hook ") for c in cmds))
         self.assertTrue(all(c.endswith(f"{self.shipdir} impl") for c in cmds))
@@ -27,6 +28,22 @@ class RuntimeTest(ShipTestCase):
         self.assertTrue(waiter["async"] and waiter["asyncRewake"])
         self.assertIn("wait-deadline", waiter["command"])
         self.assertTrue(set(s["hooks"]) >= {"SessionStart", "Stop", "PermissionRequest", "PermissionDenied"})
+
+    def test_policy_is_whatever_team_yaml_says(self):
+        team = self.team()
+        team["deny"] = []
+        team["settings"] = {"worktree": {"bgIsolation": "auto"}, "language": "English",
+                            "permissions": {"allow": ["Bash(make test)"], "defaultMode": "manual"},
+                            "crossSessionInbound": "hold"}
+        s = runtime.build_settings(self.shipdir, team, "impl")
+        self.assertEqual(s["permissions"]["deny"], [])
+        self.assertEqual(s["worktree"], {"bgIsolation": "auto"})
+        self.assertEqual(s["language"], "English")
+        self.assertEqual(s["permissions"]["allow"], ["Bash(make test)", f"Bash({YAMATO_BIN} seat-stop:*)"])
+        # what the mechanism needs is not overridable
+        self.assertEqual(s["permissions"]["defaultMode"], "auto")
+        self.assertEqual(s["crossSessionInbound"], "accept")
+        self.assertIn("SessionStart", s["hooks"])
 
     def test_agents_json_renders_placeholders(self):
         team = self.team()

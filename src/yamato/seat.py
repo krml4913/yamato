@@ -308,18 +308,20 @@ def seat_stop(shipdir: Path, seat: str, after: int, delivered: bool = False) -> 
     if rec.get("state") == roster.STOPPING:
         out("終業はすでに受け付けている。このターンは短い一言で終えてください。")
         return 0
-    if not handoff_written_since(shipdir, seat, rec.get("shiftStartedAt")):
+    checks = team.get("seat_stop") or {}
+    if checks.get("require_handoff", True) and not handoff_written_since(shipdir, seat, rec.get("shiftStartedAt")):
         raise YamatoError(f"handoff.md が今回のシフトで更新されていません。先に {_handoff(shipdir, seat)} を上書きしてから、もう一度 seat-stop してください")
     pending = unresolved_pending(shipdir, seat)
-    if pending and not delivered:
+    if pending and not delivered and checks.get("require_delivery", True):
         listing = "\n".join(f"  - to=\"{p['name']}\" inbox #{p['n']}" for p in pending)
         raise YamatoError("生きている宛先に SendMessage で届けるはずのメッセージが、まだ読まれていません:\n"
                           f"{listing}\n"
                           "SendMessage で届けていなければ今届けてから、届けたなら `seat-stop --delivered` で終業してください")
-    lines = len(_handoff(shipdir, seat).read_text(encoding="utf-8").splitlines())
+    lines = len(_handoff(shipdir, seat).read_text(encoding="utf-8").splitlines()) if _handoff(shipdir, seat).exists() else 0
     if lines > HANDOFF_MAX_LINES:
         out(f"注意: handoff.md が {lines} 行ある (目安 {HANDOFF_MAX_LINES} 行)。次のシフトでは上限で切られる。")
-    roster.mark_stopping(shipdir, seat, handoff_written=True)
+    roster.mark_stopping(shipdir, seat,
+                         handoff_written=handoff_written_since(shipdir, seat, rec.get("shiftStartedAt")))
     append_log(shipdir, seat, f"seat-stop: 終業を受け付けた ({after} 秒後に停止)")
     short = sid[:8]
     # delayed stop (verify-p0-a Q3 b): the current turn and its Stop hook finish first
