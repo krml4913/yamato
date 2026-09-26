@@ -39,12 +39,15 @@ cd ~/dev/myapp && claude    # trust のダイアログで承認して終了
 | `up <ship> [--for 3h]` | `.runtime/` を作り直し、deadline を書き、captain の席を起動 (persistent なら resume) |
 | `down <ship> [--force]` | 終業 / 強制停止 |
 | `status [<ship>]` | 席ごとの状態。権限の確認で止まっている席は `!!! 詰まり` と出る |
-| `send <ship> <seat> "<msg>" [--from <seat>]` | inbox に記録 → 宛先が生きていれば何もしない (送り手が SendMessage で届ける) / 止まった persistent は resume / per_task と未起動は新しいシフト |
+| `send <ship> <seat\|owner> "<msg>" [--from <seat>]` | inbox に記録 → 宛先が生きていれば何もしない (送り手が SendMessage で届ける) / 止まった persistent は resume / per_task と未起動は新しいシフト |
 | `inbox <ship> <seat> [--all]` | 未読を全文で表示して既読にする |
 | `board add\|set\|show\|list\|mine` | board の操作。frontmatter はコマンド経由でのみ変わり、値を検証する。done は `board/archive/` へ |
 | `log <ship> <seat> "<text>"` | 席の作業ログに 1 行 |
 | `seat-stop <ship> <seat> [--delivered]` | (席が使う) handoff.md の更新を確認して遅延 stop |
 | `hook <event> <ship> <seat>` | (Claude Code の hook から呼ばれる) session-start / stop / wait-deadline / deny-dialog / log-denied |
+
+team.yaml の項目: `name` / `hub` / `workspace` / `roles` (役割ごとに `model`・`shift: per_task|persistent`・`count`・`inject`) / `time_limit` / `grace` / `deny` / `env_unset` / `settings` (席の settings.json に重ねる) / `seat_stop` (終業前の確認) / `inject` (注入の中身と上限) / `notify` (owner 宛ての通知経路) / `board` (`kinds`・`columns`・`fields`・`archive_on_done`)。
+運用の方針 (deny の中身、外す環境変数、worktree の使い方、git の流れ) はコードに持たず、ひな形の team.yaml と役割プロンプト (`roles/<role>.md`) に書いてある。艦ごとに変えてよい。
 
 艦フォルダ: `team.yaml`・`charter.md`・`knowledge.md`・`roles/<role>.md`・`board/{items,archive}/`・`seats/<seat>/` (`handoff.md`・`log/<date>.md`・`inbox.jsonl`・`inbox.cursor`・`memory.md`・`memory-inbox.md`)・`roster.json`・`usage.jsonl` (シフトごとの使用量)・`.runtime/` (生成物)。
 
