@@ -10,6 +10,10 @@ team.yaml (mechanism-not-policy). With ``on_down``, ``yamato down`` and the
 forced stops call ``safety_net``: if the day's report is missing it makes a
 ``--facts-only`` one, and if it was never sent it sends it, so the owner
 always gets something even when the captain is down (§2.2 の 2).
+
+A second stop of the same day (e2e-p1 E): if something the report shows
+happened after it was last made or sent, ``refresh`` rebuilds the fact
+sections, keeping the captain's 「一言」「明日」, and it is sent again as an update.
 """
 from __future__ import annotations
 
@@ -21,7 +25,7 @@ from pathlib import Path
 
 from . import board as board_mod
 from . import events, notify, roster
-from .pr import PR_CONFLICT, PR_MERGE
+from .pr import PR_CONFLICT, PR_MERGE, PR_OPEN
 from .util import YamatoError, atomic_write, read_json, ship_lock, today
 
 REPORT_MADE = "report_made"    # events.jsonl kinds (docs/events.md)
@@ -45,6 +49,14 @@ INJECT_SECTIONS = (S_WORD, S_DECISIONS, S_TOMORROW)   # §2.3
 NOTIFY_SECTIONS = (S_WORD, S_DECISIONS, S_ANOMALY)    # §2.4
 
 CAPTAIN_BLANK = "(captain が書く)"
+CAPTAIN_SECTIONS = (S_WORD, S_TOMORROW)
+# what the fact sections are made of: one of these after the report was last made or
+# sent means the report is out of date. Not shift starts/ends (the captain's own
+# seat-stop after `report send`), nor notify_failed (the report's own notification)
+FACT_KINDS = (events.BOARD_ADD, events.BOARD_SET, events.BOARD_ARCHIVE, events.DECISION_OPEN,
+              events.DECISION_CLOSE, events.FORCE_STOP, events.SHIFT_FAILED, events.PERMISSION_DENIED,
+              events.SPIN_SUSPECTED, events.DUPLICATE_SUSPECTED, events.CAPTAIN_GAP,
+              PR_OPEN, PR_MERGE, PR_CONFLICT)
 FORCED_KINDS = ("down-force", "grace-exceeded")
 
 
@@ -344,21 +356,25 @@ def _span(seconds: float) -> str:
 # --- the report -------------------------------------------------------------
 
 def build(shipdir: Path, team: dict, date: str, *, facts_only: str | None = None,
-          now: float | None = None, live: bool = True) -> str:
-    """The report text. ``facts_only``: the reason the captain could not write."""
+          now: float | None = None, live: bool = True, keep: dict | None = None) -> str:
+    """The report text. ``facts_only``: the reason the captain could not write.
+    ``keep``: the captain's sections (「一言」「明日」) to carry over as they are."""
     now = now or time.time()
     since, until = day_span(date)
     items = _all_items(shipdir)
     decisions = decision_lines(shipdir, team, date, now)
     blank = f"captain が書けなかった (理由: {facts_only})" if facts_only else CAPTAIN_BLANK
+    keep = keep or {}
+    word = keep[S_WORD].splitlines() if keep.get(S_WORD) else [blank]
+    tomorrow = keep[S_TOMORROW].splitlines() if keep.get(S_TOMORROW) else [blank]
     sections = [
-        (S_WORD, [blank]),
+        (S_WORD, word),
         (f"{S_DECISIONS} ({len(decisions)} 件)", _capped(decisions) or ["- なし"]),
         (S_DONE, _capped(done_lines(shipdir, items, since, until)) or ["- なし"]),
         (S_MOVING, moving_lines(shipdir, items) or ["- なし"]),
         (S_ANOMALY, _capped(anomaly_lines(shipdir, team, since, until, live)) or ["- なし"]),
         (S_USAGE, usage_lines(shipdir, since, until)),
-        (S_TOMORROW, [blank]),
+        (S_TOMORROW, tomorrow),
     ]
     out = [f"# {team['name']} 日報 {date}{_span_label(shipdir, since, until, now)}"]
     for title, body in sections:
@@ -366,8 +382,8 @@ def build(shipdir: Path, team: dict, date: str, *, facts_only: str | None = None
     out = out[:-1]
     if len(out) > MAX_LINES:
         # the per-section caps keep us under 60 in practice; this is the last guard
-        tail = out[-3:]   # 「明日」 always stays
-        out = out[:MAX_LINES - 4] + ["…(上限 60 行で省略)"] + tail
+        tail = [f"## {S_TOMORROW}", *tomorrow]   # 「明日」 always stays
+        out = out[:max(1, MAX_LINES - len(tail) - 1)] + ["…(上限 60 行で省略)"] + tail
     return "\n".join(out) + "\n"
 
 
@@ -382,6 +398,20 @@ def make(shipdir: Path, team: dict, date: str | None = None, *, facts_only: str 
         atomic_write(path, text)
     events.emit(shipdir, REPORT_MADE, summary=f"日報 {date} を作った" + (" (facts-only)" if facts_only else ""),
                 data={"date": date, "factsOnly": bool(facts_only), **({"reason": facts_only} if facts_only else {})})
+    return path
+
+
+def refresh(shipdir: Path, team: dict, date: str | None = None, *, live: bool = True) -> Path:
+    """Rebuild the fact sections of the day's report, keeping the captain's 「一言」
+    「明日」 as written (e2e-p1 E: the day's second stop)."""
+    date = _check_date(date)
+    path = report_path(shipdir, date)
+    with ship_lock(shipdir):
+        old = sections(path.read_text(encoding="utf-8"))
+        atomic_write(path, build(shipdir, team, date, live=live,
+                                 keep={k: old.get(k, "") for k in CAPTAIN_SECTIONS}))
+    events.emit(shipdir, REPORT_MADE, summary=f"日報 {date} の事実の節を作り直した",
+                data={"date": date, "factsOnly": False, "refreshed": True})
     return path
 
 
@@ -416,8 +446,35 @@ def latest(shipdir: Path) -> Path | None:
     return files[-1] if files else None
 
 
+def _last(shipdir: Path, date: str, kinds) -> float | None:
+    return max((e["ts"] for e in events.read(shipdir, kinds=kinds) if (e.get("data") or {}).get("date") == date),
+               default=None)
+
+
 def was_sent(shipdir: Path, date: str) -> bool:
-    return any((e.get("data") or {}).get("date") == date for e in events.read(shipdir, kinds=REPORT_SENT))
+    return _last(shipdir, date, REPORT_SENT) is not None
+
+
+def _changed_after(shipdir: Path, date: str, mark: float | None) -> bool:
+    if mark is None:
+        return True
+    _, until = day_span(date)
+    return any(e["ts"] > mark for e in events.read(shipdir, since=mark, until=until, kinds=FACT_KINDS))
+
+
+def changed_since_report(shipdir: Path, date: str) -> bool:
+    """Something the report shows happened on ``date`` after the report was last made
+    or sent: its fact sections are out of date (e2e-p1 E)."""
+    return _changed_after(shipdir, date, _last(shipdir, date, (REPORT_MADE, REPORT_SENT)))
+
+
+def needs_send(shipdir: Path, date: str) -> bool:
+    """「最後に送ったあとに変化があるか」: never sent, or changed after the last send."""
+    return _changed_after(shipdir, date, _last(shipdir, date, REPORT_SENT))
+
+
+def _title(team: dict, date: str, update: bool) -> str:
+    return f"yamato {team['name']}: 日報 {date}" + (" (更新)" if update else "")
 
 
 def summary(text: str) -> tuple[str, str]:
@@ -440,14 +497,17 @@ def send(shipdir: Path, team: dict, date: str | None = None) -> list[str]:
         raise YamatoError(f"{path} がない (先に report daily で作る)")
     text = path.read_text(encoding="utf-8")
     body, level = summary(text)
-    events.emit(shipdir, REPORT_SENT, summary=f"日報 {date} を通知した", data={"date": date, "level": level})
-    return notify.notify(team, f"yamato {team['name']}: 日報 {date}", f"{body}\n\n全文: {path}", level,
-                         shipdir=shipdir)
+    update = was_sent(shipdir, date)
+    events.emit(shipdir, REPORT_SENT, summary=f"日報 {date} を通知した" + (" (更新)" if update else ""),
+                data={"date": date, "level": level, **({"update": True} if update else {})})
+    return notify.notify(team, _title(team, date, update), f"{body}\n\n全文: {path}", level, shipdir=shipdir)
 
 
 def safety_net(shipdir: Path, team: dict, reason: str, date: str | None = None) -> list[str]:
     """``down`` / forced stops (§2.2 の 2): make a facts-only report if the day has
-    none, send it if it was never sent. Never raises: the stop must go on."""
+    none; if something happened after it was last made or sent (the day's second
+    stop, e2e-p1 E), rebuild its fact sections keeping the captain's; send it unless
+    it was sent and nothing changed since. Never raises: the stop must go on."""
     try:
         if daily_mode(team) == "off":
             return []
@@ -458,15 +518,18 @@ def safety_net(shipdir: Path, team: dict, reason: str, date: str | None = None) 
             if not path.exists():
                 make(shipdir, team, date, facts_only=reason, live=False)
                 lines.append(f"日報 {date} がなかったので事実だけで作った: {path}")
-            if was_sent(shipdir, date):
+            elif changed_since_report(shipdir, date):
+                refresh(shipdir, team, date, live=False)
+                lines.append(f"日報 {date} のあとに出来事があったので、事実の節を作り直した (一言・明日は残した): {path}")
+            if not needs_send(shipdir, date):
                 return lines
+            update = was_sent(shipdir, date)
             # marked sent under the lock so two stopping processes do not both send
-            events.emit(shipdir, REPORT_SENT, summary=f"日報 {date} を通知した ({reason})",
-                        data={"date": date, "by": "safety_net"})
+            events.emit(shipdir, REPORT_SENT, summary=f"日報 {date} を通知した ({reason})" + (" (更新)" if update else ""),
+                        data={"date": date, "by": "safety_net", **({"update": True} if update else {})})
         text = path.read_text(encoding="utf-8")
         body, level = summary(text)
-        lines += notify.notify(team, f"yamato {team['name']}: 日報 {date}", f"{body}\n\n全文: {path}", level,
-                               shipdir=shipdir)
+        lines += notify.notify(team, _title(team, date, update), f"{body}\n\n全文: {path}", level, shipdir=shipdir)
         return lines
     except Exception as e:  # noqa: BLE001 — a report never blocks a stop
         print(f"yamato: 日報の安全網に失敗した: {e}", file=sys.stderr)
@@ -484,7 +547,9 @@ def register(sub) -> None:
     d.add_argument("--facts-only", action="store_true",
                    help="「一言」「明日」を「captain が書けなかった」にして作り、すぐ通知する")
     d.add_argument("--reason", default="facts-only で作った", help="--facts-only の理由")
-    d.add_argument("--force", action="store_true", help="すでにある日報を作り直す")
+    d.add_argument("--force", action="store_true",
+                   help="すでにある日報を一から作り直す (captain の書いた「一言」「明日」も消える。"
+                        "付けなければ事実の節だけを作り直す)")
     s = rs.add_parser("send", help="日報の要約 (一言・判断待ち・異常) を notify.via で owner に送る")
     s.add_argument("ship")
     s.add_argument("--date", help="YYYY-MM-DD (既定は今日)")
@@ -497,6 +562,18 @@ def run(args) -> int:
     shipdir = resolve_ship(args.ship)
     team = current_team(shipdir)
     if args.report_cmd == "daily":
+        date = _check_date(args.date)
+        send_cmd = f"`{YAMATO_BIN} report send {shipdir}" + (f" --date {args.date}" if args.date else "") + "`"
+        if report_path(shipdir, date).exists() and not (args.force or args.facts_only):
+            # the day's second stop (e2e-p1 E): keep what the captain wrote, redo the facts
+            if not needs_send(shipdir, date):
+                print(f"日報 {date} は送信済みで、そのあと日報に載る出来事はない。作り直しも送り直しも要らない")
+                return 0
+            path = refresh(shipdir, team, date)
+            print(f"すでにある日報の事実の節を作り直した (「{S_WORD}」「{S_TOMORROW}」は前のまま): {path}")
+            print(f"  「{S_WORD}」と「{S_TOMORROW}」を今の状況に書き直し (他の節は直さない)、{send_cmd} で owner に届ける"
+                  + (" (送信済みなので件名に「更新」が付く)" if was_sent(shipdir, date) else ""))
+            return 0
         path = make(shipdir, team, args.date, facts_only=args.reason if args.facts_only else None,
                     force=args.force)
         print(f"日報の下書きを作った: {path}")
@@ -504,9 +581,7 @@ def run(args) -> int:
             for line in send(shipdir, team, args.date):
                 print(line)
         else:
-            print(f"  「{S_WORD}」と「{S_TOMORROW}」だけを書き (他の節は直さない)、"
-                  f"`{YAMATO_BIN} report send {shipdir}" + (f" --date {args.date}" if args.date else "")
-                  + "` で owner に届ける")
+            print(f"  「{S_WORD}」と「{S_TOMORROW}」だけを書き (他の節は直さない)、{send_cmd} で owner に届ける")
         return 0
     if args.report_cmd == "send":
         for line in send(shipdir, team, args.date) or ["通知: notify.via が空なので送らない"]:

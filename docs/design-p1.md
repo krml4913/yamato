@@ -281,6 +281,7 @@ T-042 (ログイン) は review 済みで merge 待ち。T-044 は D-007 待ち�
 いつ作るか (team.yaml の `report.daily`。既定は `on_down`、日報の要らない艦は `off`):
 1. **captain の終業処理の一部にする**。captain の `seat-stop` は、その日の最後のシフト (終業の合図 = deadline を過ぎた / `yamato down`) のときだけ `report daily` を呼び、「一言」「明日」を書かせてから届ける
 2. **captain がいないときの保険** (安全網): `yamato down` と強制停止の処理は、その日の日報がまだ無ければ `report daily --facts-only` を作って届ける。「一言」は「captain が書けなかった (理由: 強制停止)」になる。captain が落ちていても、owner には必ず何か届く (§0 I4 の懸念への答え)。`report.daily: off` の艦では作らない
+3. **同じ日の 2 回目以降の終業** (e2e-p1 の E): captain には「その日の最後のシフト」かどうかが分からないので、終業のたびに日報を書いてよい。日報がすでにあれば、`report daily` と安全網は「一言」「明日」を残して事実の節を作り直し、送り直す (件名に「(更新)」)。送るかどうかは「最後に送ったあとに、日報に載る出来事 (board・判断・PR・異常の events) があるか」で決める。席のシフトの始まり・終わりだけでは送り直さない (captain の `report send` のあとの `seat-stop` で毎回送り直さないため)
 
 ### 2.3 captain が起動時に読む量
 

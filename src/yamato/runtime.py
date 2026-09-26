@@ -118,6 +118,10 @@ def build_settings(shipdir: Path, team: dict, seat: str) -> dict:
             "PermissionDenied": [{"hooks": [hook("log-denied")]}],
         },
     }
+    if team.get("env_unset"):
+        # a bg seat runs in the daemon's environment, so the caller's `env -u` misses it
+        # (e2e-p1 D). The settings' `env` reaches the seat's tools: blank the names there
+        mech["env"] = {k: "" for k in team["env_unset"]}
     if needs_no_isolation(shipdir, team):
         mech["worktree"] = {"bgIsolation": "none"}
     # team.yaml `settings:` goes underneath; yamato's own keys win

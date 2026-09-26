@@ -183,6 +183,8 @@ r1 (調査艦、問い 1 件):
 
 ### 直していないもの (設計の判断が要る・大きい)
 
+> C・D・E は次の PR (task-e2e-fixes) で直した。末尾の「追記: C・D・E の修正の確認」を参照。
+
 - **C. 席の外 (owner の端末・yamato の定型文・curate の知らせ) から、生きていて idle の席を起こす道具が無い**。yamato は「宛先が生きていれば送り手が SendMessage で届ける」前提で、送り手が席でないときは inbox に記録して終わる。E2E では次の 3 か所で流れが止まり、driver のセッションから SendMessage で代わりに届けた
   - e1: owner が merge の判断を閉じた知らせ (A を直したあとの inbox) が idle の pm に届かない
   - r1: researcher / fact-checker の終わりの報告 (定型文) が idle の editor に届かない。**調査艦の既定の流れ (headless → persistent の editor) は、editor が生きている限り毎回ここで止まる**。e2e-headless でも既知として書かれていた
@@ -212,3 +214,25 @@ r1 (調査艦、問い 1 件):
 - `claude agents --json --all` に e1 / r1 / e2eprobe の名前は 0 件。scratchpad を参照するプロセスも 0
 - worktree: pm が T-001〜T-003 を片付け、halt で残った T-004 は `worktree rm --force` で消した
 - 副作用: scratchpad の repo (`e1/repo`) と調査艦のフォルダ (`r1/ship`) を `~/.claude.json` の workspace trust に追加した
+
+## 追記: C・D・E の修正の確認 (2026-09-26 16:39–16:42)
+
+- 実施: fleet の driver (task-e2e-fixes) / Claude Code 2.1.283 / 全席 `sonnet`。調査艦 `x1` (research ひな形、researcher の count 1) を 1 回だけ動かした
+- 直したもの
+  - **C**: Stop hook の deadline watcher (`hook wait-deadline`、asyncRewake。1 席 1 本のまま) が inbox も数秒おきに見る。**送り手が席でない未読** (owner・`yamato` の定型文など、誰も SendMessage で届けないもの) が増えたら exit 2 で席を起こし、「inbox に未読があります (N 件、<送り手> から)。`yamato inbox` で読んで対応してください」と伝える。同じ未読では 1 回だけ (`.runtime/inbox-wake-<席>.json`)。送り手が席のものは送り手が SendMessage で届けるので起こさない。終了時刻を過ぎたら終業の指示だけ
+  - **D**: `env_unset` の名前を席の settings の `env` に空文字で書き出す (bg・headless・`--cwd` の席は同じ settings を使う)
+  - **E**: その日の日報を作った・送ったあとに、日報に載る出来事 (board・判断・PR・異常の events。席のシフトの始まり・終わりは数えない) があれば、`report daily` と `down` / 強制停止の安全網は「一言」「明日」を残して事実の節を作り直す。送るかどうかは「最後に送ったあとに変化があるか」で決め、2 回目は件名に「(更新)」を付ける。captain の役割プロンプトは「終業のたびに日報を書き、2 回目以降は一言・明日を書き直して送り直す」に直した
+  - 観測 2: ひな形の `rotate.context` のコメントに目安 (起動直後の文脈 + 余裕。sonnet で 45k 前後) を書いた
+
+| 確認 | 結果 | 根拠 |
+|---|---|---|
+| D: bg の席の Bash で `GH_TOKEN` / `GITHUB_TOKEN` が効かない | ✅ | editor (bg の席) が Bash で打った結果 (`work/env-check.md`): `printenv GH_TOKEN \| wc -c` → `1` (空の値 + 改行)、`GITHUB_TOKEN` も `1`。`gh auth status` は `Logged in ... (keyring)` だけで、`(GH_TOKEN)` の行が消えた (呼び出し側の端末では `GH_TOKEN` と keyring の 2 行が出る) |
+| D: gh は空の `GH_TOKEN` をどう扱うか | ✅ 未設定と同じ | 端末で `GH_TOKEN= GITHUB_TOKEN= gh auth status` → keyring の認証だけを使った。`env -u` と同じ結果 |
+| D: 席の claude のプロセス自体の環境 | ⚠️ 残る | `ps eww <editor の pid>` には daemon の `GH_TOKEN=<値>` があった。settings の `env` は席のツール (Bash) に効くだけで、プロセスの環境は変えない。同じユーザーの `ps eww` で読めるので、完全に渡さないなら daemon を `GH_TOKEN` の無い環境で起動する (owner の手元の運用。README に書いた) |
+| C: headless の researcher の報告 → idle の editor が起きる | ✅ | 16:40:07 researcher の定型文が editor の inbox #2 に入り、16:40:11 watcher が起こした (log「inbox watcher: 席の外からの未読 1 件 (#2 まで) → 起こす」)。editor は findings を読んで 16:40:17 に fact-checker へ回した |
+| C: 2 回目 (fact-checker の報告) | ✅ | 16:40:42 定型文 → 16:40:44 起こした → editor が報告書 `reports/python313-removed.md` を書いて 3 項目を done、日報を送って 16:41:17 seat-stop。**driver からの SendMessage の代行は 0 回** (e2e-p1 のシナリオ 2 では 2 回必要だった) |
+| C: 送り手が席の未読では起こさない | unit test のみ | この E2E では editor 宛ての send は定型文 2 回と owner の 1 回だけで、席からの send は無かった (`test_wait_deadline_inbox_wakes_once_and_skips_seat_senders`) |
+| E: captain の送信のあとの seat-stop で送り直さない | ✅ | editor は 16:41:06 に日報を送り、16:41:17 に seat-stop (`shift_end`)。そのあとの `down --force` の安全網は送り直さなかった (シフトの終わりは変化に数えない)。2 回目の終業の更新は unit test で確かめた (`test_second_stop_of_the_day_refreshes_facts_and_sends_an_update`) |
+
+- 問いから報告書まで 2 分 4 秒 (16:39:13 → 16:41:17)。使用量は editor 748k (cache 読みがほとんど)
+- 片付け: `down x1 --force` → editor の session を `claude rm`。`claude agents --json --all` に `x1.` の名前は 0 件。watchdog のプロセスは kill し、watcher のプロセスも 0。艦フォルダ (worktree の中の一時フォルダ) は消した。YAMATO_HOME は scratchpad に向け、owner の `~/yamato` には触れていない

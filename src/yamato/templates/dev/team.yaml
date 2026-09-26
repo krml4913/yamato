@@ -28,6 +28,8 @@ roles:
     #   生きている席の Stop hook: context / compaction / hours に当たったら、一度だけ seat-stop --rotate を促す
     rotate:
       context: 30%           # 前のシフトの文脈量がモデルの窓 (下の context_windows) のこの割合以上。300k のようにトークン数でも書ける
+                             # 目安: 起動直後の文脈 + 余裕。新しいシフトは最初のターンの終わりで sonnet で 45k 前後あるので、
+                             # それより小さいとシフトのたびに入れ替わる (e2e-p1 観測 2)
       compaction: true       # compaction が起きた (PreCompact hook が印を付ける)
       hours: 8h              # シフトの長さ
       idle: 1h               # 止まってからこれ以上たった (resume はキャッシュ切れで高い)
@@ -111,7 +113,7 @@ deny:
   - "Edit(/{{ship}}/knowledge.md)"
   - "Write(/{{ship}}/knowledge.md)"
 
-# 席を起動するときに外す環境変数 (席に gh の権限を渡さない)。gh を使わせる艦は消してよい
+# 席を起動するときに外す環境変数 (席に gh の権限を渡さない)。gh を使わせる艦は消してよい。bg の席には `env -u` が効かないので、席の settings の env に空文字でも書く
 env_unset: [GH_TOKEN, GITHUB_TOKEN]
 
 # 席の settings.json に重ねる中身 (yamato が要る hooks・auto・受信の設定はその上に載る)

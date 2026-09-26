@@ -62,7 +62,7 @@ v1 は P0 の実装より前に書いた。v2 では次の 3 点を直した。�
 DA レビュー (`da-yamato-design-v0.md`) を受けて、owner と合意した変更。**本文と食い違う箇所は、この節が優先する。**
 
 **blocking の決定**
-- **B1 配送**: 送り手が自分で届ける。`send` は記録 (inbox) に残し、宛先の席が止まっていれば起こす。生きている席への即時の配送は、送り手のエージェントが `SendMessage` ツールで行う (送り手は captain / admiral / メンバーで、いずれも Claude のセッション)。席の側で受信箱を監視する方式 (`asyncRewake` / Monitor) は、検証してから追加を考える
+- **B1 配送**: 送り手が自分で届ける。`send` は記録 (inbox) に残し、宛先の席が止まっていれば起こす。生きている席への即時の配送は、送り手のエージェントが `SendMessage` ツールで行う (送り手は captain / admiral / メンバーで、いずれも Claude のセッション)。席の側で受信箱を監視する方式は、送り手が席でない未読 (owner・yamato の定型文・headless の終わりの報告など、誰も `SendMessage` で届けないもの) に限って、Stop hook の deadline watcher (`asyncRewake`) に足した (2026-09-26 leader 決定、e2e-p1 の C)
 - **B2 権限**: 席の既定は auto モード + 「無人のときにやらせない操作」の deny リスト (チームごとに持つ)。外部の文章を読む役割 (調査など) と、merge などの権限を持つ役割を分ける
 - **B3 シフトの終わり**: `per_task` の席は、終業処理のあとに自分を停止する。`per_task` 宛ての `send` は常に新しいシフトを起動する (再開はしない)。`persistent` 宛てだけ再開する
 - **B4 時間の上限**: 終了時刻はプロセスではなくデータ (`.runtime/deadline`) として持つ。席の hook (SessionStart / Stop) と `send` が毎回確認し、過ぎていれば「引き継ぎを書いて止まれ」を返す。一度きりのタイマーは補助にとどめる (消えても上限は効く)
@@ -167,7 +167,7 @@ owner (人間)
   - `--agents '<json>'`: 役割の定義。艦フォルダの `roles/<role>.md` から `.runtime/agents.json` に生成する (ファイルパス指定は `--print` のときだけなので、JSON 文字列で渡す)。役割プロンプトの `{{yamato}}` などは生成時に置き換える
   - `--add-dir <ship>`: 記録を読み書きできるようにする。`--add-dir` は複数の値を取って後ろのプロンプトまで食うので、プロンプトの前に `--` を置く
   - `--setting-sources project,local`: ユーザー設定 (`~/.claude`) の plugin hooks・言語設定・CLAUDE.md を席に持ち込まない (検証 B Q3)。作業対象の repo の設定は効く
-  - `env -u`: team.yaml の `env_unset` の環境変数を外して起動する (ひな形の既定は `GH_TOKEN` / `GITHUB_TOKEN`)。呼び出し元のセッションの識別子 (`CLAUDE_CODE_SESSION_ID` など) は、新しい席に漏らさないよう常に外す (技術的な理由)
+  - `env -u`: team.yaml の `env_unset` の環境変数を外して起動する (ひな形の既定は `GH_TOKEN` / `GITHUB_TOKEN`)。bg の席には効かないので、同じ名前を席の settings の `env` に空文字で書く (下の検証済み)。呼び出し元のセッションの識別子 (`CLAUDE_CODE_SESSION_ID` など) は、新しい席に漏らさないよう常に外す (技術的な理由)
 - `.runtime/` は `yamato up` のたびに team.yaml から作り直す。settings はパスで渡すので、resume のときにファイルが読み直され、変更が次のシフトから効く (検証 B Q2)。hook は YAML を読まず、`.runtime/team.json` (team.yaml の検証済みの写し) を読む
 - hook のコマンドには、艦の場所と席名を**引数として埋め込む**。環境変数では渡さない。Claude Code の常駐 daemon が環境変数を焼き付ける問題があるため (fleet #315 の教訓)
 - 作業対象の repo 自身の CLAUDE.md と設定は、そのまま効く (上乗せになる)。プロジェクトの規律はそちらが担う
@@ -178,7 +178,7 @@ owner (人間)
 検証済み (v1 の【要検証 P0】の答え):
 - 再開したあとも、`--name --agent --settings --agents --add-dir --model` は引き継がれる。ただし `stop` の直後に `--resume` すると、フラグ抜きのコピーが起動する。**pid が消えるのを待ってから、フルの sessionId で `--resume <id> --bg`** する。短い id だとコピーになる。出力に `started a copy` が出たら失敗として扱い、コピーを止めて消す (検証 A Q2、検証 B Q2)
 - ユーザー設定の hooks は席に漏れる (plugin の hooks が乗ってくる)。`--setting-sources project,local` で外せる (検証 B Q3)
-- 【要検証】`env_unset` が、daemon 経由で起動する席にも効くか (検証 B から未確認。`-p` では効いた、検証 D V1)
+- `env -u` は daemon 経由で起動する bg の席には効かない (席は daemon の環境で動く。e2e-p1 の D)。そこで `env_unset` の名前を席の settings の `env` に空文字で書き出す。席の Bash では空になり、gh は空の `GH_TOKEN` を未設定と同じに扱う (保存した認証だけを使う)。ただし席の claude のプロセス自体の環境には daemon の値が残る (e2e-p1 の追記)。`-p` は `env -u` と settings の両方が効く
 
 使わないもの:
 - **Agent teams (実験機能)**: 1 セッションに 1 チームしか持てず、再開で復元されない。常設チームの土台にならない
@@ -522,6 +522,7 @@ grace: 20m            # 終了時刻のあと、キリのいいところまで�
 - **終了時刻はプロセスではなくデータ**で持つ (`.runtime/deadline`。§0 B4)。`yamato up` が書く。終業の指示は、席の状態に応じて次の経路で届く
   - 作業中の席: ターンの終わりに Stop hook が終業を指示する (block。1 シフトあたり数回まで)
   - 待機中の席: Stop hook で起動した非同期の watcher (asyncRewake) が、終了時刻に席を起こして指示する
+  - 同じ watcher (1 席 1 本) が inbox も数秒おきに見て、送り手が席でない未読が増えたら「inbox に未読がある。`yamato inbox` で読め」と席を起こす (§0 B1。同じ未読では 1 回だけ。終了時刻を過ぎたら起こさない)
   - `send`: 終業のあとは宛先を起こさず記録だけして、送り手が席なら終業を指示する
   - 新しいシフトの SessionStart の注入にも、終業の指示が載る
 - 一度きりのタイマー (watchdog) は `up` と `down` が切り離して起動する。終了時刻 + 猶予に、生きている席を強制停止する補助で、消えても上限は効く (`send` / `status` / hook が毎回 deadline を確かめ、猶予を過ぎていれば強制停止する)。常駐のデーモンは作らない
@@ -570,7 +571,7 @@ design-p1 には、別の名前で書かれている箇所がある (`ship up / 
 - zellij で窓を開いている席は常駐する (attach で 1h 停止を免れる)。全席を開くか、見たい席だけ開くか
 - fleet からの移行手順 (fleet を引退させる時期と手順)
 - 会話ログ (transcript) を艦フォルダに保存する SessionEnd hook (§8.3)。未実装だが、design-p1 §1.5 の代筆の追跡が前提にしている。headless の席では SessionEnd hook の待ちが 1.5 秒なので、保存はそれに収めるか `timeout` を付ける (design-p1 §4.2)
-- **【要検証】** design-p1 §11 の未確認のうち: サブスクの枠切れのとき、bg の席と `-p` がどうなるか (V5)。SessionStart の `additionalContext` の長さの上限 (V8。検証 C の担当。P0 は約 1 万文字で切られる前提で `inject.limits.total_chars` を 9500 にしている)。bg の席 + Remote Control からの `PushNotification` (V11)。`env_unset` が daemon 経由で起動する席に効くか (§4.1)
+- **【要検証】** design-p1 §11 の未確認のうち: サブスクの枠切れのとき、bg の席と `-p` がどうなるか (V5)。SessionStart の `additionalContext` の長さの上限 (V8。検証 C の担当。P0 は約 1 万文字で切られる前提で `inject.limits.total_chars` を 9500 にしている)。bg の席 + Remote Control からの `PushNotification` (V11)
 
 **P0 の実装と design-p1 で、名前や置き場が食い違っていたもの: 決定済み (leader, 2026-09-26)**
 

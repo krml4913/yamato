@@ -396,7 +396,7 @@ def send(shipdir: Path, seat: str, text: str, sender: str, cwd: str | None = Non
             out(f"  (SendMessage が success:false なら、もう一度 `{y} send` する)")
         else:
             out(f"宛先 {seat} は生きている (session {rec.get('shortId')})。inbox に記録済み。"
-                f"すぐ伝えるなら `claude attach {rec.get('shortId')}` で直接話す。")
+                f"idle なら席の watcher が数秒で起こす。直接話すなら `claude attach {rec.get('shortId')}`。")
     elif what == "spawned":
         out(f"headless の席 {seat} のシフトを起動した (run-headless。終わると {_report_to(team, seat)} に定型文で報告が届く)。SendMessage は不要。")
     elif what == "queued":

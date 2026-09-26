@@ -263,6 +263,50 @@ class SafetyNetTest(ReportTestCase):
             report.safety_net(self.shipdir, self.team(), "x", DATE)
         n.assert_not_called()
 
+    def test_second_stop_of_the_day_refreshes_facts_and_sends_an_update(self):
+        # e2e-p1 E: the captain reported at its first stop; work went on afterwards
+        day = time.strftime("%Y-%m-%d")
+        path = report.make(self.shipdir, self.team(), day)
+        path.write_text(path.read_text().replace(report.CAPTAIN_BLANK, "一言 A", 1)
+                        .replace(report.CAPTAIN_BLANK, "明日 B\n- 二行目", 1))
+        with mock.patch("yamato.report.notify.notify", return_value=[]):
+            report.send(self.shipdir, self.team(), day)
+        events.emit(self.shipdir, events.SHIFT_END, seat="pm", data={"shiftNo": 1, "handoffWritten": True})
+        self.assertFalse(report.needs_send(self.shipdir, day))   # the captain's own seat-stop is no news
+        self.decision("D-009", "merge する?", "owner")
+        events.emit(self.shipdir, events.DECISION_OPEN, item="D-009")
+        self.assertTrue(report.needs_send(self.shipdir, day))
+        with mock.patch("yamato.report.notify.notify", return_value=[]) as n:
+            lines = report.safety_net(self.shipdir, self.team(), "down", day)
+            self.assertEqual(report.safety_net(self.shipdir, self.team(), "again", day), [])
+        self.assertIn("事実の節を作り直した", lines[0])
+        [call] = n.call_args_list
+        self.assertEqual(call.args[1], f"yamato t1: 日報 {day} (更新)")
+        text = path.read_text()
+        self.assertIn("D-009 merge する?", text)
+        secs = report.sections(text)
+        self.assertEqual((secs[report.S_WORD], secs[report.S_TOMORROW]), ("一言 A", "明日 B\n- 二行目"))
+        self.assertTrue(events.read(self.shipdir, kinds=report.REPORT_SENT)[-1]["data"]["update"])
+
+    def test_cli_daily_on_an_existing_report_keeps_the_captains_text(self):
+        from yamato import cli
+
+        day = time.strftime("%Y-%m-%d")
+        path = report.make(self.shipdir, self.team(), day)
+        path.write_text(path.read_text().replace(report.CAPTAIN_BLANK, "一言 A", 1))
+        report.send(self.shipdir, self.team(), day)
+        with redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(cli.main(["report", "daily", str(self.shipdir)]), 0)
+        self.assertIn("要らない", out.getvalue())
+        events.emit(self.shipdir, events.BOARD_ADD, item="T-009")
+        with redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(cli.main(["report", "daily", str(self.shipdir)]), 0)
+        self.assertIn("「更新」", out.getvalue())
+        self.assertIn("一言 A", path.read_text())
+        with mock.patch("yamato.report.notify.notify", return_value=[]) as n:
+            report.send(self.shipdir, self.team(), day)
+        self.assertTrue(n.call_args.args[1].endswith("(更新)"))
+
     def test_off(self):
         team = self.team()
         team["report"] = {"daily": "off"}

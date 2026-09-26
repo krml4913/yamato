@@ -127,7 +127,7 @@ memory:
     knowledge_lines: 120
     knowledge_bytes: 12288
 
-# 席を起動するときに外す環境変数 (秘密を席の環境に置かない)
+# 席を起動するときに外す環境変数 (秘密を席の環境に置かない)。bg の席には `env -u` が効かないので、席の settings の env に空文字でも書く
 env_unset: [GH_TOKEN, GITHUB_TOKEN]
 
 # 全席の settings.json に重ねる中身

@@ -169,6 +169,41 @@ class HookTest(ShipTestCase):
     def test_wait_deadline_exits_when_not_up(self):
         self.assertEqual(self.run_hook(hooks.wait_deadline, {})[0], 0)
 
+    def test_wait_deadline_wakes_for_inbox_from_outside_the_seats(self):
+        # e2e-p1 C: the owner's / yamato's entries have no sender to SendMessage them
+        deadline.write(self.shipdir, limit=600, grace=60, token="t")
+        inbox.append(self.shipdir, "impl", "yamato", "researcher のシフトが終了")
+        code, _, err = self.run_hook(hooks.wait_deadline, {})
+        self.assertEqual(code, 2)
+        self.assertIn("inbox に未読があります (1 件、yamato から)", err)
+
+    def test_wait_deadline_inbox_wakes_once_and_skips_seat_senders(self):
+        deadline.write(self.shipdir, limit=600, grace=60, token="t")
+        inbox.append(self.shipdir, "impl", "owner", "D-001 が決まった")
+        self.assertEqual(self.run_hook(hooks.wait_deadline, {})[0], 2)
+        # not read yet, but already woken for; a seat sender SendMessages itself (§0 B1)
+        inbox.append(self.shipdir, "impl", "pm", "T-002 も頼む")
+
+        def stop_seat(_):
+            roster.mark_stopping(self.shipdir, "impl", handoff_written=True)
+
+        with mock.patch.object(hooks.time, "sleep", side_effect=stop_seat) as sleep:
+            self.assertEqual(self.run_hook(hooks.wait_deadline, {})[0], 0)
+        sleep.assert_called_once()
+        inbox.append(self.shipdir, "impl", "owner", "もう一件")
+        roster.start_shift(self.shipdir, "impl", session_id="s" * 36, short_id="ssssssss",
+                           session_name="t1.impl", how="resume")
+        code, _, err = self.run_hook(hooks.wait_deadline, {})
+        self.assertEqual(code, 2)
+        self.assertIn("1 件、owner から", err)
+
+    def test_wait_deadline_no_inbox_wake_past_deadline(self):
+        deadline.write(self.shipdir, limit=0, grace=600, token="t", now=time.time() - 1)
+        inbox.append(self.shipdir, "impl", "owner", "hello")
+        code, _, err = self.run_hook(hooks.wait_deadline, {})
+        self.assertIn("seat-stop", err)
+        self.assertNotIn("未読", err)
+
     def test_deny_dialog(self):
         code, out, _ = self.run_hook(hooks.deny_dialog, {"tool_name": "Write", "tool_input": {"file_path": "x"}})
         d = json.loads(out)["hookSpecificOutput"]
