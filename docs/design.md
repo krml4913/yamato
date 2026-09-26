@@ -1,10 +1,20 @@
-# yamato 設計書 (v2)
+# yamato 設計書 (v3)
 
 - 作成: 2026-09-25 / leader (main セッション)。user との相談 (redesign-consult.md) の合意を清書したもの (v1)
 - 改訂: 2026-09-26 v2 / driver (task-design-md-revise)。P0 の実装 (main、PR #4) と、owner の方針「仕組みは道具・記録・安全網だけ、運用の方針は強制しない」に合わせて、§0 以外の本文を直した。**§0 の決定の中身は変えていない**
-- 位置づけ: yamato の基本設計の正本。**§0 が最新の決定で、本文 (§1 以降) は §0 と P0 の実装に合わせてある**。P1 で足すものの詳細は `design-p1.md` (v2)。P0 の使い方は README
+- 改訂: 2026-09-26 v3 / driver (task-verify-c-apply)。検証 C (`verify-p0-c.md`) の結果を本文に反映した (下の「改訂の要約 (v3)」)。**§0 は変えていない**
+- 位置づけ: yamato の基本設計の正本。**§0 が最新の決定で、本文 (§1 以降) は §0 と P0 の実装に合わせてある**。P1 で足すものの詳細は `design-p1.md` (v4)。P0 の使い方は README
 - 根拠資料: `research-claude-primitives.md` (Claude Code 調査, fact-check 済) / `review-da-v0.md` (DA レビュー。§0 では旧名 `da-yamato-design-v0.md`) / `verify-p0-a.md`・`verify-p0-b.md` (P0 の実機検証) / `e2e-p0.md` (P0 実装の E2E) / `verify-p1-d.md` (P1 の要検証) / `policy-audit.md` (方針の洗い出し) / `design-p1.md` / bmweb 記事「AIエージェントに記憶・作業記録を引き継がせる方式の調査」
 - 名前: **yamato** (2026-09-25 決定)。本文中の「本システム」は yamato を指す
+
+## 改訂の要約 (v3, 2026-09-26)
+
+検証 C (`verify-p0-c.md`) の結果を、§0 以外の本文に反映した。
+
+- **起動レシピの注記** (§4.1): 起動側の環境変数は bg の席に届かない (Q2。席の環境は daemon とユーザー設定の `env` から来る)。消す手段は settings の `env` に空で書くことで、e2e-p1 の D (#24) で対応済み。Remote Control に繋がった席は attach なしでも 1 時間で止まらない (Q3)。ひな形は captain 以外 `remoteControlAtStartup: false`
+- **起動の確かめ** (§4.1): `claude --bg` は worker が起動前に落ちても exit 0。起動のあとに `claude agents --json` で `state == failed`・pid なしを見て、失敗として扱う (Q5)
+- **注入の上限** (§8.2): Claude Code は SessionStart hook 1 本あたり 10,000 文字まで受け取る (Q1)。注入を記録と知見 (memory・knowledge) の hook 2 本に分け、それぞれ 9,500 文字で切る。memory と knowledge は `memory.limits` (`memory apply` の上限と同じ) で切る
+- **`state` の意味** (§14): `state` は席の発言の意味づけで、生死は pid、詰まりは `status` / `waitingFor` で見る (Q5)
 
 ## 改訂の要約 (v2, 2026-09-26)
 
@@ -167,7 +177,8 @@ owner (人間)
   - `--agents '<json>'`: 役割の定義。艦フォルダの `roles/<role>.md` から `.runtime/agents.json` に生成する (ファイルパス指定は `--print` のときだけなので、JSON 文字列で渡す)。役割プロンプトの `{{yamato}}` などは生成時に置き換える
   - `--add-dir <ship>`: 記録を読み書きできるようにする。`--add-dir` は複数の値を取って後ろのプロンプトまで食うので、プロンプトの前に `--` を置く
   - `--setting-sources project,local`: ユーザー設定 (`~/.claude`) の plugin hooks・言語設定・CLAUDE.md を席に持ち込まない (検証 B Q3)。作業対象の repo の設定は効く
-  - `env -u`: team.yaml の `env_unset` の環境変数を外して起動する (ひな形の既定は `GH_TOKEN` / `GITHUB_TOKEN`)。bg の席には効かないので、同じ名前を席の settings の `env` に空文字で書く (下の検証済み)。呼び出し元のセッションの識別子 (`CLAUDE_CODE_SESSION_ID` など) は、新しい席に漏らさないよう常に外す (技術的な理由)
+  - `env -u`: team.yaml の `env_unset` の環境変数を外して起動する (ひな形の既定は `GH_TOKEN` / `GITHUB_TOKEN`)。**bg の席には効かない** (検証 C Q2。下の検証済み) ので、同じ名前を席の settings の `env` に空文字で書く。`env -u` が効くのは `-p` (headless) だけ。呼び出し元のセッションの識別子 (`CLAUDE_CODE_SESSION_ID` など) は、新しい席に漏らさないよう常に外す (技術的な理由)
+  - 起動の成否: `claude --bg` は worker が起動前に落ちても exit 0 で `backgrounded · <id>` を出す (検証 C Q5)。`yamato up` と `send` は起動・resume のあとに `claude agents --json` を見て、pid が付くのを確かめる。`state == failed` や pid なしは失敗として roster (`launchFailed`) と events (`launch_failed`) に残し、送り手にエラーを返す (design-p1 §5.1)
 - `.runtime/` は `yamato up` のたびに team.yaml から作り直す。settings はパスで渡すので、resume のときにファイルが読み直され、変更が次のシフトから効く (検証 B Q2)。hook は YAML を読まず、`.runtime/team.json` (team.yaml の検証済みの写し) を読む
 - hook のコマンドには、艦の場所と席名を**引数として埋め込む**。環境変数では渡さない。Claude Code の常駐 daemon が環境変数を焼き付ける問題があるため (fleet #315 の教訓)
 - 作業対象の repo 自身の CLAUDE.md と設定は、そのまま効く (上乗せになる)。プロジェクトの規律はそちらが担う
@@ -178,7 +189,8 @@ owner (人間)
 検証済み (v1 の【要検証 P0】の答え):
 - 再開したあとも、`--name --agent --settings --agents --add-dir --model` は引き継がれる。ただし `stop` の直後に `--resume` すると、フラグ抜きのコピーが起動する。**pid が消えるのを待ってから、フルの sessionId で `--resume <id> --bg`** する。短い id だとコピーになる。出力に `started a copy` が出たら失敗として扱い、コピーを止めて消す (検証 A Q2、検証 B Q2)
 - ユーザー設定の hooks は席に漏れる (plugin の hooks が乗ってくる)。`--setting-sources project,local` で外せる (検証 B Q3)
-- `env -u` は daemon 経由で起動する bg の席には効かない (席は daemon の環境で動く。e2e-p1 の D)。そこで `env_unset` の名前を席の settings の `env` に空文字で書き出す。席の Bash では空になり、gh は空の `GH_TOKEN` を未設定と同じに扱う (保存した認証だけを使う)。ただし席の claude のプロセス自体の環境には daemon の値が残る (e2e-p1 の追記)。`-p` は `env -u` と settings の両方が効く
+- `env -u` は daemon 経由で起動する bg の席には効かない (席は daemon の環境で動く。e2e-p1 の D、検証 C Q2)。席に見える `GH_TOKEN` などは起動側ではなく、daemon の環境とユーザー設定の `env` から来る。そこで `env_unset` の名前を席の settings の `env` に空文字で書き出す (#24 で対応済み)。席の Bash では空になり、gh は空の `GH_TOKEN` を未設定と同じに扱う (保存した認証だけを使う。キーリングのログインには戻るので、認証の隔離は別の話)。ただし席の claude のプロセス自体の環境には daemon の値が残る (e2e-p1 の追記)。`-p` は `env -u` と settings の両方が効く
+- **Remote Control に繋がっている席は、attach しなくても 1 時間で止まらない** (検証 C Q3。4 時間 48 分生存を確認)。ユーザー設定が `remoteControlAtStartup: true` だと全席が常駐し、「待機中の席は約 1 時間で止まる」(§14) 前提が崩れる。ひな形は captain 以外を `remoteControlAtStartup: false` にしている (settings。captain だけ `roles.<role>.remote_control: true` で `--remote-control`。design-p1 §1.5、検証 D V10)。常駐しているかは pid の生存で見る
 
 使わないもの:
 - **Agent teams (実験機能)**: 1 セッションに 1 チームしか持てず、再開で復元されない。常設チームの土台にならない
@@ -213,7 +225,7 @@ settings:                        # 席の settings.json に重ねる中身
 seat_stop: { require_handoff: true, require_delivery: true }   # seat-stop が終業前に確かめること (§8.3)
 inject:                          # SessionStart で読ませるもの (§8.2)
   parts: [handoff, log_tail, mine, inbox, memory, knowledge]
-  limits: { handoff: [40, 2000], ..., total_chars: 9500 }
+  limits: { handoff: [40, 2000], ..., total_chars: 9500 }   # total_chars は hook 1 本あたり
 notify: { via: [] }              # owner 宛ての通知の経路 (§7)
 
 board:                           # チーム固有の board 設定 (§6.2)
@@ -335,7 +347,7 @@ board に入れないもの: 「なぜそうしたか」は decisions (P1)、「
 - memory 候補: テストのモックは 30 日で期限が切れる
 ```
 
-- 長さの上限は `inject.limits.handoff` (ひな形は 40 行 / 2000 文字)。**超えても書き込みは拒否しない**。`seat-stop` が注意を出し、次のシフトの注入は上限で切って「上限で省略」と付ける。拒否すると終業処理が失敗して何も残らないため
+- 長さの上限は `inject.limits.handoff` (ひな形は 40 行 / 2000 文字)。**超えても書き込みは拒否しない**。`seat-stop` が注意を出し、次のシフトの注入は上限で切って「全文は `<path>` を Read せよ」と付ける。拒否すると終業処理が失敗して何も残らないため
 - memory 候補は、P0 のひな形では handoff の項目に書く。P1 で `yamato memo` (memory-inbox への追記) に移す (design-p1 §3.2)
 
 ### 6.4 作業ログ
@@ -407,11 +419,12 @@ SessionStart hook が、次を注入する。**何を読ませるかは設定** 
 | `log_tail` | 前のシフトが引き継ぎなしで終わったときだけ、作業ログの末尾 |
 | `mine` | board の「自分の担当」 |
 | `inbox` | 未読の inbox |
-| `memory` | 席の memory |
+| `memory` | 役割の memory (`roles/<role>/memory.md`。design-p1 §3) |
 | `knowledge` | チームの knowledge.md |
 
 - 役割のプロンプトは注入ではなく、`--agents` の JSON で渡す (§4.1)
-- 上限は `inject.limits` で持つ (ひな形の値: handoff 40 行 / 2000 文字、memory 40 行 / 1500 文字、knowledge 60 行 / 1500 文字、担当 15 件、未読 10 通、全体 9500 文字)。超えた分は切って「上限で省略」と付ける。全体の上限が 9500 文字なのは、Claude Code の hook の出力が約 1 万文字で切られるため。合計の上限は安全網として残し、個々の中身は設定に置く
+- 注入は **SessionStart hook 2 本**に分ける。記録の hook (ヘッダ・`handoff`・`log_tail`・`mine`・`inbox` と注記) と、知見の hook (`memory`・`knowledge`)。Claude Code は hook 1 本の出力を 10,000 文字まで受け取り、超えると本文の代わりに約 2KB のプレビューを渡す (検証 C Q1。判定は hook ごとで、文字数で数える)
+- 上限は `inject.limits` で持つ (ひな形の値: handoff 40 行 / 2000 文字、担当 15 件、未読 10 通、**hook 1 本の全体 9500 文字**)。memory と knowledge は `memory.limits` (ひな形: memory 80 行 / 4000 文字、knowledge 120 行 / 5000 文字。`memory apply` が反映を拒否する上限と同じ) で切る。切ったところには「全文は `<path>` を Read せよ」と付ける (hook の全体で切ったときは、全文を `.runtime/` に書いてそのパスを付ける)。全体の上限は安全網として残し、個々の中身は設定に置く
 - captain は、これに加えてカンバンと日報を読む (P1、設定の `inject`。日報は前回の「一言」「判断待ち」「明日」の 3 節だけ。design-p1 §2.3)。ほか P1 で、孤児になった項目の一覧や棚卸し案の有無も注入に載る (design-p1 §5.6、§3.4)
 
 ### 8.3 シフトの終わり
@@ -476,7 +489,7 @@ zellij セッション
 - **`--name` は一意にならない。** 同じ名前のセッションを複数作れる。そのため「その席の今のシフト」の正本は `roster.json` に置き、名前からは探さない
 - **`claude attach` はフルの sessionId を受け付けない** (短い id を渡す)。照合はフルの id で行い、attach には短い id を使う
 - 同じ席を 2 つのペインで開くと、入力欄が共有される (片方に打った下書きが、もう片方にも出る)
-- attach していれば、約 1 時間で止められるルールの対象から外れる (docs 上。1 時間の実測はしていない)。**zellij で窓を開いている席は常駐する**。ターンは消費しないが、メモリは食う
+- attach していれば、約 1 時間で止められるルールの対象から外れる (検証 C Q3。Remote Control なしの条件で 75 分生存、attach なしの対照は 60 分で停止)。**zellij で窓を開いている席は常駐する**。ターンは消費しないが、メモリは食う
 - 席の作業ディレクトリは、事前に Claude Code の workspace trust を通しておく必要がある (`ship create` が警告し、`up` が止まる。§4.1)
 - attach はペインのフォアグラウンドで動かす (macOS ではバックグラウンドで動かすと落ちる)
 
@@ -544,7 +557,7 @@ grace: 20m            # 終了時刻のあと、キリのいいところまで�
 | `board add / set / show / list / mine / archive` | board の操作と表示 (§6.2) |
 | `log <ship> <seat> "<text>"` | 席の作業ログに 1 行追記する |
 | `seat-stop <ship> <seat> [--delivered]` | 席が使う。終業処理 (引き継ぎの確認と遅延 stop。§8.3) |
-| `hook <event> <ship> <seat>` | Claude Code の hook から呼ばれる (session-start / stop / wait-deadline / deny-dialog / log-denied) |
+| `hook <event> <ship> <seat>` | Claude Code の hook から呼ばれる (session-start / session-start-knowledge / stop / wait-deadline / deny-dialog / log-denied) |
 
 P1 で足すもの (design-p1): `decide open / close / list`、`report daily`、`memo`、`memory curate / apply / status`、`ship extend / halt`、`ships` (全艦の一覧)、`talk`、`worktree add / path / list / rm`、`pr open / merge`。ほか、headless の席を起こすラッパー `run-headless` (内部用)。P2: `view` (実体は `bin/yamato-seat-attach`。`yamato` への組み込みは未)。
 
@@ -553,11 +566,12 @@ design-p1 には、別の名前で書かれている箇所がある (`ship up / 
 ## 14. リスク
 
 - Claude Code の background session と agent view は research preview で、仕様が週単位で変わる。Claude Code とのやり取りを 1 か所 (`src/yamato/claude.py`) に閉じ込めて、変更をそこで吸収する
-- 待機中のまま誰も attach しないで約 1 時間経つと、席のプロセスは止められる。シフト制と記録ベースの再開で吸収する (再開か新しいシフトかの規則は P1、design-p1 §5.3)
+- 待機中のまま誰も attach しないで約 1 時間経つと、席のプロセスは止められる (最後のターンの終わりから約 60 分。検証 C Q3)。シフト制と記録ベースの再開で吸収する (再開か新しいシフトかの規則は P1、design-p1 §5.3)。ただし Remote Control に繋がった席は止められない (§4.1)
 - 使用量は席の数とシフトの頻度に比例して、サブスクの枠を消費する。シフトごとの使用量を記録する (§0 I7)
 - 自律ループの暴走。稼働時間の上限で止める (§12.1)。予算の上限は既定では掛けない (headless の役割ごとに `max_budget_usd` を書けば掛けられる。P1)
 - auto モードの classifier の判定は揺れる (検証 B、検証 D V2)。無人の権限の安全は、deny リストと PermissionRequest の全 deny (と、P1 の外を読む役割の dontAsk) が本命
-- SessionStart の注入は、Claude Code の hook の出力の上限 (約 1 万文字) に収める (§8.2)
+- SessionStart の注入は、Claude Code の hook の出力の上限 (hook 1 本あたり 10,000 文字、検証 C Q1) に収める (§8.2)
+- agent view の `state` は、席の最後の発言から「人間に何を求めているか」を意味づけしたラベルで、言い回しで変わる (検証 C Q5)。生死は pid、詰まりは `status` (`waiting` + `waitingFor`) と、idle の `blocked` で見る。完了の判定は記録 (handoff・board) で行い、`state` を使わない
 
 ## 15. 未決事項と、揃えること
 
@@ -571,7 +585,7 @@ design-p1 には、別の名前で書かれている箇所がある (`ship up / 
 - zellij で窓を開いている席は常駐する (attach で 1h 停止を免れる)。全席を開くか、見たい席だけ開くか
 - fleet からの移行手順 (fleet を引退させる時期と手順)
 - 会話ログ (transcript) を艦フォルダに保存する SessionEnd hook (§8.3)。未実装だが、design-p1 §1.5 の代筆の追跡が前提にしている。headless の席では SessionEnd hook の待ちが 1.5 秒なので、保存はそれに収めるか `timeout` を付ける (design-p1 §4.2)
-- **【要検証】** design-p1 §11 の未確認のうち: サブスクの枠切れのとき、bg の席と `-p` がどうなるか (V5)。SessionStart の `additionalContext` の長さの上限 (V8。検証 C の担当。P0 は約 1 万文字で切られる前提で `inject.limits.total_chars` を 9500 にしている)。bg の席 + Remote Control からの `PushNotification` (V11)
+- **【要検証】** design-p1 §11 の未確認のうち: サブスクの枠切れのとき、bg の席と `-p` がどうなるか (V5)。bg の席 + Remote Control からの `PushNotification` (V11)
 
 **P0 の実装と design-p1 で、名前や置き場が食い違っていたもの: 決定済み (leader, 2026-09-26)**
 

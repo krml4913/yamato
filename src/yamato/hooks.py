@@ -45,17 +45,26 @@ def _touch(shipdir: Path, seat: str) -> None:
 
 
 def session_start(shipdir: Path, seat: str) -> int:
+    """The records (hook A). The role's memory and knowledge.md are the other hook
+    (``session_start_knowledge``): Claude Code caps each hook at 10,000 characters (verify-p0-c Q1)."""
     data = _stdin_json()
     _touch(shipdir, seat)
     source = data.get("source") or "startup"
     team = runtime_team(shipdir)
-    text, cursor_to = inject.build(shipdir, team, seat, source)
     notice = _last_call_notice(shipdir, team, seat, "SessionStart")
-    if notice:
-        text = notice + "\n\n" + text
+    text, cursor_to = inject.build(shipdir, team, seat, source, notice=notice)
     inbox.mark_read(shipdir, seat, cursor_to)
     append_log(shipdir, seat, f"SessionStart ({source}) session={data.get('session_id', '?')}")
     _emit({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": text}})
+    return 0
+
+
+def session_start_knowledge(shipdir: Path, seat: str) -> int:
+    """The role's memory and knowledge.md (hook B). Nothing on stdout when the seat reads neither."""
+    _stdin_json()
+    text = inject.build_knowledge(shipdir, runtime_team(shipdir), seat)
+    if text:
+        _emit({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": text}})
     return 0
 
 
@@ -281,6 +290,7 @@ def log_denied(shipdir: Path, seat: str) -> int:
 
 HOOKS = {
     "session-start": session_start,
+    "session-start-knowledge": session_start_knowledge,
     "stop": stop,
     "user-prompt-submit": user_prompt_submit,
     "pre-compact": pre_compact,

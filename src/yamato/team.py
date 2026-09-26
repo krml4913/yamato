@@ -20,8 +20,9 @@ INJECT_PARTS = ("handoff", "log_tail", "mine", "inbox", "memory", "knowledge", "
 # what a ship that names no parts gets: the captain's report excerpt (design-p1 §2.3) is opt-in,
 # the orphaned items (§5.6) go to the captain only
 DEFAULT_INJECT_PARTS = tuple(p for p in INJECT_PARTS if p not in ("last_report", "orphans"))
-INJECT_LIMIT_KEYS = ("handoff", "memory", "knowledge", "log_tail", "mine_items", "inbox_messages",
-                     "inbox_chars", "total_chars", "last_report")
+# the role's memory and knowledge.md are cut at `memory.limits` (the limits `memory apply` keeps to)
+INJECT_LIMIT_KEYS = ("handoff", "log_tail", "mine_items", "inbox_messages", "inbox_chars", "total_chars",
+                     "last_report")
 RESERVED_SEATS = ("owner",)   # the human's inbox; not a seat
 SEAT_STOP_DEFAULTS = {"require_handoff": True, "require_delivery": True}
 ROLE_KEYS = {"model", "shift", "count", "description", "inject", "max_duration", "max_budget_usd", "report_to",
@@ -205,6 +206,9 @@ def validate(data: dict, shipdir: Path) -> dict:
     if inject.get("parts") is not None:
         _check_parts(inject["parts"], "inject.parts")
     limits = inject.get("limits") or {}
+    if isinstance(limits, dict) and set(limits) & {"memory", "knowledge"}:
+        raise YamatoError("team.yaml: inject.limits の memory / knowledge は memory.limits に一本化した "
+                          "(memory_lines / memory_chars / knowledge_lines / knowledge_chars。memory apply の上限と同じ)")
     if not isinstance(limits, dict) or set(limits) - set(INJECT_LIMIT_KEYS):
         raise YamatoError(f"team.yaml: inject.limits の項目は {', '.join(INJECT_LIMIT_KEYS)}")
 

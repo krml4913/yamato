@@ -136,18 +136,17 @@ seat_stop:
   require_delivery: true     # 生きている宛先への送信が読まれているか、--delivered が付いていること
 
 # SessionStart で席に読ませるもの (design §8.2)。役割ごとに roles.<role>.inject で上書きできる
-# 上限を超えた分は切って「上限で省略」と書く
+# 注入は hook 2 本 (記録: handoff・作業ログ・担当・日報・inbox など / 知見: 役割の memory と knowledge.md) に分かれ、
+# それぞれ total_chars まで。上限を超えた分は切って「全文は <パス> を Read せよ」と書く。memory と knowledge は下の memory.limits で切る
 inject:
   parts: [handoff, log_tail, mine, inbox, memory, knowledge]
   limits:
     handoff: [40, 2000]      # [行数, 文字数]
-    memory: [40, 1500]       # 役割の memory (roles/<役割>/memory.md)。全文はパスを示して読ませる
-    knowledge: [60, 1500]
     log_tail: [20, 1200]     # 前のシフトが引き継ぎなしで終わったときの作業ログの末尾
     mine_items: 15
     inbox_messages: 10
     inbox_chars: 400         # 1 通あたり
-    total_chars: 9500        # 全体 (Claude Code の hook 出力は約 1 万文字で切られる)
+    total_chars: 9500        # hook 1 本の全体 (Claude Code は hook 1 本あたり 1 万文字まで。検証 C Q1)
     last_report: [30, 1500]  # 前回の日報の 3 節 (inject に last_report を入れた役割だけ)
 
 # memory の棚卸し (design-p1 §3)。役割の memory は roles/<役割>/memory.md (同じ役割の席で共有)
@@ -160,11 +159,11 @@ memory:
   curate_every: 7d           # 前回の反映からこの日数が経ったら棚卸しの目安 (memory status に出るだけ。自動では走らない)
   curate_at: 30              # 候補がこの件数に達したら棚卸しの目安
   max_duration: 15m          # 棚卸しのシフト 1 回の上限
-  limits:                    # 超える案は memory apply が反映を拒否する。手で編集して超えたら注入で切って警告する
+  limits:                    # 超える案は memory apply が反映を拒否する。注入もこの上限で切る (手で編集して超えたら警告)
     memory_lines: 80
-    memory_bytes: 8192
+    memory_chars: 4000       # 文字数 (Claude Code の hook の上限と同じ数え方)。memory + knowledge が注入の hook 1 本 (1 万文字) に収まる数字
     knowledge_lines: 120
-    knowledge_bytes: 12288
+    knowledge_chars: 5000
 
 # owner 宛ての send (`yamato send <ship> owner "..."`) の通知経路 (design-p1 §2.4)。
 # via に並べた方式すべてに送る (複数可)。どれかが失敗しても他は送り、失敗は events.jsonl (notify_failed) に残る。

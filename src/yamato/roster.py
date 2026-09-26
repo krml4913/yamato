@@ -88,6 +88,7 @@ def start_shift(shipdir: Path, name: str, *, session_id: str, short_id: str, ses
             "cwd": cwd,
             "rotated": rotated or None,
             "rotateRequested": None,   # the mark of seat-stop --rotate is used up (design-p1 §5.4)
+            "launchFailed": None,      # the last failed launch is over once a shift starts
         })
         shift = {"seat": name, "shiftNo": rec["shiftNo"], "sessionId": session_id,
                  "how": how, "startedAt": now, "endedAt": None, "endReason": None}

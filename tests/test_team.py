@@ -78,6 +78,8 @@ class TeamTest(unittest.TestCase):
         self.assertEqual(inject_parts(t, "pm"), ["inbox"])
         self.assertEqual(inject_parts(t, "impl"), ["handoff", "inbox"])
         self.assertEqual(t["inject"]["limits"], {"handoff": (10, 500), "mine_items": 3})
+        with self.assertRaisesRegex(YamatoError, "memory.limits に一本化"):
+            validate(base(inject={"limits": {"memory": [40, 1500]}}), Path("/ship"))
         for bad in ({"parts": ["nope"]}, {"limits": {"x": 1}}, {"limits": {"handoff": "big"}}, {"other": 1}):
             with self.subTest(bad=bad), self.assertRaises(YamatoError):
                 validate(base(inject=bad), Path("/ship"))

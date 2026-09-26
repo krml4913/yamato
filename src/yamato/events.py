@@ -30,6 +30,7 @@ DECISION_OPEN = "decision_open"     # P1-2 (design-p1 §1)
 DECISION_CLOSE = "decision_close"   # P1-2
 FORCE_STOP = "force_stop"
 SHIFT_FAILED = "shift_failed"     # a headless shift that failed (design-p1 §4.2, §4.4)
+LAUNCH_FAILED = "launch_failed"   # a bg seat's launch / resume that did not come up (verify-p0-c Q5)
 PERMISSION_DENIED = "permission_denied"
 # P1-5/7 (design-p1 §5.2-5.5, §9): records and warnings, never refusals
 SPIN_SUSPECTED = "spin_suspected"           # one sender -> one recipient, too many sends in a window

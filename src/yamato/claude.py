@@ -2,7 +2,9 @@
 
 The launch / resume / stop recipes follow docs/verify-p0-a.md and
 docs/verify-p0-b.md exactly:
-- liveness is ``pid != null`` (``state`` is unreliable)
+- liveness is ``pid != null`` (``state`` labels what the seat asks of a human, verify-p0-c Q5)
+- ``claude --bg`` exits 0 even when the worker dies before init: a launch or resume
+  counts only once the listing shows a pid and no ``state: failed`` (``started_failure``)
 - ``--resume`` always gets the full sessionId, only after the old pid is gone,
   and ``started a copy`` in its output means failure (the copy is removed)
 - ``--add-dir`` eats trailing values, so the prompt goes after ``--``
@@ -87,6 +89,36 @@ def is_alive(rec: dict | None) -> bool:
     except PermissionError:
         return True
     return True
+
+
+# after a launch / resume: how long the listing is watched (verify-p0-c Q5). A session with a
+# pid and a ``status`` got through init; one with a pid only counts after the settle time,
+# so a worker that dies before init can show it first
+LAUNCH_SETTLE = 2.0
+LAUNCH_CHECK_TIMEOUT = 20.0
+LAUNCH_CHECK_POLL = 0.5
+
+
+def started_failure(session_id: str, since: float) -> str | None:
+    """Why the session launched or resumed at ``since`` did not come up, or None when it did
+    (a pid, no ``state: failed``, and a ``status`` or ``LAUNCH_SETTLE`` seconds on). ``failed``
+    with no pid is a worker that died before init: ``claude --bg`` said ``backgrounded`` and exit 0."""
+    while True:
+        rec = find(session_id)
+        now = time.time()
+        alive, failed = is_alive(rec), (rec or {}).get("state") == "failed"
+        detail = f": {rec['detail']}" if (rec or {}).get("detail") else ""
+        if alive and not failed and (rec.get("status") or now >= since + LAUNCH_SETTLE):
+            return None
+        if now >= since + LAUNCH_SETTLE and failed and not alive:
+            return f"worker が起動しなかった (state: failed, pid なし){detail}"
+        if now >= since + LAUNCH_CHECK_TIMEOUT:
+            if rec is None:
+                return "claude agents にセッションが見つからない"
+            if failed:
+                return f"セッションがエラーで止まっている (state: failed{detail})。モデル名などを確かめる"
+            return f"pid が付かない (state: {rec.get('state') or '-'})"
+        time.sleep(LAUNCH_CHECK_POLL)
 
 
 def find(session_id: str) -> dict | None:

@@ -27,7 +27,7 @@ cd ~/dev/myapp && claude    # trust のダイアログで承認して終了
 ./yamato up dev --for 3h
 
 # 4. 様子を見る / 終業する
-./yamato status dev              # 生存 (pid)・最後に動いた時刻・waitingFor・deadline までの残り
+./yamato status dev              # 生存 (pid)・status / state・最後に動いた時刻・waitingFor・deadline までの残り
 ./yamato board list dev --all
 ./yamato down dev                # 終業を指示 (席は引き継ぎを書いて止まる。猶予を過ぎたら強制停止)
 ./yamato down dev --force        # 今すぐ止める (roster に「引き継ぎなしで終了」)
@@ -71,9 +71,9 @@ zellij --session yamato-view --new-session-with-layout ~/yamato/view.kdl
 | `memory apply <ship> <role> [--by <人>]` / `memory apply <ship> --knowledge` | 案を `roles/<role>/memory.md` (`--knowledge` は `knowledge.proposed.md` を `knowledge.md` に。このときはその時点の `knowledge-inbox.md` の候補を全部 `knowledge-inbox.done/` へ移す) に反映する。`memory.limits` を超える案は断る。呼び出し元は検査せず events と archive に残す。処理した候補は `memory-inbox.done/<日付>.md`、外れた行は `memory-archive.md`、knowledge の候補と `(ship)` の memo は `knowledge-inbox.md` へ |
 | `memory migrate <ship>` | P0 の `seats/<seat>/memory.md` を `roles/<role>/memory.md` に追記で移す (元は `memory.md.migrated` に残す)。SessionStart の注入も読む前に同じことをする |
 | `run-headless <ship> <seat>` | (`send` が切り離して起動する) headless の席の 1 シフトを `claude -p` で回し、使用量・結果の判定・定型文の終了報告まで持つ。記録と結果は [docs/e2e-headless.md](docs/e2e-headless.md) |
-| `hook <event> <ship> <seat>` | (Claude Code の hook から呼ばれる) session-start / user-prompt-submit / stop / wait-deadline / deny-dialog / log-denied |
+| `hook <event> <ship> <seat>` | (Claude Code の hook から呼ばれる) session-start (記録の注入) / session-start-knowledge (役割の memory と knowledge.md の注入) / user-prompt-submit / stop / wait-deadline / deny-dialog / log-denied |
 
-team.yaml の項目: `name` / `hub` / `workspace` / `roles` (役割ごとに `model`・`shift: per_task|persistent|headless`・`count`・`inject`。headless は `max_duration`・`max_budget_usd`・`report_to` も) / `time_limit` / `grace` / `deny` / `env_unset` / `settings` (席の settings.json に重ねる) / `seat_stop` (終業前の確認) / `inject` (注入の中身と上限) / `notify` (owner 宛ての通知経路。`decisions: digest|each`) / `decisions` (判断の category → `decider` と `when`。`merge: owner` の短い書き方も可) / `board` (`kinds`・`columns`・`fields`・`archive_on_done`) / `git` (`base`・`strategy`・`merge_requires`・`merge_decision`・`conflict`。worktree と pr の道具が読む) / `report` (`daily: on_down|off`) / `watch` (`stale_after`。status / ships で赤く出す目安) / `talk_default` (talk の既定の席) / `profiles` (trust のプロファイル。下の「調査艦」)。役割には `trust` (プロファイルの名前) と `remote_control` (true なら `--remote-control` を付けて起こす。bg の席だけ) も書ける / `memory` (`applier`・`curate_every`・`curate_at`・`max_duration`・`limits`。棚卸し)。
+team.yaml の項目: `name` / `hub` / `workspace` / `roles` (役割ごとに `model`・`shift: per_task|persistent|headless`・`count`・`inject`。headless は `max_duration`・`max_budget_usd`・`report_to` も) / `time_limit` / `grace` / `deny` / `env_unset` / `settings` (席の settings.json に重ねる) / `seat_stop` (終業前の確認) / `inject` (注入の中身と上限。`total_chars` は SessionStart hook 1 本あたり) / `notify` (owner 宛ての通知経路。`decisions: digest|each`) / `decisions` (判断の category → `decider` と `when`。`merge: owner` の短い書き方も可) / `board` (`kinds`・`columns`・`fields`・`archive_on_done`) / `git` (`base`・`strategy`・`merge_requires`・`merge_decision`・`conflict`。worktree と pr の道具が読む) / `report` (`daily: on_down|off`) / `watch` (`stale_after`。status / ships で赤く出す目安) / `talk_default` (talk の既定の席) / `profiles` (trust のプロファイル。下の「調査艦」)。役割には `trust` (プロファイルの名前) と `remote_control` (true なら `--remote-control` を付けて起こす。bg の席だけ) も書ける / `memory` (`applier`・`curate_every`・`curate_at`・`max_duration`・`limits`。棚卸し。`limits` は `memory_lines`・`memory_chars`・`knowledge_lines`・`knowledge_chars` で、`memory apply` の上限と注入で切る上限を兼ねる)。
 運用の方針 (deny の中身、外す環境変数、worktree の使い方、git の流れ) はコードに持たず、ひな形の team.yaml と役割プロンプト (`roles/<role>.md`) に書いてある。艦ごとに変えてよい。
 
 worktree と pr (design-p1 §8): yamato は道具を出すだけで、誰がいつ使うか (タスク = ブランチ、worktree で作業する、push してよいのは自分のブランチ、merge は owner の了承のあと captain が打つ、など) は dev ひな形の `roles/*.md` と team.yaml の `deny` に書いてある。
@@ -111,6 +111,8 @@ notify:
 | `command` | `notify.command` をシェルで実行。件名・本文・重要度は stdin の JSON `{"title", "message", "level"}` と環境変数 `YAMATO_TITLE` / `YAMATO_MESSAGE` / `YAMATO_LEVEL`。メールなど上の 3 つ以外はこれで送る (方式は増やさない) |
 
 - best-effort: どれかが失敗しても他は送り、`send` は失敗にならない。失敗は `send` の出力に `通知 <方式>: 失敗 (...)` と出て、`events.jsonl` に `notify_failed` として残る ([docs/events.md](docs/events.md))。webhook の URL は出力にも events にも書かない
+- 注入 (design §8.2、design-p1 §3.5): SessionStart hook を 2 本に分ける。記録 (handoff・作業ログ・担当・日報・inbox・注記) の hook と、役割の memory と knowledge.md の hook。Claude Code は hook 1 本の出力を 10,000 文字まで受け取る ([verify-p0-c](docs/verify-p0-c.md) Q1) ので、それぞれ `inject.limits.total_chars` (既定 9,500 文字) で切る。memory と knowledge は `memory.limits` (既定 memory 80 行 / 4,000 文字、knowledge 120 行 / 5,000 文字) で切る。切ったところには「全文は `<path>` を Read せよ」が付く
+- 起動の確かめ (design-p1 §5.1): `claude --bg` は worker が起動前に落ちても exit 0 を返す (verify-p0-c Q5)。`up` と `send` は起動・resume のあとに `claude agents --json` で pid を確かめ、`state: failed` や pid なしなら失敗としてエラーを返す (roster の `launchFailed`、events の `launch_failed`)。`status` は `status: waiting` (`waitingFor` を出す) と、idle の `state: blocked` (人間の返事待ちの疑い) を赤く出す
 - 日報 (design-p1 §2): `report.daily: on_down` (ひな形の既定) の艦では、`down`・強制停止のときにその日の日報が無ければ事実だけで作り、日報を作った・送ったあとに日報に載る出来事 (board・判断・PR・異常の events) があれば「一言」「明日」を残して事実の節を作り直し、まだ送っていないか、最後に送ったあとに変化があれば要約を送る (2 回目は件名に「(更新)」。captain が落ちていても owner に届く安全網。同じ日の 2 回目の終業にも効く)。captain が終業時に「一言」「明日」を書いて `report send` する流れは `roles/pm.md` に書いてある。captain の注入には `inject` の `last_report` で前回の日報の「一言」「owner の判断待ち」「明日」だけが入る
 - `PushNotification` は方式にしない (席の外から出せない。[verify-p1-d](docs/verify-p1-d.md) V11)
 
@@ -137,6 +139,7 @@ unit test は速く保つ (遅いと開発の速さにそのまま響く)。全�
 - [spike-zellij-attach.md](docs/spike-zellij-attach.md) — zellij 表示層の検証。実装と使い方は [src/yamato/view/README.md](src/yamato/view/README.md)
 - [review-da-v0.md](docs/review-da-v0.md) — 設計書 v0 への devil's advocate レビュー
 - [verify-p0-a.md](docs/verify-p0-a.md) / [verify-p0-b.md](docs/verify-p0-b.md) — P0 の実機検証 (起動レシピ)
+- [verify-p0-c.md](docs/verify-p0-c.md) — P0 の実機検証 C (注入の上限・環境変数・attach と Remote Control の常駐・Monitor・`state` の意味)
 - [e2e-p0.md](docs/e2e-p0.md) — P0 実装の E2E
 - [e2e-p1.md](docs/e2e-p1.md) — P1 実装の E2E (開発艦・調査艦・memory・入れ替え)
 - [events.md](docs/events.md) — events.jsonl の行の形式と読み方、lastActive
