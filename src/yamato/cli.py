@@ -25,6 +25,7 @@ def _parser() -> argparse.ArgumentParser:
     u = sub.add_parser("up", help="captain の席を起動し、稼働時間の上限を設定する")
     u.add_argument("ship")
     u.add_argument("--for", dest="for_", help="稼働時間 (例 3h, 20m)。既定は team.yaml の time_limit")
+    u.add_argument("--seats", help="captain と一緒に起こす席 (カンマ区切り。例 impl,review)")
 
     d = sub.add_parser("down", help="終業 (--force で即時に強制停止)")
     d.add_argument("ship")
@@ -85,8 +86,9 @@ def _parser() -> argparse.ArgumentParser:
     ss.add_argument("--delivered", action="store_true",
                     help="生きている宛先への SendMessage を済ませた (未読の送信が残っていても終業する)")
 
-    from . import pr, report, worktree  # design-p1 §8, §2: the parsers live with the commands
+    from . import admiral, pr, report, worktree  # design-p1 §8, §2, §6: the parsers live with the commands
 
+    admiral.register(sub)
     worktree.register(sub)
     pr.register(sub)
     report.register(sub)
@@ -187,22 +189,16 @@ def _inbox(args) -> int:
 
 def _status(args) -> int:
     from . import seat
-    from .util import load_registry, yamato_home
+    from .admiral import all_ships
 
     if args.ship:
         return seat.status(resolve_ship(args.ship))
-    ships = dict(load_registry())
-    home = yamato_home()
-    if home.is_dir():
-        for d in home.iterdir():
-            if (d / "team.yaml").is_file():
-                ships.setdefault(d.name, str(d))
+    ships = all_ships()
     if not ships:
         print("艦がありません (yamato ship create で作る)")
         return 0
-    for name, path in sorted(ships.items()):
-        if (Path(path) / "team.yaml").is_file():
-            seat.status(Path(path))
+    for path in ships.values():
+        seat.status(path)
     return 0
 
 
@@ -228,6 +224,10 @@ def main(argv: list[str] | None = None) -> int:
             return _inbox(args)
         if args.cmd == "status":
             return _status(args)
+        if args.cmd in ("extend", "halt", "ships", "talk"):
+            from . import admiral
+
+            return admiral.run(args)
         if args.cmd in ("worktree", "pr", "report"):
             from . import pr, report, worktree
 
@@ -248,7 +248,9 @@ def main(argv: list[str] | None = None) -> int:
             append_log(shipdir, args.seat, args.text)
             return 0
         if args.cmd == "up":
-            return seat.up(resolve_ship(args.ship), args.for_)
+            from . import admiral
+
+            return admiral.up(resolve_ship(args.ship), args.for_, args.seats)
         if args.cmd == "down":
             return seat.down(resolve_ship(args.ship), args.force)
         if args.cmd == "send":

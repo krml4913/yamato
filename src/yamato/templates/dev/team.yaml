@@ -4,6 +4,8 @@ hub: pm                      # captain を務める役割
 workspace: "{{workspace}}"   # 席の作業ディレクトリ (作業対象の repo)
 charter: charter.md
 
+talk_default: pm            # yamato talk <ship> で席を省いたときに attach する席 (省略時は hub)
+
 time_limit: 3h               # yamato up からの稼働時間 (up --for で上書き)
 grace: 20m                   # 終業の指示から強制停止までの猶予
 
@@ -26,6 +28,11 @@ roles:
   #   max_budget_usd: 1.0      # 書いたときだけ --max-budget-usd を付ける (既定は掛けない)
   #   report_to: pm            # シフト終了の定型文の報告先 (省略時は hub)
   #   description: 調査担当
+
+# yamato status / ships で赤く出す目安 (design-p1 §5.2)。生きているのに最後に動いてからこれより長い席
+# (ほかに権限の確認待ち・API エラーの席も赤)
+watch:
+  stale_after: 20m
 
 # 無人の席にやらせない操作 (Claude Code の permissions.deny)。艦ごとに自由に変えてよい
 # `{{ship}}` は艦フォルダのパスに置き換わる。`ask` ルールは auto モードでも止まるので使わない

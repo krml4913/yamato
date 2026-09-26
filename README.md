@@ -40,9 +40,13 @@ zellij --session yamato-view --new-session-with-layout ~/yamato/view.kdl
 | コマンド | 内容 |
 |---|---|
 | `ship create <name> --workspace <path> [--path <dir>] [--template dev]` | ひな形から艦フォルダを作る |
-| `up <ship> [--for 3h]` | `.runtime/` を作り直し、deadline を書き、captain の席を起動 (persistent なら resume) |
+| `up <ship> [--for 3h] [--seats <seat,...>]` | `.runtime/` を作り直し、deadline を書き、captain の席を起動 (persistent なら resume)。`--seats` の席も一緒に起こす |
 | `down <ship> [--force]` | 終業 / 強制停止 |
-| `status [<ship>]` | 席ごとの状態。権限の確認で止まっている席は `!!! 詰まり` と出る |
+| `status [<ship>]` | 席ごとの状態。赤い席は `!!! <席>: ...` と出る (権限の確認待ち・API エラー (`state: failed`)・生きているのに `watch.stale_after` (既定 20m) より長く動いていない) |
+| `ships` | (admiral) 全艦を 1 行ずつ: 稼働中か・残り時間・captain の最終・赤い席の数・owner の判断待ちの数・今日の使用量・最新の日報の日付 |
+| `extend <ship> <期間>` | (admiral) deadline を延ばす (データの書き換えだけ。過ぎていれば今から数える) |
+| `halt <ship>` | (admiral) 緊急停止。猶予なしで全席を強制停止し、日報の安全網を通す |
+| `talk <ship> [<seat>]` | (admiral) 席に `claude attach` する (既定は team.yaml の `talk_default`、省略時 hub)。止まっている席は send と同じ規則で起こしてから。使い方は [docs/admiral.md](docs/admiral.md) |
 | `send <ship> <seat\|owner> "<msg>" [--from <seat>]` | inbox に記録 → 宛先が生きていれば何もしない (送り手が SendMessage で届ける) / 止まった persistent は resume / per_task と未起動は新しいシフト |
 | `inbox <ship> <seat> [--all]` | 未読を全文で表示して既読にする |
 | `board add\|set\|show\|list\|mine` | board の操作。frontmatter はコマンド経由でのみ変わり、値を検証する。done は `board/archive/` へ |
@@ -63,7 +67,7 @@ zellij --session yamato-view --new-session-with-layout ~/yamato/view.kdl
 | `run-headless <ship> <seat>` | (`send` が切り離して起動する) headless の席の 1 シフトを `claude -p` で回し、使用量・結果の判定・定型文の終了報告まで持つ。記録と結果は [docs/e2e-headless.md](docs/e2e-headless.md) |
 | `hook <event> <ship> <seat>` | (Claude Code の hook から呼ばれる) session-start / user-prompt-submit / stop / wait-deadline / deny-dialog / log-denied |
 
-team.yaml の項目: `name` / `hub` / `workspace` / `roles` (役割ごとに `model`・`shift: per_task|persistent|headless`・`count`・`inject`。headless は `max_duration`・`max_budget_usd`・`report_to` も) / `time_limit` / `grace` / `deny` / `env_unset` / `settings` (席の settings.json に重ねる) / `seat_stop` (終業前の確認) / `inject` (注入の中身と上限) / `notify` (owner 宛ての通知経路。`decisions: digest|each`) / `decisions` (判断の category → `decider` と `when`。`merge: owner` の短い書き方も可) / `board` (`kinds`・`columns`・`fields`・`archive_on_done`) / `git` (`base`・`strategy`・`merge_requires`・`merge_decision`・`conflict`。worktree と pr の道具が読む) / `report` (`daily: on_down|off`)。
+team.yaml の項目: `name` / `hub` / `workspace` / `roles` (役割ごとに `model`・`shift: per_task|persistent|headless`・`count`・`inject`。headless は `max_duration`・`max_budget_usd`・`report_to` も) / `time_limit` / `grace` / `deny` / `env_unset` / `settings` (席の settings.json に重ねる) / `seat_stop` (終業前の確認) / `inject` (注入の中身と上限) / `notify` (owner 宛ての通知経路。`decisions: digest|each`) / `decisions` (判断の category → `decider` と `when`。`merge: owner` の短い書き方も可) / `board` (`kinds`・`columns`・`fields`・`archive_on_done`) / `git` (`base`・`strategy`・`merge_requires`・`merge_decision`・`conflict`。worktree と pr の道具が読む) / `report` (`daily: on_down|off`) / `watch` (`stale_after`。status / ships で赤く出す目安) / `talk_default` (talk の既定の席)。
 運用の方針 (deny の中身、外す環境変数、worktree の使い方、git の流れ) はコードに持たず、ひな形の team.yaml と役割プロンプト (`roles/<role>.md`) に書いてある。艦ごとに変えてよい。
 
 worktree と pr (design-p1 §8): yamato は道具を出すだけで、誰がいつ使うか (タスク = ブランチ、worktree で作業する、push してよいのは自分のブランチ、merge は owner の了承のあと captain が打つ、など) は dev ひな形の `roles/*.md` と team.yaml の `deny` に書いてある。

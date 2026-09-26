@@ -13,7 +13,8 @@ from .util import YamatoError, check_name, parse_duration, read_json
 SHIFTS = ("per_task", "persistent", "headless")
 STATES = ("open", "active", "blocked", "done")
 TOP_KEYS = {"name", "hub", "workspace", "charter", "roles", "time_limit", "grace", "deny", "board",
-            "settings", "seat_stop", "env_unset", "inject", "notify", "git", "report", "decisions"}
+            "settings", "seat_stop", "env_unset", "inject", "notify", "git", "report", "decisions",
+            "watch", "talk_default"}
 # what SessionStart can inject (design §8.2); the header is always there
 INJECT_PARTS = ("handoff", "log_tail", "mine", "inbox", "memory", "knowledge", "last_report")
 # what a ship that names no parts gets: the captain's report excerpt (design-p1 §2.3) is opt-in
@@ -33,6 +34,9 @@ GIT_FALLBACK = {"base": "main", "strategy": "squash", "merge_requires": [], "mer
 # auto mode is unavailable on Haiku (verify-p0-b §総括 1): the seat would fall
 # back to manual and block on the first dialog.
 NO_AUTO_MODELS = ("haiku",)
+
+# `watch:` (design-p1 §5.2): what `status` / `ships` show in red
+WATCH_FALLBACK = {"stale_after": "20m"}
 
 NOTIFY_DECISIONS = ("digest", "each")   # human deciders: gather into the daily report / one by one
 DEFAULT_TIME_LIMIT = "3h"
@@ -195,6 +199,15 @@ def validate(data: dict, shipdir: Path) -> dict:
     if not isinstance(report, dict) or set(report) - {"daily"} or daily not in ("on_down", "off"):
         raise YamatoError("team.yaml: report は {daily: on_down | off}")
 
+    watch = data.get("watch") or {}
+    if not isinstance(watch, dict) or set(watch) - set(WATCH_FALLBACK):
+        raise YamatoError("team.yaml: watch は {stale_after: 20m}")
+    stale_after = parse_duration(watch.get("stale_after") or WATCH_FALLBACK["stale_after"])
+
+    talk_default = str(data.get("talk_default") or hub)
+    if talk_default not in seats:
+        raise YamatoError(f"team.yaml: talk_default={talk_default!r} が席にありません")
+
     board = data.get("board") or {}
     if not isinstance(board, dict):
         raise YamatoError("team.yaml: board が mapping ではありません")
@@ -231,6 +244,8 @@ def validate(data: dict, shipdir: Path) -> dict:
         "decisions": _decisions(data.get("decisions"), seats),
         "git": git,
         "report": {"daily": daily},
+        "watch": {"stale_after": stale_after},
+        "talk_default": talk_default,
         "warnings": warnings,
     }
 

@@ -118,8 +118,23 @@ def git_root(path: Path) -> Path | None:
     return Path(cp.stdout.strip()).resolve() if cp.returncode == 0 and cp.stdout.strip() else None
 
 
+def main_repo_root(path: Path) -> Path | None:
+    """The main working tree of the repo ``path`` is in (for a linked worktree, not the
+    worktree itself); None outside git."""
+    try:
+        cp = subprocess.run(["git", "-C", str(path), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                            capture_output=True, text=True, timeout=10)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    common = Path(cp.stdout.strip()) if cp.returncode == 0 and cp.stdout.strip() else None
+    if common is not None and common.name == ".git":
+        return common.parent.resolve()
+    return git_root(path)
+
+
 def is_trusted(workspace: Path) -> bool:
-    """Trust is per git root; a non-git dir is covered by a trusted ancestor (verify-p0-b Q4)."""
+    """Trust is per git root; a non-git dir is covered by a trusted ancestor (verify-p0-b Q4).
+    A linked worktree inherits the trust of its main repo (verify-p1-d V6)."""
     try:
         projects = json.loads(_claude_json().read_text()).get("projects", {})
     except (FileNotFoundError, ValueError):
@@ -131,7 +146,7 @@ def is_trusted(workspace: Path) -> bool:
     ws = Path(workspace).resolve()
     root = git_root(ws)
     if root is not None:
-        return ok(root)
+        return ok(root) or ok(main_repo_root(ws) or root)
     return any(ok(p) for p in (ws, *ws.parents))
 
 
@@ -230,7 +245,7 @@ def discard(short_id: str) -> None:
 
 
 def untrusted_message(workspace: Path) -> str:
-    root = git_root(Path(workspace)) or Path(workspace)
+    root = main_repo_root(Path(workspace)) or Path(workspace)
     return (f"workspace が Claude Code に trust されていません: {root}\n"
             f"  一度 `cd {root} && claude` を実行して trust のダイアログで承認してから、もう一度 up してください。"
             f"\n  (yamato は trust を自動では承認しません)")
