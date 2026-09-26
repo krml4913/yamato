@@ -15,7 +15,7 @@
 
 | キー | 型 | 中身 |
 |---|---|---|
-| `ts` | 数値 | epoch 秒 (usage.jsonl・inbox.jsonl と同じ) |
+| `ts` | 数値 | epoch 秒 (usage.jsonl・inbox.jsonl と同じ)。数値でない行は `read` が飛ばす |
 | `kind` | 文字列 | 出来事の種類 (§1.2) |
 | `seat` | 文字列 / null | 出来事が関わる席 (下の表)。`owner` もありうる |
 | `item` | 文字列 / null | 関わる board の項目 (`T-001`) や判断 (`D-001`) |
@@ -36,14 +36,15 @@ yamato が書くのは次の kind。定数は `src/yamato/events.py`。
 | `board_archive` | `board archive` | 担当 | 項目 | ― | ― |
 | `send` | `send` (inbox に記録した時点。起動前・上限後も書く) | 宛先 | ― | 送り手 | `n` (inbox の番号)、`chars` |
 | `shift_start` | roster のシフト開始 (new / resume / headless) | 席 | ― | ― | `shiftNo`、`how`、`sessionId` |
-| `shift_end` | roster のシフト終了 | 席 | ― | ― | `shiftNo`、`reason` (`seat-stop` / `exited` / `down-force` / `grace-exceeded`。headless はほかに `max-duration` / `failed`)、`handoffWritten`、`note` (「引き継ぎなしで終了」など) |
+| `shift_end` | roster のシフト終了 | 席 | ― | ― | `shiftNo`、`reason` (`seat-stop` / `exited` / `down-force` / `grace-exceeded`。headless はほかに `max-duration` / `failed` / `wrapper-signal` (ラッパーが SIGTERM・SIGINT を受けて `-p` に転送した) / `wrapper-lost` (ラッパーが居ないのに `-p` が残っていたのを reconcile が止めた))、`handoffWritten`、`note` (「引き継ぎなしで終了」など) |
 | `force_stop` | `down --force`・猶予超えの強制停止 (このあと `shift_end` も出る) | 席 | ― | ― | `reason`、`shiftNo`、`sessionId` |
 | `shift_failed` | headless のシフトの異常 (design-p1 §4.2 の 4、§4.4。このあと `shift_end` も出る) | 席 | ― | ― | `shiftNo`、`sessionId`、`exitCode`、`failures` (理由の文)、`is_error`、`api_error_status`、`terminal_reason` |
 | `permission_denied` | PermissionRequest の deny hook (`source: dialog`)、PermissionDenied hook (`source: auto`、classifier の拒否) | 席 | ― | ― | `source`、`tool`、`reason` (auto のみ) |
 | `notify_failed` | 通知 (`notify.via`、design-p1 §2.4) が 1 方式失敗したとき。方式ごとに 1 行。OS が違うための「送らない」は書かない。定数は `notify.NOTIFY_FAILED` | ― | ― | ― | `via`、`level`、`reason` (webhook の URL は入れない) |
 | `report_made` | `report daily` と日報の安全網 (design-p1 §2.2) が日報を作ったとき | ― | ― | ― | `date`、`factsOnly`、`reason` (facts-only のとき) |
 | `report_sent` | `report send` と安全網が日報の要約を通知したとき。安全網は同じ日付の `report_sent` があれば送らない (通知の前に書く) | ― | ― | ― | `date`、`level` / `by: safety_net` |
-| `decision_open` / `decision_close` | P1-2 の `decide open/close` が書く (口だけ用意) | decider を想定 | 判断の id | 開いた / 閉じた席 | P1-2 で決める |
+| `decision_open` | `decide open` | decider | 判断の id | 開いた席 (呼び出し元) | `category`、`decider`、`blocks` (blocked にしたタスク)、`links`、`urgent`、`due`、`supersedes` |
+| `decision_close` | `decide close` | decider | 判断の id | 閉じた席 (呼び出し元) | `decider`、`closed_by`、`on_behalf_of` (`--by`)、`by_decider` (false = decider 以外が閉じた。日報の「異常」の材料)、`choice`、`reason`、`was_blocking` (止めていたタスク)、`unblocked` (止まりが解けたタスク) |
 
 - deny ルールによる拒否は hook が拾わない (検証 B Q1) ので `permission_denied` には載らない
 - **記録は道具** (project memory mechanism-not-policy): `emit` はどの kind も受け付け、誰が書くかを検査しない。上の表は yamato 自身が書くものの一覧で、制限ではない

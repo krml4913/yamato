@@ -90,6 +90,9 @@ def _parser() -> argparse.ArgumentParser:
     worktree.register(sub)
     pr.register(sub)
     report.register(sub)
+    from . import decide  # design-p1 §1
+
+    decide.add_parser(sub)
 
     rh = sub.add_parser("run-headless", help="(send が切り離して起動する) headless の席の 1 シフトを claude -p で回す")
     rh.add_argument("ship")
@@ -229,6 +232,10 @@ def main(argv: list[str] | None = None) -> int:
             from . import pr, report, worktree
 
             return {"worktree": worktree, "pr": pr, "report": report}[args.cmd].run(args)
+        if args.cmd == "decide":
+            from . import decide
+
+            return decide.main(args)
 
         from . import seat
 

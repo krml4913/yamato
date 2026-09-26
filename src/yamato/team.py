@@ -13,7 +13,7 @@ from .util import YamatoError, check_name, parse_duration, read_json
 SHIFTS = ("per_task", "persistent", "headless")
 STATES = ("open", "active", "blocked", "done")
 TOP_KEYS = {"name", "hub", "workspace", "charter", "roles", "time_limit", "grace", "deny", "board",
-            "settings", "seat_stop", "env_unset", "inject", "notify", "git", "report"}
+            "settings", "seat_stop", "env_unset", "inject", "notify", "git", "report", "decisions"}
 # what SessionStart can inject (design §8.2); the header is always there
 INJECT_PARTS = ("handoff", "log_tail", "mine", "inbox", "memory", "knowledge", "last_report")
 # what a ship that names no parts gets: the captain's report excerpt (design-p1 §2.3) is opt-in
@@ -34,6 +34,7 @@ GIT_FALLBACK = {"base": "main", "strategy": "squash", "merge_requires": [], "mer
 # back to manual and block on the first dialog.
 NO_AUTO_MODELS = ("haiku",)
 
+NOTIFY_DECISIONS = ("digest", "each")   # human deciders: gather into the daily report / one by one
 DEFAULT_TIME_LIMIT = "3h"
 DEFAULT_GRACE = "20m"
 
@@ -180,6 +181,10 @@ def validate(data: dict, shipdir: Path) -> dict:
     for via in notify.get("via") or []:
         if via not in NOTIFY_CHANNELS:
             warnings.append(f"notify.via の {via!r} は知らない経路 (選べるのは {' / '.join(NOTIFY_CHANNELS)})。送れず events に残る")
+    notify_decisions = notify.get("decisions") or "digest"
+    if notify_decisions not in NOTIFY_DECISIONS:
+        raise YamatoError(f"team.yaml: notify.decisions は {' / '.join(NOTIFY_DECISIONS)} のどれか (今: {notify_decisions})")
+    seats = expand_seats(roles)
 
     git = _git(data.get("git"))
 
@@ -221,7 +226,9 @@ def validate(data: dict, shipdir: Path) -> dict:
         "env_unset": env_unset,
         "inject": {"parts": inject.get("parts"), "limits": _limits(limits)},
         "notify": {"via": [str(v) for v in notify.get("via") or []], "command": notify.get("command"),
-                   "slack": {"webhook_env": slack.get("webhook_env")}},
+                   "slack": {"webhook_env": slack.get("webhook_env")},
+                   "decisions": notify_decisions},
+        "decisions": _decisions(data.get("decisions"), seats),
         "git": git,
         "report": {"daily": daily},
         "warnings": warnings,
@@ -245,6 +252,31 @@ def _git(git) -> dict:
     for k in ("base", "conflict"):
         if not out[k] or not isinstance(out[k], str):
             raise YamatoError(f"team.yaml: git.{k} は文字列")
+    return out
+
+
+def _decisions(table, seats: dict) -> dict:
+    """``decisions:`` (design-p1 §1.4): category -> {decider, when}.
+
+    Both ``merge: owner`` and ``merge: {decider: owner, when: "..."}`` are
+    accepted. The decider is a seat or ``owner`` (the human); a role of
+    several seats has no single seat to deliver to, so it is refused here.
+    """
+    table = table or {}
+    if not isinstance(table, dict):
+        raise YamatoError("team.yaml: decisions は {category: decider} か {category: {decider, when}} の mapping")
+    out = {}
+    for cat, spec in table.items():
+        check_name("decisions の category", str(cat))
+        if isinstance(spec, str):
+            spec = {"decider": spec}
+        if not isinstance(spec, dict) or set(spec) - {"decider", "when"} or not spec.get("decider"):
+            raise YamatoError(f"team.yaml: decisions.{cat} は decider の名前か {{decider, when}}")
+        decider = str(spec["decider"])
+        if decider not in seats and decider not in RESERVED_SEATS:
+            raise YamatoError(f"team.yaml: decisions.{cat}.decider={decider} は席の名前か owner にする "
+                              f"(席: {', '.join(seats)})")
+        out[str(cat)] = {"decider": decider, "when": None if spec.get("when") is None else str(spec["when"])}
     return out
 
 

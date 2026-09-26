@@ -43,18 +43,25 @@ def seat(shipdir: Path, name: str) -> dict:
 
 
 def seat_of_session(shipdir: Path, session_id: str | None) -> str | None:
-    """The seat whose current shift is ``session_id`` (who called a command; for the record only)."""
+    """The seat whose shift is ``session_id`` (who called a command; for the record only).
+
+    The current shift first, then the seat's earlier shifts (a session that
+    outlived its shift is still that seat's)."""
     if not session_id:
         return None
-    for name, rec in load(shipdir)["seats"].items():
+    data = load(shipdir)
+    for name, rec in data["seats"].items():
         if rec.get("sessionId") == session_id:
             return name
+    for sh in reversed(data["shifts"]):
+        if sh.get("sessionId") == session_id:
+            return sh["seat"]
     return None
 
 
 def start_shift(shipdir: Path, name: str, *, session_id: str, short_id: str, session_name: str,
                 how: str, now: float | None = None) -> dict:
-    now = now or time.time()
+    now = time.time() if now is None else now
     with ship_lock(shipdir):
         data = load(shipdir)
         rec = data["seats"].setdefault(name, {})
@@ -88,10 +95,16 @@ def start_shift(shipdir: Path, name: str, *, session_id: str, short_id: str, ses
 
 
 def touch(shipdir: Path, name: str, now: float | None = None) -> None:
-    """The seat just moved (SessionStart / UserPromptSubmit / Stop hooks, design-p1 §5.1)."""
+    """The seat just moved (SessionStart / UserPromptSubmit / Stop hooks, design-p1 §5.1).
+
+    A seat roster does not know yet (never started a shift) is left alone: a
+    hook must not create a half-filled seat record."""
     with ship_lock(shipdir):
         data = load(shipdir)
-        data["seats"].setdefault(name, {})["lastActive"] = now or time.time()
+        rec = data["seats"].get(name)
+        if rec is None:
+            return
+        rec["lastActive"] = time.time() if now is None else now
         save(shipdir, data)
 
 
@@ -109,7 +122,7 @@ def mark_stopping(shipdir: Path, name: str, *, handoff_written: bool, now: float
     with ship_lock(shipdir):
         data = load(shipdir)
         rec = data["seats"].setdefault(name, {})
-        rec.update({"state": STOPPING, "handoffWritten": handoff_written, "stopRequestedAt": now or time.time()})
+        rec.update({"state": STOPPING, "handoffWritten": handoff_written, "stopRequestedAt": time.time() if now is None else now})
         save(shipdir, data)
         return dict(rec)
 
@@ -117,7 +130,7 @@ def mark_stopping(shipdir: Path, name: str, *, handoff_written: bool, now: float
 def end_shift(shipdir: Path, name: str, *, reason: str, handoff_written: bool | None = None,
               note: str | None = None, now: float | None = None, extra: dict | None = None) -> dict:
     """``extra`` goes on both the seat and the shift (a headless shift's outcome, rate limit)."""
-    now = now or time.time()
+    now = time.time() if now is None else now
     with ship_lock(shipdir):
         data = load(shipdir)
         rec = data["seats"].setdefault(name, {})

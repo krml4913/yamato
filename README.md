@@ -54,21 +54,25 @@ zellij --session yamato-view --new-session-with-layout ~/yamato/view.kdl
 | `pr merge <ship> <item>` | `git.merge_requires` を確かめて `gh pr merge --<git.strategy>`。艦ごとに 1 本ずつ (ロック)。呼び出し元を `merged_by` に残す (誰が打てるかは検査しない)。そのあと他の開いた PR の衝突を `gh pr view` で確かめ、衝突したものは列 `rebase` (あれば) に動かし、`git.conflict` の宛先に send する |
 | `report daily <ship> [--date] [--facts-only] [--force]` | 日報の下書き `reports/daily/<日付>.md` を作る (LLM を使わない)。事実の節 (判断待ち・終わったもの・動いている/止まっているもの・異常・使用量) を board・events.jsonl・usage.jsonl から埋め、「一言」「明日」は captain が書く欄として空ける。60 行まで。`--facts-only` はその 2 欄を「captain が書けなかった」にしてすぐ通知する |
 | `report send <ship> [--date]` | 日報の要約 (一言・判断待ち・異常、20 行まで) を `notify.via` で送る |
+| `decide open <ship> --category <c> --title "<t>" [--blocks T-1,T-2] [--links T-3] [--due YYYY-MM-DD] [--body-file <f>] [--urgent] [--supersedes D-n]` | 判断の項目 `D-NNN` (`kind: decision`) を開く。decider は team.yaml の `decisions` から開いた時点で決めて固定する (表にない category は `default`、それも無ければ hub)。`--blocks` のタスクは `state: blocked` にして `blocked_on` に足す (`--links` は止めずに結ぶだけ)。decider が席なら send、owner なら owner の inbox に記録し、`notify.decisions: each` か `--urgent` のときだけ通知する (既定の `digest` は日報にまとめる)。開いた本人が decider なら送らない |
+| `decide close <ship> <D> --choice "<決定>" --reason "<理由>" [--by <決めた人>]` | 項目の「## 決定」を書いて閉じ (`closed_by` = 呼び出し元、`on_behalf_of` = `--by` か呼び出し元)、`decisions/log.md` に追記する。decider 以外が閉じても断らず、events と項目に記録する。`blocked_on` が空になったタスクは元の state に戻し、担当 (無ければ hub) に send する。閉じた判断は書き換えない (覆すなら `--supersedes`) |
+| `decide list <ship> [--decider <d>] [--stale 2d] [--all]` / `decide categories <ship>` | 待ちの判断の一覧 (待ち時間・期限・止めているタスクつき) / team.yaml の decisions の表 |
 | `seat-stop <ship> <seat> [--delivered]` | (席が使う) handoff.md の更新を確認して遅延 stop |
 | `view layout <ship>... [-o FILE]` | 艦ごとに 1 タブ、席ごとに 1 ペインの zellij layout (KDL) を出力する。艦は名前 (`ships.json` → `~/yamato/<name>`) かパス |
 | `view attach <ship> <seat> [--poll SEC]` | (layout のペインの中身) 席の今のシフト (roster の sessionId) が生きていれば `claude attach`、シフトが替われば付け直す。止まっている席には attach しない |
 | `run-headless <ship> <seat>` | (`send` が切り離して起動する) headless の席の 1 シフトを `claude -p` で回し、使用量・結果の判定・定型文の終了報告まで持つ。記録と結果は [docs/e2e-headless.md](docs/e2e-headless.md) |
 | `hook <event> <ship> <seat>` | (Claude Code の hook から呼ばれる) session-start / user-prompt-submit / stop / wait-deadline / deny-dialog / log-denied |
 
-team.yaml の項目: `name` / `hub` / `workspace` / `roles` (役割ごとに `model`・`shift: per_task|persistent|headless`・`count`・`inject`。headless は `max_duration`・`max_budget_usd`・`report_to` も) / `time_limit` / `grace` / `deny` / `env_unset` / `settings` (席の settings.json に重ねる) / `seat_stop` (終業前の確認) / `inject` (注入の中身と上限) / `notify` (owner 宛ての通知経路) / `board` (`kinds`・`columns`・`fields`・`archive_on_done`) / `git` (`base`・`strategy`・`merge_requires`・`merge_decision`・`conflict`。worktree と pr の道具が読む) / `report` (`daily: on_down|off`)。
+team.yaml の項目: `name` / `hub` / `workspace` / `roles` (役割ごとに `model`・`shift: per_task|persistent|headless`・`count`・`inject`。headless は `max_duration`・`max_budget_usd`・`report_to` も) / `time_limit` / `grace` / `deny` / `env_unset` / `settings` (席の settings.json に重ねる) / `seat_stop` (終業前の確認) / `inject` (注入の中身と上限) / `notify` (owner 宛ての通知経路。`decisions: digest|each`) / `decisions` (判断の category → `decider` と `when`。`merge: owner` の短い書き方も可) / `board` (`kinds`・`columns`・`fields`・`archive_on_done`) / `git` (`base`・`strategy`・`merge_requires`・`merge_decision`・`conflict`。worktree と pr の道具が読む) / `report` (`daily: on_down|off`)。
 運用の方針 (deny の中身、外す環境変数、worktree の使い方、git の流れ) はコードに持たず、ひな形の team.yaml と役割プロンプト (`roles/<role>.md`) に書いてある。艦ごとに変えてよい。
 
 worktree と pr (design-p1 §8): yamato は道具を出すだけで、誰がいつ使うか (タスク = ブランチ、worktree で作業する、push してよいのは自分のブランチ、merge は owner の了承のあと captain が打つ、など) は dev ひな形の `roles/*.md` と team.yaml の `deny` に書いてある。
 - `pr` は `gh` を**呼び出し元の環境のまま**呼ぶ (`$YAMATO_GH` で差し替えられる)。席から呼ぶと、席は `env_unset` (ひな形の既定 `GH_TOKEN`, `GITHUB_TOKEN`) を外して起動しているので、gh は環境変数のトークンを使えず、`gh auth login` で保存した認証 (keyring / `~/.config/gh/hosts.yml`) だけで動く。保存した認証が無ければ席からの `pr open/merge` は失敗する。そのときは、owner が端末から打つ、gh に認証を保存する、艦の `env_unset` から外す、のどれかにする。`git push` は gh と別で、git の認証 (ssh / credential helper) を使う
-- `merge_requires` の `review` は項目の `review=approved`、`ci` は `gh pr checks` (チェックの無い repo は通ったとみなす)、`decision` は項目を `links` に持つ `kind: decision`・`category: merge` の項目が done であること
+- `merge_requires` の `review` は項目の `review=approved`、`ci` は `gh pr checks` (チェックの無い repo は通ったとみなす)、`decision` は項目を `links` に持つ `category: merge` の判断 (`decide open --category merge --links <item>`) が閉じていること
+- `git.merge_decision: auto` (reviewer の承認で merge の判断を自動で開く) はまだ無い。今は captain が `decide open --category merge --links <item>` で開く (dev ひな形の `roles/pm.md`)
 - 「worktree を cwd にして新しいシフトを起こす」(`send --cwd`、design-p1 §8.2 の 2) はまだ無い。今はシフトの中で `worktree add` が出したパスに `cd` する
 
-艦フォルダ: `team.yaml`・`charter.md`・`knowledge.md`・`roles/<role>.md`・`board/{items,archive}/`・`seats/<seat>/` (`handoff.md`・`log/<date>.md`・`inbox.jsonl`・`inbox.cursor`・`memory.md`・`memory-inbox.md`)・`roster.json` (席ごとの今のシフトと `lastActive`)・`usage.jsonl` (シフトごとの使用量)・`worktrees/<item>/` (`yamato worktree add` の既定の場所)・`events.jsonl` (艦の出来事の追記ログ。形式は [docs/events.md](docs/events.md))・`reports/daily/<日付>.md` (日報)・`.runtime/` (生成物)。
+艦フォルダ: `team.yaml`・`charter.md`・`knowledge.md`・`roles/<role>.md`・`board/{items,archive}/`・`seats/<seat>/` (`handoff.md`・`log/<date>.md`・`inbox.jsonl`・`inbox.cursor`・`memory.md`・`memory-inbox.md`)・`roster.json` (席ごとの今のシフトと `lastActive`)・`usage.jsonl` (シフトごとの使用量)・`worktrees/<item>/` (`yamato worktree add` の既定の場所)・`events.jsonl` (艦の出来事の追記ログ。形式は [docs/events.md](docs/events.md))・`reports/daily/<日付>.md` (日報)・`decisions/log.md` (閉じた判断の追記のみの記録。起動時には読まない)・`.runtime/` (生成物)。
 
 ## 通知 (notify)
 

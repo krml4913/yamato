@@ -45,7 +45,7 @@ def emit(shipdir: Path, kind: str, *, seat: str | None = None, item: str | None 
     summary = " ".join(str(summary).split())
     if len(summary) > SUMMARY_CHARS:
         summary = summary[:SUMMARY_CHARS] + "…"
-    line = {"ts": now or time.time(), "kind": kind, "seat": seat, "item": item, "by": by,
+    line = {"ts": time.time() if now is None else now, "kind": kind, "seat": seat, "item": item, "by": by,
             "summary": summary}
     if data:
         line["data"] = data
@@ -53,7 +53,7 @@ def emit(shipdir: Path, kind: str, *, seat: str | None = None, item: str | None 
         with ship_lock(shipdir):
             with open(path(shipdir), "a", encoding="utf-8") as f:
                 f.write(json.dumps(line, ensure_ascii=False) + "\n")
-    except OSError as e:
+    except (OSError, TypeError, ValueError) as e:  # TypeError / ValueError: data that JSON cannot hold
         print(f"yamato: events.jsonl に書けませんでした ({kind}): {e}", file=sys.stderr)
         return None
     return line
@@ -79,7 +79,9 @@ def read(shipdir: Path, *, since: float | None = None, until: float | None = Non
             continue  # a torn line never blocks the rest
         if not isinstance(e, dict):
             continue
-        ts = e.get("ts") or 0
+        ts = e.get("ts")
+        if not isinstance(ts, (int, float)) or isinstance(ts, bool):
+            continue  # a line without a numeric time cannot be placed in a period
         if since is not None and ts < since:
             continue
         if until is not None and ts >= until:

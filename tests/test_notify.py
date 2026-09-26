@@ -276,7 +276,8 @@ class TeamConfigTest(unittest.TestCase):
 
     def test_slack_webhook_env_and_command_are_carried(self):
         t = validate(self.base(via=["slack", "mac"], slack={"webhook_env": "HOOK"}, command="x"), Path("/ship"))
-        self.assertEqual(t["notify"], {"via": ["slack", "mac"], "command": "x", "slack": {"webhook_env": "HOOK"}})
+        self.assertEqual(t["notify"], {"via": ["slack", "mac"], "command": "x", "slack": {"webhook_env": "HOOK"},
+                                       "decisions": "digest"})
         self.assertEqual(t["warnings"], [])
 
     def test_absent_notify_means_no_channel(self):

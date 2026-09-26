@@ -63,6 +63,8 @@ deny:
   - "Write(/{{ship}}/.runtime/**)"
   - "Edit(/{{ship}}/seats/*/inbox.*)"
   - "Write(/{{ship}}/seats/*/inbox.*)"
+  - "Edit(/{{ship}}/decisions/**)"
+  - "Write(/{{ship}}/decisions/**)"
 
 # 席を起動するときに外す環境変数 (席に gh の権限を渡さない)。gh を使わせる艦は消してよい
 env_unset: [GH_TOKEN, GITHUB_TOKEN]
@@ -106,6 +108,17 @@ notify:
   slack:
     webhook_env: YAMATO_SLACK_WEBHOOK
   # command: "terminal-notifier -title \"$YAMATO_TITLE\" -message \"$YAMATO_MESSAGE\""
+  decisions: digest          # 人間が decider の判断の通知: digest (日報にまとめる) / each (1 件ずつ)。--urgent は常に即時
+
+# 判断 (yamato decide) の種類と決める人 (design-p1 §1.4)。decider は席の名前か owner (人間)
+# decider は判断を開いた時点で決まり、あとでここを変えても開いている判断の decider は変わらない
+# 表にない category は default に落ちる。`merge: owner` のような短い書き方もできる (when なし)
+# when は役割プロンプトの「いつ判断を開くか」の説明。艦ごとに自由に変えてよい
+decisions:
+  merge:        { decider: owner, when: "PR を main に入れる" }
+  design:       { decider: pm,    when: "公開 API・データ形式・依存の追加を決める" }
+  scope_change: { decider: owner, when: "charter や goal の範囲を変える" }
+  default:      { decider: pm }
 
 # 日報 (design-p1 §2)。reports/daily/<日付>.md
 #   on_down  yamato down・強制停止のとき、その日の日報がまだ無ければ事実だけの日報 (--facts-only) を作り、

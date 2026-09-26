@@ -1,29 +1,50 @@
-# yamato P1 設計 (v2)
+# yamato P1 設計 (v3)
 
 - 作成: 2026-09-26 / driver (task-p1-design)
 - 改訂: 2026-09-26 v1 / driver (task-policy-audit)。owner の方針「仕組みは道具・記録・安全網だけ、運用の方針は強制しない」(project memory `mechanism-not-policy`) に合わせて、強制を外した。§12 の Q1〜Q6 は owner の決定に書き換えた。洗い出しの全体は `docs/policy-audit.md`
 - 改訂: 2026-09-26 v2 / driver (task-p1-design-verify-d)。検証 D (`docs/verify-p1-d.md`) の V1〜V7・V9〜V11 の結果を反映した。§11 を判定の一覧に書き換え、本文の【要検証】は判定に置き換えた (V5 の枠切れ・V8・V11 の bg + Remote Control は【要検証】のまま)。V7 の結果 (外を読む役割は dontAsk で組む) は、`mechanism-not-policy` に沿って**ひな形の既定値**として書き、コードでは強制しない
+- 改訂: 2026-09-26 v3 / driver (task-p1-doc-names)。design.md v2 §15 の表への leader の決定に沿って、名前を P0 の実装に揃えた (下の「改訂の要約」)
 - 位置づけ: `docs/design.md` の P0 の範囲から外した論点について、実装に入れる粒度の設計を出す。**design.md §0 の決定が前提**。design.md 本文のうち方針に移すものは §0.3 に一覧にした (P0 の実装中なので design.md は書き換えない)
 - 根拠: `design.md` (§0 と本文) / `verify-p0-a.md` (配送・席のライフサイクル) / `verify-p0-b.md` (権限・起動フラグ・worktree・起動レシピ) / `review-da-v0.md` / `research-claude-primitives.md` (docs 調査) / `policy-audit.md` / `verify-p1-d.md` (P1 の要検証 V1〜V7・V9〜V11 の結果)
 - Claude Code の挙動について: 検証レポートで確かめたものは「(検証 A Q2)」「(検証 D V7)」のように出典を付ける。docs の記述だけのものは「(docs)」、まだ確かめていないものは **【要検証】** と書く。要検証と判定の一覧は §11 にまとめた
 
+## 改訂の要約 (v3, 2026-09-26)
+
+v2 は P0 の実装と並行して書いたので、コマンドや設定の名前が P0 の実装と違う箇所があった (design.md v2 §15 の表)。v3 では、leader の決定 (2026-09-26) に沿って**基本は P0 の実装の名前に寄せた**。中身 (何を決めたか) は変えていない。
+
+| 項目 | v2 の書き方 | v3 (P0 の実装の名前) |
+|---|---|---|
+| 席の終業 | `yamato shift end` (`shift end --rotate`) | `yamato seat-stop` (`seat-stop --rotate`) |
+| 艦の起動・終業・状況 | `yamato ship up / down / status / extend / halt` | `yamato up / down / status / extend / halt`。`ship` は `ship create` だけ |
+| deny リスト | `permissions.deny:` | team.yaml の最上位 `deny:` |
+| settings ファイル | `settings.<role>.json` | 席ごと `.runtime/settings-<seat>.json` |
+| 注入の部品名 | `role_memory` | `memory` |
+| owner | 調査艦の例に `owner: { agent: human }` | 予約名なので例から外し、その旨を注記 (§7.1) |
+| 引き継ぎの安全網 | Stop hook の `handoff_guard` | `seat-stop` の確認 (`seat_stop.require_handoff`)。`handoff_guard` は作らない |
+
+**例外は memory 本体**。この文書の `roles/<role>/memory.md` (役割で共有) のままにする。P0 の実装は `seats/<seat>/memory.md` (席ごと) で、そこからは memory の棚卸しの task (§10 の 8) で移す。移すまでは注入の部品 `memory` は P0 のとおり席の memory.md を読む (§0.1、§3.1)。
+
+design.md v2 §15 の「食い違っているもの」の表は、同じ決定で「決定済み」に書き換えた。
+
 ## 0. 前提と要約
 
-### 0.1 この文書が置く前提 (P0 の実装に合わせて読み替える)
+### 0.1 この文書が置く前提 (P0 の実装の名前に揃えてある)
 
-P0 は別の driver が並行して実装している。この文書は次の形を前提にする。名前が P0 の実装と違えば、P0 に合わせて読み替える (中身は変わらない)。
+P0 の実装 (main) の形を前提にする。v3 で、コマンドや設定の名前を P0 の実装に揃えた (改訂の要約)。例外は memory 本体だけで、下の表に書いた。
 
 | 項目 | 前提 |
 |---|---|
 | 艦フォルダ | `~/yamato/<ship>/` (design §4.1) |
 | 席の記録 | `seats/<seat>/handoff.md` / `log/<日付>.md` / `inbox.jsonl` / `memory-inbox.md` (§0 I5) |
-| 役割の memory | `roles/<role>/memory.md` (役割の知見なので、同じ役割の席 impl-1 / impl-2 で共有する) |
+| 役割の memory | `roles/<role>/memory.md` (役割の知見なので、同じ役割の席 impl-1 / impl-2 で共有する)。**P0 の実装は席ごとの `seats/<seat>/memory.md`** で、そこからは memory の棚卸しの task (§10 の 8) で移す。移すまで、注入の部品 `memory` は P0 のとおり席の memory.md を読む。移したあとは `roles/<role>/memory.md` を読む |
 | 台帳 | `roster.json`。席 → 今のシフトのフル sessionId、pid、状態、最後に動いた時刻 (§0 I4) |
 | 時間の上限 | `.runtime/deadline` (§0 B4) |
 | 使用量 | シフトごとに 1 行 (§0 I7)。本文では `usage.jsonl` と呼ぶ |
 | 書き込み | yamato のコマンドを通し、ロック 1 本で直列化する (§0 I1) |
-| コマンド | `yamato <サブコマンド>`。design §13 の `team ...` は `yamato ship ...` と読む |
+| コマンド | `yamato <サブコマンド>`。艦の作成だけ `yamato ship create`、起動・終業・状況は `yamato up / down / status` (P1 で `extend` / `halt` を足す)。席の終業は `yamato seat-stop` (design §13) |
 | 席の名前 | `<ship>.<seat>` (例: `dev.impl-1`)。席の正本は roster、名前からは探さない (design §10) |
+| settings | 席ごと `.runtime/settings-<seat>.json` (role ごとではない)。deny リストは team.yaml の最上位 `deny:` (§0.4) |
+| owner | 予約名で、`roles` には書けない。inbox は `<ship>/owner/inbox.jsonl`、届け方は `notify.via` (§2.4、design §5) |
 | 呼び出し元の特定 | 席の Bash には `CLAUDE_CODE_SESSION_ID` (フル id) がある (検証 A Q3)。yamato のコマンドはこれを roster と突き合わせて「誰が呼んだか」を知る |
 
 P1 で新しく足す記録は 1 つだけ: **`events.jsonl` (艦の出来事の追記ログ)**。board の変更、send、シフトの開始と終了、判断の開閉、強制停止、権限の拒否を yamato のコマンドが 1 行ずつ書く。日報 (§2) と監視 (§5) の材料になる。P0 に同じ役目のものがあれば、それを使う。
@@ -36,7 +57,7 @@ P1 で新しく足す記録は 1 つだけ: **`events.jsonl` (艦の出来事の
 | 2 | 日報 | 事実はコマンドで集め (LLM を使わない)、所感と明日の予定は captain が書く (役割プロンプト)。作るかどうかは設定 | 通知は team.yaml で `slack` / `mac` / `windows` を選ぶ (Q1) |
 | 3 | memory の棚卸し | 候補は `yamato memo` で memory-inbox に追記。反映役は設定 (ひな形の既定は captain) で、コードは検査しない。上限を超える案は反映を拒否する (安全網) | 案は各役割の headless シフト、反映は captain (Q2) |
 | 4 | `shift: headless` | 1 シフト = `claude -p` 1 回。ラッパー `yamato run-headless` が起動、時間切れ、使用量の記録、終了報告まで持つ。予算上限は既定で掛けない | ― |
-| 5 | captain の監視と入れ替え | 監視は「仕事が流れるところで見る」(send / shift end / status)。入れ替えの条件は役割ごとの設定 | 外部スケジューラは使わない (Q4) |
+| 5 | captain の監視と入れ替え | 監視は「仕事が流れるところで見る」(send / seat-stop / status)。入れ替えの条件は役割ごとの設定 | 外部スケジューラは使わない (Q4) |
 | 6 | admiral | yamato の CLI + 薄い skill。席ではない。一望は `yamato ships` | 移行期間は fleet の leader が兼ねる (Q3) |
 | 7 | 調査艦 | ひな形の既定: researcher ×N / fact-checker は headless で「外を読むが何もできない」(dontAsk + allow + `tools`、V7)、editor は外を読まない | 成果を外に出す承認は decisions 表で艦ごとに決める (Q6) |
 | 8 | 複数の実装担当 | yamato は worktree を作る・移る道具と PR / merge の道具を出すだけ。タスク = ブランチなどの git の流れは役割プロンプト (ひな形) | worktree は仕組みで割り当てない (Q5) |
@@ -59,7 +80,7 @@ yamato のコードが持つのは次の 3 つだけ。詳しい洗い出しは 
 | design.md の節 | 今の書き方 | 移し先 |
 |---|---|---|
 | §0 B2 | 外部の文章を読む役割と権限を持つ役割を分ける | ひな形の既定値 (`trust:` のプロファイル) (D3)。deny の中身もひな形の既定値 (D2) |
-| §0 B2 (+ 検証 B の起動レシピ) | `env -u GH_TOKEN`、`.claude/**` の Edit / Write の deny | ひな形の既定値 (`env_unset:`、`permissions.deny`) (D25、D26) |
+| §0 B2 (+ 検証 B の起動レシピ) | `env -u GH_TOKEN`、`.claude/**` の Edit / Write の deny | ひな形の既定値 (`env_unset:`、team.yaml 最上位の `deny:`) (D25、D26) |
 | §0 I2 | git 規律を明示、「タスク = ブランチ」を board の項目に | 役割プロンプト (ひな形)。`branch` / `pr` は任意の項目で、固定の項目にしない (D8) |
 | §0 I6、§9 | 人間は captain とだけ話す / 判断を返す相手は PM | ひな形の既定値 (`talk` の既定の相手が hub) + 役割プロンプト (D12) |
 | §3 | メンバー同士がタスクを取り合わない (司令塔型) | 役割プロンプト (D14) |
@@ -69,7 +90,7 @@ yamato のコードが持つのは次の 3 つだけ。詳しい洗い出しは 
 | §6.6 | memory に書き込むのは PM の週次の棚卸しだけ | 設定 `memory:` (反映役の既定は hub) + 役割プロンプト (D21) |
 | §6.7 | 秘密情報は記録に書かない | 役割プロンプトの共通の節 (D22) |
 | §8.2 | 起動時に注入するもの / PM はカンバンと日報も | 役割ごとの設定 `inject:` (既定値はひな形) (D23) |
-| §8.3 | Stop hook の引き継ぎの安全網 | 設定 `handoff_guard:` (既定 on) (D24) |
+| §8.3 | Stop hook の引き継ぎの安全網 | `seat-stop` の確認 (設定 `seat_stop.require_handoff`、既定 on。P0 で実装済み) (D24)。Stop hook の `handoff_guard` は作らない |
 | §11 | admiral は中身に踏み込まない | admiral の skill / プロンプト (D28) |
 | §12.1 | 最終受付のあと PM は大きな割り当てをやめる | 役割プロンプト (D30) |
 | §15 | 人間宛て通知の経路 (未決) | 設定 `notify.via` (D32、§2.4) |
@@ -90,8 +111,7 @@ memory:                     # §3
   curate_at: 30
   applier: pm               # 反映を打つ役 (省略時は hub)。注入と役割プロンプトに使うだけで、コードは検査しない
   limits: { memory_lines: 80, knowledge_lines: 120 }
-permissions:                # 安全網の中身 (ひな形の既定値)
-  deny: [...]
+deny: [...]                 # 無人の席にやらせない操作 (Claude Code の permissions.deny に書き出す)。安全網の中身 (ひな形の既定値)。最上位に置く (P0)
 env_unset: [GH_TOKEN]
 settings:                   # 全席の settings に重ねる中身 (P0)。Remote Control は既定で切る (§1.5、V10)
   remoteControlAtStartup: false
@@ -109,10 +129,11 @@ roles:
   impl:
     shift: per_task
     isolation: none         # worktree (bg の自動 worktree) / none (§8.2)
-    inject: [role_memory, knowledge, mine, handoff, inbox]
+    inject: [memory, knowledge, mine, handoff, inbox]   # memory: 今は席の memory.md、棚卸し (§3) のあとは roles/<role>/memory.md (§0.1)
     rotate: { context: 30%, compaction: true, hours: 8, idle: 1h, new_day: true }   # context はモデルの窓に対する割合 (§5.4、V9)
     report_to: pm           # headless の終了報告の宛先 (省略時は hub) (§4.2)
-    handoff_guard: true
+seat_stop:                  # 引き継ぎの安全網 (P0)。seat-stop が handoff.md の更新を確かめる。Stop hook の handoff_guard は作らない
+  require_handoff: true
 ```
 
 ---
@@ -166,7 +187,7 @@ links: [T-042]
 5. `events.jsonl` に記録する
 
 - 決定を後から覆すときは、新しい D 項目を開く (`supersedes: D-007`)。閉じた項目は書き換えない
-- `decide list [--decider owner] [--stale 2d]` で待ちの一覧を出す。日報と `ship status` がこれを使う
+- `decide list [--decider owner] [--stale 2d]` で待ちの一覧を出す。日報と `yamato status` がこれを使う
 
 ### 1.3 `decisions/log.md`
 
@@ -258,8 +279,8 @@ T-042 (ログイン) は review 済みで merge 待ち。T-044 は D-007 待ち�
 ひな形の captain の役割プロンプトには「下書きの『一言』と『明日』だけを書き、他の節は直さない」と書く (事実の節を LLM に要約させると、数字や状態が変わる恐れがある)。コードは他の節の書き換えを検査しない。
 
 いつ作るか (team.yaml の `report.daily`。既定は `on_down`、日報の要らない艦は `off`):
-1. **captain の終業処理の一部にする**。captain の `shift end` は、その日の最後のシフト (終業の合図 = deadline を過ぎた / `ship down`) のときだけ `report daily` を呼び、「一言」「明日」を書かせてから届ける
-2. **captain がいないときの保険** (安全網): `ship down` と強制停止の処理は、その日の日報がまだ無ければ `report daily --facts-only` を作って届ける。「一言」は「captain が書けなかった (理由: 強制停止)」になる。captain が落ちていても、owner には必ず何か届く (§0 I4 の懸念への答え)。`report.daily: off` の艦では作らない
+1. **captain の終業処理の一部にする**。captain の `seat-stop` は、その日の最後のシフト (終業の合図 = deadline を過ぎた / `yamato down`) のときだけ `report daily` を呼び、「一言」「明日」を書かせてから届ける
+2. **captain がいないときの保険** (安全網): `yamato down` と強制停止の処理は、その日の日報がまだ無ければ `report daily --facts-only` を作って届ける。「一言」は「captain が書けなかった (理由: 強制停止)」になる。captain が落ちていても、owner には必ず何か届く (§0 I4 の懸念への答え)。`report.daily: off` の艦では作らない
 
 ### 2.3 captain が起動時に読む量
 
@@ -309,6 +330,8 @@ notify:
         knowledge.md (艦で共有、上限あり、全員が起動時に読む)
         roles/<role>/memory-archive.md (溢れたもの。追記のみ、起動時には読まない)
 ```
+
+**memory 本体の置き場は `roles/<role>/memory.md` (役割で共有) のまま**。P0 の実装は席ごとの `seats/<seat>/memory.md` で、こちらへはこの棚卸しの task (§10 の 8) で移す (§0.1)。移すときは、注入の部品 `memory` の読み先も `roles/<role>/memory.md` に変える。それまでは P0 のままで、棚卸しの流れ (下) は書かれた置き場を前提にする。
 
 ### 3.2 候補の書き方
 
@@ -382,10 +405,10 @@ design §6.6 は「memory に書き込むのは PM の週次の棚卸しだけ�
      --output-format stream-json --verbose \
      --agent <role> --agents "$(cat <shipdir>/.runtime/agents.json)" \
      --model sonnet --setting-sources project,local \
-     --settings <shipdir>/.runtime/settings.<role>.json \
+     --settings <shipdir>/.runtime/settings-<seat>.json \
      --permission-prompts none \
      --add-dir <shipdir> \
-     -- "<最初のプロンプト: inbox の未読と担当の項目を読んで働け。終わる前に shift end>" \
+     -- "<最初のプロンプト: inbox の未読と担当の項目を読んで働け。終わる前に seat-stop>" \
      < /dev/null > <シフトの出力 (ラッパーが行ごとに読んで保存する)>
    ```
    - `env -u` で外す変数は team.yaml の `env_unset` (ひな形の既定は `[GH_TOKEN]`)。上の例は既定のとき。`-p` は起動元の環境をそのまま使うので `env -u` が効く (検証 D V1)。bg は daemon から起動されるので効くかは別問題で、未確認
@@ -402,7 +425,7 @@ design §6.6 は「memory に書き込むのは PM の週次の棚卸しだけ�
    - 最後の `result` 行から `usage.jsonl` に 1 行書く (シフト id、役割、所要時間、ターン数、トークン、`total_cost_usd`)。時間切れのときは上の 3 のとおり transcript から数える。最後の `rate_limit_event` (`resetsAt`、`utilization`) もシフトの記録に残す (§4.4)
    - **SessionStart hook が走った印が無ければ**失敗として扱う (bare 化などで hook が効いていない。記録を読まずに働いた可能性がある。印は stream-json の `system/hook_response [SessionStart]`)
    - 失敗の判定は §4.4 の規則で行う (終了コードや `subtype` に頼らない)
-   - `shift end` が呼ばれていなければ「引き継ぎなし終了」を roster と events に書き、`result` 行の `result` (最後の応答) を担当の項目の本文の経緯に貼る
+   - `seat-stop` が呼ばれていなければ「引き継ぎなし終了」を roster と events に書き、`result` 行の `result` (最後の応答) を担当の項目の本文の経緯に貼る
    - 役割の `report_to` (既定 hub = captain) に定型文を `send` する: 「researcher-2 のシフト終了 (T-051, 正常 / 引き継ぎなし / 時間切れ)。項目ファイル: …」。**本文は yamato が作り、席の出力をそのまま運ばない** (§7.2 の分離のため)。宛先は方針 (設定) だが、定型文にすることは安全網なので設定で外せない
 5. roster のシフトを終了にする
 
@@ -414,7 +437,7 @@ design §6.6 は「memory に書き込むのは PM の週次の棚卸しだけ�
 ### 4.4 予算と使用量
 
 - design §12.1 の「予算ではなく時間で止める」に従い、**`--max-budget-usd` は既定で付けない**。役割ごとに `max_budget_usd:` を書いたときだけ付ける (fact-check のように「1 回で終わるはずの仕事」の暴走止めとして)。これは §0 を覆さない追加の選択肢の扱い
-- 使用量は必ず記録する (§0 I7)。日報 (§2) と `ship status` で合計を出す
+- 使用量は必ず記録する (§0 I7)。日報 (§2) と `yamato status` で合計を出す
 - サブスクの枠に当たったときに `-p` がどう終わるか (待つか、失敗で返るか、`result` の文言、`api_error_status` が 429 になるか) は**【要検証】のまま** (検証 D V5。実際には枠に当てていない)。代用に取った API エラー (存在しない model 名で 404) の形から、ラッパーの判定を次のようにする
   - 失敗の判定は終了コードや `subtype` に頼らない。`subtype` は失敗でも `success` のままになる (404 で確認。終了コードは 1 だったが、第三者の報告では rate limit で 0 の例がある)。**`is_error == true`、`api_error_status`、`terminal_reason == "api_error"`** を見る
   - 「枠切れ」の分類は `api_error_status == 429` と `result` の文言 (`limit` を含むか) の組み合わせが候補。実物を見るまで、分類できなければ「異常終了 (API エラー)」として captain に知らせ (日報の異常にも出る)、自動で再実行はしない
@@ -442,8 +465,8 @@ design §6.6 は「memory に書き込むのは PM の週次の棚卸しだけ�
 
 | いつ | 何をする |
 |---|---|
-| メンバーが `send <hub>` / `shift end` を呼んだとき | captain が止まっていれば、§5.3 の規則で起こす (send の通常の動作)。**止まってから一度も起きていない時間**が 30 分 (設定) を超えていれば events に「captain 空白」を書く |
-| 誰かが `yamato ship status` / `ships` を見たとき | captain の `last_active` と、生きているのに `last_active` が古い (既定 20 分。設定で変えられる) 席を赤く出す。`waiting (permission prompt)` も赤 |
+| メンバーが `send <hub>` / `seat-stop` を呼んだとき | captain が止まっていれば、§5.3 の規則で起こす (send の通常の動作)。**止まってから一度も起きていない時間**が 30 分 (設定) を超えていれば events に「captain 空白」を書く |
+| 誰かが `yamato status` / `ships` を見たとき | captain の `last_active` と、生きているのに `last_active` が古い (既定 20 分。設定で変えられる) 席を赤く出す。`waiting (permission prompt)` も赤 |
 | deadline の確認 (§0 B4 の hook と send) のついで | captain の最後の日報 (§2.2) が作られないまま終業を過ぎたら、`report daily --facts-only` を作る |
 
 - **これで拾えないもの**: メンバーが全員止まっていて、captain も止まっているとき (誰も何も呼ばない)。この状態では仕事も進まないので、害は「気づくのが遅れる」だけ。気づくのは owner が `ships` を見たときか、日報が来ないとき
@@ -470,7 +493,7 @@ captain の Stop hook (応答のたびに走る) が、次の条件を見る。�
 | compaction が起きた | 1 回 | PreCompact hook (docs) で印を付ける。要約で指示が溶ける (docs) ので、起きたら次の区切りで入れ替える |
 | シフトの長さ | 8 時間 | roster のシフト開始時刻 |
 
-条件に当たったら、Stop hook は exit 2 で「今の仕事の区切りで `yamato shift end --rotate` を実行して止まれ」を返す (deadline と同じ仕組み、§0 B4)。一度出したら同じシフトでは出さない (毎ターン押し戻さない)。`--rotate` は handoff を書き、roster に「入れ替え」の印を立て、遅延 stop する (検証 A Q3)。**次のシフトはその場では起動しない**。次に誰かが captain に send したときに §5.3 の 1 で新しいシフトとして起きる。
+条件に当たったら、Stop hook は exit 2 で「今の仕事の区切りで `yamato seat-stop --rotate` を実行して止まれ」を返す (deadline と同じ仕組み、§0 B4)。一度出したら同じシフトでは出さない (毎ターン押し戻さない)。`--rotate` は handoff を書き、roster に「入れ替え」の印を立て、遅延 stop する (検証 A Q3)。**次のシフトはその場では起動しない**。次に誰かが captain に send したときに §5.3 の 1 で新しいシフトとして起きる。
 
 - **閾値はモデルの窓に対する割合**で持つ。窓はモデルで違う (haiku-4.5 が 200k、sonnet-5 が 1M。検証 D V9) ので、300k のような絶対値は 200k の窓のモデルには届かない。窓の大きさは transcript に無い (`-p` の結果 JSON の `modelUsage[<model>].contextWindow` にはある) ので、yamato はモデル名から窓を引く表をデータとして持つ (ひな形の既定値。新しいモデルは足す)。絶対値 (トークン数) でも書ける。席の起動直後の文脈量が bg の haiku で約 35k あるので、窓の小さいモデルの割合は上げる
 - **Stop hook で読める値は最大 1 API 呼び出し分遅れる**。最後の応答がまだ transcript に書かれていないことがある (3 回のうち 2 回。ずれは 0.5k〜1.8k トークン)。閾値の判定には影響しないが、正確な値が要る用途には使わない。気になるときは、シフトの長さとターン数 (V9 で用意していた代替) と併用する
@@ -495,7 +518,7 @@ captain が生きていて動いているのに進まない (同じ指示の送�
 
 ### 6.1 形
 
-- **admiral は yamato の席ではない**。yamato の CLI (`yamato ship ... / ships / talk`) と、それを使うための薄い skill (または CLAUDE.md の 1 節) の組み合わせ。owner がシェルで直接打ってもよいし、owner の対話セッション (今の fleet leader のような) が打ってもよい
+- **admiral は yamato の席ではない**。yamato の CLI (`yamato ship create / up / down / extend / halt / status / ships / talk`) と、それを使うための薄い skill (または CLAUDE.md の 1 節) の組み合わせ。owner がシェルで直接打ってもよいし、owner の対話セッション (今の fleet leader のような) が打ってもよい
 - 艦の中身 (board、判断、方針) には触らない (design §11)。触れるのは艦の出撃と帰投と一望だけ。**これは admiral の skill / プロンプトの約束で、CLI は admiral からの send や board の操作を拒否しない** (v1)
 
 ### 6.2 コマンド
@@ -503,11 +526,11 @@ captain が生きていて動いているのに進まない (同じ指示の送�
 | コマンド | 内容 |
 |---|---|
 | `yamato ship create <name> --template dev\|research [--path <dir>] [--workspace <dir>]` | ひな形から艦フォルダを作り、艦の一覧 (`~/yamato/ships.json`) に登録する。workspace の trust が通っているかを確かめ、通っていなければ手順を表示して止める (bg の席に対話で trust させることはできない、検証 B)。確かめる対象は worktree ではなく **main repo (git root)** でよい (worktree の trust は main repo から引き継がれる、検証 D V6) |
-| `yamato ship up <name> [--for 3h] [--seats <seat,...>]` | deadline を書き、captain の新しいシフトを起こす。既定では他の席は起こさない (captain が割り振ったときに send で起きる)。`--seats` で一緒に起こす席を足せる |
-| `yamato ship down <name>` | 終業の段階から始める (§9) |
-| `yamato ship extend <name> 1h` | deadline を延ばす (データを書き換えるだけ) |
-| `yamato ship halt <name>` | 緊急停止。猶予なしで強制停止の段階を走らせる |
-| `yamato ship status <name>` | 席ごとの状態 (生存・`last_active`・詰まり)、残り時間、board の要約、owner の判断待ちの数 |
+| `yamato up <name> [--for 3h] [--seats <seat,...>]` | deadline を書き、captain の新しいシフトを起こす。既定では他の席は起こさない (captain が割り振ったときに send で起きる)。`--seats` で一緒に起こす席を足せる |
+| `yamato down <name> [--force]` | 終業の段階から始める (§9)。`--force` は P0 の実装のとおり即時に強制停止 |
+| `yamato extend <name> 1h` | deadline を延ばす (データを書き換えるだけ) |
+| `yamato halt <name>` | 緊急停止。猶予なしで強制停止の段階を走らせる |
+| `yamato status <name>` | 席ごとの状態 (生存・`last_active`・詰まり)、残り時間、board の要約、owner の判断待ちの数 |
 | `yamato ships` | 全艦を 1 行ずつ: 稼働中か、残り時間、captain の `last_active`、赤い席の数、owner の判断待ちの数、今日の使用量、最新の日報の日付 |
 | `yamato talk <name> [<seat>]` | 席と話す。既定は captain (§1.5) |
 
@@ -538,7 +561,6 @@ roles:
   editor:       { model: opus,   shift: persistent,  trust: clean }
   researcher:   { model: sonnet, shift: headless, count: 3, trust: external, max_duration: 40m }
   fact-checker: { model: opus,   shift: headless, trust: external, max_duration: 30m }
-  owner:        { agent: human }
 
 decisions:
   publish:      { decider: owner, when: "成果物を艦の外に出す (共有、公開、他の repo への書き込み)" }
@@ -555,7 +577,8 @@ board:
   kinds: [question, finding, report]
 ```
 
-- `trust:` は P1 で足す役割の属性で、team.yaml の `profiles:` に書いたプロファイルの名前を指す。yamato はプロファイルの中身 (tools / allow / deny / send の可否) から、役割ごとの settings (`.runtime/settings.<role>.json`) と役割の定義のツールを作り分ける (§7.2)。**yamato のコードは `external` / `clean` の中身を知らない**。中身はひな形の既定値で、艦ごとに変えてよい (v1)
+- **owner は予約名で、`roles` には書かない** (P0 の実装。書くと team.yaml の検証が拒否する)。owner は席ではなく、inbox が `<ship>/owner/inbox.jsonl`、届け方は `notify.via` (§2.4)。v2 のこの例にあった `owner: { agent: human }` は外した。owner への判断は、上の `decisions` の `decider: owner` で表す
+- `trust:` は P1 で足す役割の属性で、team.yaml の `profiles:` に書いたプロファイルの名前を指す。yamato はプロファイルの中身 (tools / allow / deny / send の可否) から、席ごとの settings (`.runtime/settings-<seat>.json`。席の役割の `trust:` から作る) と役割の定義のツールを作り分ける (§7.2)。**yamato のコードは `external` / `clean` の中身を知らない**。中身はひな形の既定値で、艦ごとに変えてよい (v1)
 - `decisions.publish` の decider は**艦ごとに決める** (owner の決定 Q6)。ひな形の既定は owner。「bmweb にとりあえず投稿させて、owner が携帯で見る」運用なら editor にする
 - 検証 B で Haiku は auto モードを使えなかったので、**auto を使う無人の席**は sonnet 以上にする。`ship create` は auto の席が Haiku のときに警告を出す (拒否はしない)。**dontAsk の席 (`trust: external` のひな形の既定、§7.2) は Haiku でも動く** (検証 D V7) ので警告の対象外。ただし調査の品質は評価していない
 
@@ -567,13 +590,13 @@ board:
 |---|---|---|
 | Web (WebFetch / WebSearch) | 使える | **使えない** (役割の定義で外す) |
 | 権限モード (`mode`) | **dontAsk** (allow に無い操作は全部 deny。auto にしない、検証 D V7) | auto (deny リストつき) |
-| Bash | yamato の決まったコマンドだけ (allow): `yamato shift end*`, `yamato memo*`, `yamato board note*`。read-only のコマンドは allow なしでも通る | 通常どおり (deny リストつき) |
+| Bash | yamato の決まったコマンドだけ (allow): `yamato seat-stop*`, `yamato memo*`, `yamato board note*`。read-only のコマンドは allow なしでも通る | 通常どおり (deny リストつき) |
 | 書ける場所 | 艦フォルダの `work/<item>/` と自分の席の記録だけ | 艦フォルダ全体 |
 | `send` | **使えない** (`send: false`)。終わりの報告はラッパーが定型文で送る (§4.2) | 使える |
 | board の構造 (state, assignee) | 変えられない (`board note` で本文に追記するだけ) | 変えられる |
 | 秘密情報 | 環境から外す (`env -u GH_TOKEN` など)。`Read(~/.ssh/**)` などを deny | 同左 |
 
-- 実現の手段: 役割の定義の `tools` (許すツールの一覧) と、役割ごとの settings の `defaultMode` と allow / deny。deny ルールが効くことは検証 B Q1 で確かめた。検証 D V7 (bg と `-p`、auto と dontAsk の 4 通り) で分かったこと:
+- 実現の手段: 役割の定義の `tools` (許すツールの一覧) と、席ごとの settings (`.runtime/settings-<seat>.json`。役割の `trust:` のプロファイルから作る) の `defaultMode` と allow / deny。deny ルールが効くことは検証 B Q1 で確かめた。検証 D V7 (bg と `-p`、auto と dontAsk の 4 通り) で分かったこと:
   - **`--agents` の JSON で渡した `tools` の制限は bg でも `-p` でも効く** (`-p` の `system/init` の `tools` が `Read, Write, Bash` の 3 つだけになる)
   - **auto では、Bash を特定のコマンドに allow で絞っても、それ以外の Bash は止まらない**。classifier が通し、`curl` の外部通信、`python3` の任意のコード、`touch` / `cp` の書き込みが実行された。設計の前提だった「allow を絞れば auto がそれ以外を止める」は成り立たない
   - **dontAsk なら、allow に無い操作は全部 deny になる** (allow は 1 本ずつ効く)。haiku でも動く
@@ -589,7 +612,7 @@ board:
 
 1. owner が `talk research` で editor に問いを渡す。editor は question 項目を作り、調べる観点ごとに finding の項目に分ける (`parent` でつなぐ)
 2. editor が researcher-N に `send` する → ラッパーが headless のシフトを起こす
-3. researcher は `work/<item>/findings.md` に、主張ごとに出典 (URL、引用、取得日) を付けて書き、`shift end`。ラッパーが editor に報告する
+3. researcher は `work/<item>/findings.md` に、主張ごとに出典 (URL、引用、取得日) を付けて書き、`seat-stop`。ラッパーが editor に報告する
 4. editor が finding を check の列に動かし、fact-checker に `send` する。fact-checker は出典を読み直して、主張ごとに「確認できた / 出典と違う / 出典なし」を `work/<item>/check.md` に書く
 5. 「出典と違う」「出典なし」があれば、editor が同じ finding を researcher に差し戻す (新しいシフト。前のシフトの findings.md と check.md が入力になる)。ひな形の editor の役割プロンプトでは、差し戻しは 2 回までで、それ以上は「未確認」として報告書に残す
 6. editor が report の項目で `reports/<topic>.md` にまとめる。艦の外に出す (共有、公開) なら `decide open --category publish` を開く。decider が owner (既定) なら owner に上がり、editor なら editor が自分で閉じて出す
@@ -704,7 +727,7 @@ P0 は「終業 + 強制」の 2 段 (§0)。**最終受付を軽い形で戻す
 3. `run-headless` と `shift: headless` (§4)。memory の棚卸しと調査艦がこれに乗る
 4. 日報: `report daily` と通知 (`notify.via`。agent-fleet の `notify.py` の移植) (§2)
 5. captain の入れ替えと send の再開の規則 (§5.3–5.6)
-6. admiral の CLI: `ship create/up/down/extend/halt/status`、`ships`、`talk` (§6)
+6. admiral の CLI: `ship create`、`up/down/extend/halt/status`、`ships`、`talk` (§6)
 7. 最終受付 (§9)
 8. memory の棚卸し (§3)
 9. `yamato worktree` と `pr open/merge` (§8)。開発艦のひな形の役割ファイルに git の流れを書く。§8.2 の 2 つの移り方は検証済みで、どちらも使える (V6)

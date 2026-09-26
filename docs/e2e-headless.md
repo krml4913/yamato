@@ -77,6 +77,8 @@ events.jsonl: `board_add` → `send` (researcher) → `shift_start` (`how: headl
 2. `up` の hub が headless のとき、出力の表が `spawned` を知らず KeyError になった (単体テストで見つけて直した)
 3. SIGTERM が SessionStart hook より先に届くと hook_response が出ないので、「hook が走った印なし」を失敗にするのは、`system/init` まで進んだか、自然に終わった run だけにした (単体テストで見つけた)
 
+4. (レビューの指摘で追加) **ラッパーが止まっても `claude -p` を孤児にしない**。ラッパーは SIGTERM / SIGINT を `-p` に転送してからシフトを閉じる (`endReason: wrapper-signal`)。SIGKILL などで転送できなかったときは、`reconcile` (send / status / up) と `force_stop_all` (`down --force`・猶予切れ) が roster の `pid` を見て止め、シフトを閉じる (`wrapper-lost`、events の `force_stop` に `orphan: true`)。pid の使い回しで別のプロセスを止めないよう、コマンド行に `--session-id <そのシフトの id>` があるときだけ `-p` とみなす。いずれも単体テストで確かめた (実機では試していない)
+
 ## 実機で確かめていないこと
 
 - **時間切れ** (SIGTERM → exit 143、結果の行なし、transcript から数える): 検証 D V4 の結果に合わせて、偽の claude で確かめた。transcript からの数え方は、上の実機の transcript が `result` と一致することで確かめた
