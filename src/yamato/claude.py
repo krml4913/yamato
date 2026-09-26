@@ -153,14 +153,18 @@ def is_trusted(workspace: Path) -> bool:
 # --- lifecycle -------------------------------------------------------------
 
 def launch(*, cwd: str, name: str, role: str, agents_json: str, model: str,
-           settings: str, add_dir: str, prompt: str, env_unset=()) -> tuple[str, str]:
-    """Start a new background session; returns (short id, full sessionId)."""
+           settings: str, add_dir: str, prompt: str, env_unset=(), remote_control: bool = False) -> tuple[str, str]:
+    """Start a new background session; returns (short id, full sessionId).
+
+    ``remote_control`` adds ``--remote-control``, which wins over the settings'
+    ``remoteControlAtStartup: false`` (verify-p1-d V10)."""
     args = [
         "--bg", "--name", name,
         "--agent", role, "--agents", agents_json,
         "--model", model,
         "--setting-sources", "project,local",
         "--settings", settings,
+        *(["--remote-control"] if remote_control else []),
         "--add-dir", add_dir,
         "--", prompt,
     ]

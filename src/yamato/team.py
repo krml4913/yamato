@@ -14,7 +14,7 @@ SHIFTS = ("per_task", "persistent", "headless")
 STATES = ("open", "active", "blocked", "done")
 TOP_KEYS = {"name", "hub", "workspace", "charter", "roles", "time_limit", "grace", "deny", "board",
             "settings", "seat_stop", "env_unset", "inject", "notify", "git", "report", "decisions",
-            "watch", "talk_default"}
+            "watch", "talk_default", "profiles"}
 # what SessionStart can inject (design §8.2); the header is always there
 INJECT_PARTS = ("handoff", "log_tail", "mine", "inbox", "memory", "knowledge", "last_report")
 # what a ship that names no parts gets: the captain's report excerpt (design-p1 §2.3) is opt-in
@@ -23,7 +23,13 @@ INJECT_LIMIT_KEYS = ("handoff", "memory", "knowledge", "log_tail", "mine_items",
                      "inbox_chars", "total_chars", "last_report")
 RESERVED_SEATS = ("owner",)   # the human's inbox; not a seat
 SEAT_STOP_DEFAULTS = {"require_handoff": True, "require_delivery": True}
-ROLE_KEYS = {"model", "shift", "count", "description", "inject", "max_duration", "max_budget_usd", "report_to"}
+ROLE_KEYS = {"model", "shift", "count", "description", "inject", "max_duration", "max_budget_usd", "report_to",
+             "trust", "remote_control"}
+# `profiles:` (design-p1 §7.2). yamato only writes a profile out (mode -> permissions.defaultMode,
+# allow / deny -> the seat's settings, tools -> the role's definition) and refuses `yamato send`
+# from a `send: false` seat. What `external` / `clean` hold is the template's business.
+PROFILE_KEYS = {"mode", "tools", "allow", "deny", "send"}
+DEFAULT_MODE = "auto"   # what a seat without a profile mode runs in (P0)
 # `git:` (design-p1 §8.3). The values a ship runs with live in the template's
 # team.yaml; these are only what a ship without a `git:` section gets.
 GIT_KEYS = {"base", "strategy", "merge_requires", "merge_decision", "conflict"}
@@ -32,7 +38,8 @@ GIT_REQUIRES = ("review", "ci", "decision")
 GIT_FALLBACK = {"base": "main", "strategy": "squash", "merge_requires": [], "merge_decision": "off",
                 "conflict": "author"}
 # auto mode is unavailable on Haiku (verify-p0-b §総括 1): the seat would fall
-# back to manual and block on the first dialog.
+# back to manual and block on the first dialog. dontAsk works on Haiku (verify-p1-d V7),
+# so only seats that run in auto are warned.
 NO_AUTO_MODELS = ("haiku",)
 
 # `watch:` (design-p1 §5.2): what `status` / `ships` show in red
@@ -84,6 +91,7 @@ def validate(data: dict, shipdir: Path) -> dict:
     roles_in = data.get("roles")
     if not isinstance(roles_in, dict) or not roles_in:
         raise YamatoError("team.yaml: roles が空です")
+    profiles = _profiles(data.get("profiles"))
     roles: dict = {}
     for role, spec in roles_in.items():
         check_name("役割", str(role))
@@ -96,9 +104,17 @@ def validate(data: dict, shipdir: Path) -> dict:
         if bad:
             raise YamatoError(f"team.yaml: roles.{role} に知らない項目があります: {', '.join(sorted(bad))}")
         model = str(spec.get("model") or "sonnet")
-        if any(m in model.lower() for m in NO_AUTO_MODELS):
+        trust = spec.get("trust")
+        if trust is not None and str(trust) not in profiles:
+            raise YamatoError(f"team.yaml: roles.{role}.trust={trust!r} が profiles にありません "
+                              f"(ある: {', '.join(profiles) or 'なし'})")
+        mode = (profiles[str(trust)]["mode"] if trust is not None else None) or DEFAULT_MODE
+        if mode == "auto" and any(m in model.lower() for m in NO_AUTO_MODELS):
             warnings.append(f"roles.{role}.model={model} は auto モードを使えない (検証 B)。"
                             "manual に落ちて最初の書き込みで権限の確認になり、無人だと拒否される")
+        remote_control = spec.get("remote_control", False)
+        if not isinstance(remote_control, bool):
+            raise YamatoError(f"team.yaml: roles.{role}.remote_control は true / false")
         shift = spec.get("shift") or "per_task"
         if shift not in SHIFTS:
             raise YamatoError(f"team.yaml: roles.{role}.shift は {' / '.join(SHIFTS)} のどれか (今: {shift})")
@@ -119,6 +135,8 @@ def validate(data: dict, shipdir: Path) -> dict:
         for key, value in (("max_duration", max_duration), ("max_budget_usd", budget)):
             if value is not None and shift != "headless":
                 warnings.append(f"roles.{role}.{key} は shift: headless の役割でだけ効く (今: {shift})。無視する")
+        if remote_control and shift == "headless":
+            warnings.append(f"roles.{role}.remote_control は bg の席でだけ効く (headless の -p には付けない)。無視する")
         roles[role] = {
             "inject": parts,
             "max_duration": max_duration,
@@ -128,6 +146,8 @@ def validate(data: dict, shipdir: Path) -> dict:
             "shift": shift,
             "count": count,
             "description": str(spec.get("description") or role),
+            "trust": None if trust is None else str(trust),
+            "remote_control": remote_control,
         }
 
     hub = str(data.get("hub") or "")
@@ -231,6 +251,7 @@ def validate(data: dict, shipdir: Path) -> dict:
         "grace": parse_duration(DEFAULT_GRACE if data.get("grace") is None else data["grace"]),
         "deny": deny,
         "settings": settings,
+        "profiles": profiles,
         "seat_stop": {**SEAT_STOP_DEFAULTS, **seat_stop},
         "roles": roles,
         "seats": seats,
@@ -268,6 +289,42 @@ def _git(git) -> dict:
         if not out[k] or not isinstance(out[k], str):
             raise YamatoError(f"team.yaml: git.{k} は文字列")
     return out
+
+
+def _profiles(table) -> dict:
+    """``profiles:`` (design-p1 §7.2): name -> {mode, tools, allow, deny, send}.
+
+    Only the shape is checked. The mode is passed through to Claude Code as is
+    (``dontAsk`` for roles that read outside text is the template's default,
+    verify-p1-d V7; nothing here insists on it)."""
+    table = table or {}
+    if not isinstance(table, dict):
+        raise YamatoError("team.yaml: profiles は {名前: {mode, tools, allow, deny, send}} の mapping")
+    out = {}
+    for name, spec in table.items():
+        check_name("profiles の名前", str(name))
+        spec = spec or {}
+        if not isinstance(spec, dict) or set(spec) - PROFILE_KEYS:
+            raise YamatoError(f"team.yaml: profiles.{name} の項目は {', '.join(sorted(PROFILE_KEYS))}")
+        mode = spec.get("mode")
+        if mode is not None and (not isinstance(mode, str) or not mode):
+            raise YamatoError(f"team.yaml: profiles.{name}.mode は Claude Code の権限モードの名前 (例 dontAsk / auto)")
+        for key in ("tools", "allow", "deny"):
+            v = spec.get(key)
+            if v is not None and (not isinstance(v, list) or not all(isinstance(x, str) for x in v)):
+                raise YamatoError(f"team.yaml: profiles.{name}.{key} は文字列のリスト")
+        send = spec.get("send", True)
+        if not isinstance(send, bool):
+            raise YamatoError(f"team.yaml: profiles.{name}.send は true / false")
+        out[str(name)] = {"mode": mode, "tools": spec.get("tools"), "allow": spec.get("allow") or [],
+                          "deny": spec.get("deny") or [], "send": send}
+    return out
+
+
+def profile_of(team: dict, role: str) -> dict | None:
+    """The trust profile of ``role`` (None when the role names none, or a team.json from before P1)."""
+    trust = (team["roles"].get(role) or {}).get("trust")
+    return (team.get("profiles") or {}).get(trust) if trust else None
 
 
 def _decisions(table, seats: dict) -> dict:

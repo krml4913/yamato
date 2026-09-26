@@ -24,6 +24,7 @@ ID_PREFIX = "T-"
 ID_RE = re.compile(r"^T-(\d+)$")
 KEY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
 _PLAIN_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_./#-]*$")
+HISTORY = "## 経緯\n"   # the item's history section; `board set --note` appends to it
 DECISION = "decision"   # kind of the D-NNN items `yamato decide` owns (design-p1 §1)
 # fields of a decision only `decide open/close` writes (the decider is fixed when opened)
 DECISION_FIXED = ("id", "kind", "state", "category", "decider", "opened_by", "opened_at",
@@ -192,7 +193,7 @@ class Board:
             for k, v in (fields or {}).items():
                 meta[k] = changed[k] = self._check(k, v, item_id)
             self._sync_column(meta, changed)
-            text = (body.rstrip() + "\n\n" if body.strip() else "") + "## 経緯\n" + _note_line(by, "作成")
+            text = (body.rstrip() + "\n\n" if body.strip() else "") + HISTORY + _note_line(by, "作成")
             self._write(meta, text)
             events.emit(self.shipdir, events.BOARD_ADD, seat=meta.get("assignee"), item=item_id, by=by,
                         summary=f"作成 [{meta['state']}] {meta['title']}", data={"fields": changed})
@@ -222,6 +223,29 @@ class Board:
             events.emit(self.shipdir, events.BOARD_SET, seat=meta.get("assignee"), item=item_id, by=by,
                         summary=", ".join(words) or "変更なし",
                         data={"changes": diff, **({"note": note} if note else {})})
+            return meta
+
+    def note(self, item_id: str, text: str, by: str | None = None) -> dict:
+        """Append ``text`` to the item's body (design-p1 §7.2): the frontmatter is not touched.
+
+        For seats that may not change the board's structure (a ``trust: external``
+        researcher). The text goes above ``## 経緯``, which gets one line saying so."""
+        text = text.strip()
+        if not text:
+            raise YamatoError("追記する本文が空です")
+        with ship_lock(self.shipdir):
+            meta, body, path = self.read(item_id)
+            if meta.get("kind") == DECISION and meta.get("state") == "done":
+                raise YamatoError(f"{item_id} は閉じた判断なので書き換えない")
+            head, sep, history = body.partition(HISTORY)
+            if not sep:
+                head, history = body, ""
+            head, history = head.rstrip("\n"), history.strip("\n")
+            body = ((head + "\n\n" if head else "") + text + "\n\n" + HISTORY
+                    + (history + "\n" if history else "") + _note_line(by, f"本文に追記 ({len(text.splitlines())} 行)"))
+            atomic_write(path, dumps(meta, body))
+            events.emit(self.shipdir, events.BOARD_NOTE, seat=meta.get("assignee"), item=item_id, by=by,
+                        summary=text, data={"chars": len(text)})
             return meta
 
     def _write(self, meta: dict, body: str) -> Path:

@@ -17,7 +17,7 @@ import uuid
 from pathlib import Path
 
 from . import claude, deadline, events, inbox, notify, report, roster, runtime, usage
-from .team import load_team, seat_spec
+from .team import load_team, profile_of, seat_spec
 from .util import (YAMATO_BIN, YamatoError, append_log, fmt_span, fmt_time, read_json,
                    seat_lock, ship_lock, write_json)
 
@@ -133,6 +133,7 @@ def start_new_shift(shipdir: Path, team: dict, seat: str) -> dict:
         agents_json=runtime.agents_path(shipdir).read_text(encoding="utf-8"),
         model=spec["model"], settings=str(runtime.settings_path(shipdir, seat)),
         add_dir=str(shipdir), prompt=_first_prompt(shipdir, seat), env_unset=team.get("env_unset") or (),
+        remote_control=bool(team["roles"][spec["role"]].get("remote_control")),
     )
     rec = roster.start_shift(shipdir, seat, session_id=full, short_id=short, session_name=name, how="new")
     clear_pending(shipdir, seat)
@@ -324,6 +325,7 @@ def send(shipdir: Path, seat: str, text: str, sender: str) -> int:
     team = current_team(shipdir)
     if not text.strip():
         raise YamatoError("本文が空です")
+    _check_may_send(shipdir, team, sender)
     if seat == OWNER:
         entry = inbox.append(shipdir, OWNER, sender, text)
         _send_event(shipdir, OWNER, sender, entry)
@@ -372,6 +374,23 @@ def send(shipdir: Path, seat: str, text: str, sender: str) -> int:
     else:
         out(f"席 {seat} の新しいシフトを起動した (session {rec['sessionId']})。SendMessage は不要。")
     return 0
+
+
+def _check_may_send(shipdir: Path, team: dict, sender: str) -> None:
+    """A seat whose trust profile says ``send: false`` cannot send (design-p1 §7.2).
+
+    Outside text read by such a seat must not reach another seat's conversation
+    as an instruction; its end-of-shift report is the wrapper's fixed text. Both
+    the claimed ``--from`` and the calling session (roster) are checked, so a
+    wrong ``--from`` does not get round it."""
+    caller = roster.seat_of_session(shipdir, os.environ.get("CLAUDE_CODE_SESSION_ID"))
+    for who in dict.fromkeys((sender, caller)):
+        spec = team["seats"].get(who) if who else None
+        profile = profile_of(team, spec["role"]) if spec else None
+        if profile and profile.get("send") is False:
+            raise YamatoError(f"席 {who} (trust: {team['roles'][spec['role']]['trust']}) は send を使えない "
+                              "(profiles の send: false)。成果はファイルと board note に残し、seat-stop で終える "
+                              "(終わりの報告は yamato が定型文で送る)")
 
 
 def _report_to(team: dict, seat: str) -> str:

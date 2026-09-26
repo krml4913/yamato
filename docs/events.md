@@ -34,6 +34,7 @@ yamato が書くのは次の kind。定数は `src/yamato/events.py` (`notify_fa
 | `board_add` | `board add` | 担当 (assignee) | 項目 | `--by` | `fields` (指定した値) |
 | `board_set` | `board set` | 変更後の担当 | 項目 | `--by` | `changes` (`{key: [前, 後]}`)、`note` (`--note`) |
 | `board_archive` | `board archive` | 担当 | 項目 | ― | ― |
+| `board_note` | `board note` (本文への追記。frontmatter は変えない。design-p1 §7.2) | 担当 | 項目 | `--by` (無ければ呼び出した席) | `chars` |
 | `send` | `send` (inbox に記録した時点。起動前・上限後も書く) | 宛先 | ― | 送り手 | `n` (inbox の番号)、`chars` |
 | `shift_start` | roster のシフト開始 (new / resume / headless) | 席 | ― | ― | `shiftNo`、`how`、`sessionId` |
 | `shift_end` | roster のシフト終了 | 席 | ― | ― | `shiftNo`、`reason` (`seat-stop` / `exited` / `down-force` / `grace-exceeded`。headless はほかに `max-duration` / `failed` / `wrapper-signal` (ラッパーが SIGTERM・SIGINT を受けて `-p` に転送した) / `wrapper-lost` (ラッパーが居ないのに `-p` が残っていたのを reconcile が止めた))、`handoffWritten`、`note` (「引き継ぎなしで終了」など) |

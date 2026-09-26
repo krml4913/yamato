@@ -9,15 +9,21 @@ from .util import YamatoError, check_name, register_ship, yamato_home
 TEMPLATES = Path(__file__).resolve().parent / "templates"
 
 
-def create(name: str, workspace: str, path: str | None, template: str) -> tuple[Path, list[str]]:
+def create(name: str, workspace: str | None, path: str | None, template: str) -> tuple[Path, list[str]]:
     check_name("艦", name)
     tdir = TEMPLATES / template
     if not tdir.is_dir():
         known = ", ".join(sorted(p.name for p in TEMPLATES.iterdir() if p.is_dir()))
         raise YamatoError(f"ひな形 {template} はありません (ある: {known})")
-    ws = Path(workspace).expanduser().resolve()
-    if not ws.is_dir():
-        raise YamatoError(f"workspace がありません: {ws}")
+    # a template without a repo (research: `workspace: .`) needs no --workspace
+    if workspace is None:
+        if "{{workspace}}" in (tdir / "team.yaml").read_text(encoding="utf-8"):
+            raise YamatoError(f"ひな形 {template} は --workspace (席の作業ディレクトリ) が要る")
+        ws = None
+    else:
+        ws = Path(workspace).expanduser().resolve()
+        if not ws.is_dir():
+            raise YamatoError(f"workspace がありません: {ws}")
     shipdir = Path(path).expanduser().resolve() if path else yamato_home() / name
     if shipdir.exists() and any(shipdir.iterdir()):
         raise YamatoError(f"{shipdir} はすでにあって空ではありません")
@@ -28,7 +34,9 @@ def create(name: str, workspace: str, path: str | None, template: str) -> tuple[
         dst = shipdir / src.relative_to(tdir)
         dst.parent.mkdir(parents=True, exist_ok=True)
         text = src.read_text(encoding="utf-8")
-        dst.write_text(text.replace("{{name}}", name).replace("{{workspace}}", str(ws)), encoding="utf-8")
+        if ws is not None:
+            text = text.replace("{{workspace}}", str(ws))
+        dst.write_text(text.replace("{{name}}", name), encoding="utf-8")
 
     team = load_team(shipdir)  # the template must validate as written
     from .seat import ensure_seat_dirs
@@ -38,6 +46,9 @@ def create(name: str, workspace: str, path: str | None, template: str) -> tuple[
     warnings = list(team.get("warnings") or [])
     from .claude import is_trusted, untrusted_message
 
+    if ws is not None and ws != Path(team["workspace"]):
+        warnings.append(f"ひな形 {template} は --workspace を使わない (席の作業ディレクトリは {team['workspace']})")
+    ws = Path(team["workspace"])
     if not is_trusted(ws):
         warnings.append(untrusted_message(ws))
     return shipdir, warnings
