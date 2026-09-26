@@ -24,6 +24,10 @@ ID_PREFIX = "T-"
 ID_RE = re.compile(r"^T-(\d+)$")
 KEY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
 _PLAIN_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_./#-]*$")
+DECISION = "decision"   # kind of the D-NNN items `yamato decide` owns (design-p1 §1)
+# fields of a decision only `decide open/close` writes (the decider is fixed when opened)
+DECISION_FIXED = ("id", "kind", "state", "category", "decider", "opened_by", "opened_at",
+                  "closed_by", "on_behalf_of", "closed_at")
 
 
 # --- frontmatter -----------------------------------------------------------
@@ -199,6 +203,8 @@ class Board:
             raise YamatoError("変更する項目 (key=value) か --note を指定してください")
         with ship_lock(self.shipdir):
             meta, body, path = self.read(item_id)
+            if meta.get("kind") == DECISION and item_id.startswith("D-"):
+                _check_decision_set(meta, fields)
             before = dict(meta)
             changed = {}
             for k, v in fields.items():
@@ -244,6 +250,17 @@ class Board:
 
     def mine(self, seat: str) -> list[dict]:
         return [m for m in self.items() if m.get("assignee") == seat and m.get("state") != "done"]
+
+
+def _check_decision_set(meta: dict, fields: dict) -> None:
+    """Integrity of a decision item (design-p1 §0.3): closed ones are never rewritten."""
+    if meta.get("state") == "done":
+        raise YamatoError(f"{meta['id']} は閉じた判断なので書き換えない (覆すなら "
+                          f"`decide open --supersedes {meta['id']}` で新しい判断を開く)")
+    fixed = sorted(set(fields) & set(DECISION_FIXED))
+    if fixed:
+        raise YamatoError(f"{meta['id']} の {', '.join(fixed)} は decide open/close だけが書く "
+                          "(閉じるのは `decide close`)")
 
 
 def _id_num(item_id: str) -> int:

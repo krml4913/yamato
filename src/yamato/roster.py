@@ -54,7 +54,7 @@ def seat_of_session(shipdir: Path, session_id: str | None) -> str | None:
 
 def start_shift(shipdir: Path, name: str, *, session_id: str, short_id: str, session_name: str,
                 how: str, now: float | None = None) -> dict:
-    now = now or time.time()
+    now = time.time() if now is None else now
     with ship_lock(shipdir):
         data = load(shipdir)
         rec = data["seats"].setdefault(name, {})
@@ -88,10 +88,16 @@ def start_shift(shipdir: Path, name: str, *, session_id: str, short_id: str, ses
 
 
 def touch(shipdir: Path, name: str, now: float | None = None) -> None:
-    """The seat just moved (SessionStart / UserPromptSubmit / Stop hooks, design-p1 §5.1)."""
+    """The seat just moved (SessionStart / UserPromptSubmit / Stop hooks, design-p1 §5.1).
+
+    A seat roster does not know yet (never started a shift) is left alone: a
+    hook must not create a half-filled seat record."""
     with ship_lock(shipdir):
         data = load(shipdir)
-        data["seats"].setdefault(name, {})["lastActive"] = now or time.time()
+        rec = data["seats"].get(name)
+        if rec is None:
+            return
+        rec["lastActive"] = time.time() if now is None else now
         save(shipdir, data)
 
 
@@ -99,14 +105,14 @@ def mark_stopping(shipdir: Path, name: str, *, handoff_written: bool, now: float
     with ship_lock(shipdir):
         data = load(shipdir)
         rec = data["seats"].setdefault(name, {})
-        rec.update({"state": STOPPING, "handoffWritten": handoff_written, "stopRequestedAt": now or time.time()})
+        rec.update({"state": STOPPING, "handoffWritten": handoff_written, "stopRequestedAt": time.time() if now is None else now})
         save(shipdir, data)
         return dict(rec)
 
 
 def end_shift(shipdir: Path, name: str, *, reason: str, handoff_written: bool | None = None,
               note: str | None = None, now: float | None = None) -> dict:
-    now = now or time.time()
+    now = time.time() if now is None else now
     with ship_lock(shipdir):
         data = load(shipdir)
         rec = data["seats"].setdefault(name, {})

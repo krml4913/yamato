@@ -111,8 +111,12 @@ def unmet(shipdir: Path, team: dict, meta: dict) -> list[str]:
             if cp.returncode != 0 and "no checks reported" not in text:
                 reasons.append(f"ci: PR #{number} のチェックが通っていない (gh pr checks):\n{text}")
         elif req == "decision":
-            items = Board(shipdir, team).items(include_archive=True)
-            open_ = [d["id"] for d in items if d.get("kind") == "decision" and d.get("category") == "merge"
+            from .decide import decisions
+
+            brd = Board(shipdir, team)
+            # D-NNN from `decide open`, and decision items made by hand with `board add kind=decision`
+            items = decisions(brd) + [d for d in brd.items() if d.get("kind") == "decision"]
+            open_ = [d["id"] for d in items if d.get("category") == "merge"
                      and item_id in (d.get("links") or []) and d.get("state") != "done"]
             if open_:
                 reasons.append(f"decision: merge の判断 {', '.join(open_)} が閉じていない")
