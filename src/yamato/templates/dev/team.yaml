@@ -29,7 +29,7 @@ roles:
     rotate:
       context: 30%           # 前のシフトの文脈量がモデルの窓 (下の context_windows) のこの割合以上。300k のようにトークン数でも書ける
       compaction: true       # compaction が起きた (PreCompact hook が印を付ける)
-      hours: 8               # シフトの長さ (時間。8h / 30m のようにも書ける)
+      hours: 8h              # シフトの長さ
       idle: 1h               # 止まってからこれ以上たった (resume はキャッシュ切れで高い)
       new_day: true          # 前のシフトの開始から日付が変わった
   impl:

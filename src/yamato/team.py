@@ -402,7 +402,8 @@ def _rotate(spec, role: str) -> dict:
         v = spec["context"]
         if _off(v):
             out["context"] = None
-        elif isinstance(v, str) and v.strip().endswith("%"):
+        elif (isinstance(v, str) and v.strip().endswith("%")) or (isinstance(v, float) and 0 < v < 1):
+            # 30% or 0.3 (as last_call.ratio); a whole number is tokens
             out["context"] = {"ratio": _ratio(v, f"{where}.context")}
         else:
             out["context"] = {"tokens": _tokens(v, f"{where}.context")}

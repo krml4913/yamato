@@ -146,6 +146,9 @@ def user_prompt_submit(shipdir: Path, seat: str) -> int:
     The captain's first turn past the last call gets the notice (design-p1 §9)."""
     _stdin_json()
     _touch(shipdir, seat)
+    dl = deadline.read(shipdir)
+    if not deadline.in_last_call(dl) or dl.get("lastCallNoticed") == dl.get("lastCallAt"):
+        return 0   # the usual case: no team to read on every prompt
     team = runtime_team(shipdir)
     notice = _last_call_notice(shipdir, team, seat, "UserPromptSubmit") if seat in team["seats"] else None
     if notice:

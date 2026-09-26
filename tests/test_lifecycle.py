@@ -96,6 +96,8 @@ class SettingsTest(_Base):
                                                 "idle": None, "new_day": False})
         data["roles"]["pm"]["rotate"] = {"context": False, "hours": 2}
         self.assertEqual(rotate_conf(validate(data, self.shipdir), "pm")["hours"], 7200)   # bare number = hours
+        data["roles"]["pm"]["rotate"] = {"context": 0.25}
+        self.assertEqual(rotate_conf(validate(data, self.shipdir), "pm")["context"], {"ratio": 0.25})
         for bad in ({"context": "150%"}, {"nope": 1}, {"compaction": "yes"}, {"hours": 0}):
             data["roles"]["pm"]["rotate"] = bad
             with self.assertRaises(YamatoError):
