@@ -1,15 +1,13 @@
-"""zellij KDL layout: one tab per ship, one pane per seat running seat-attach.
+"""zellij KDL layout: one tab per ship, one pane per seat running ``yamato view attach``.
 
 Open it with ``zellij --session <name> --layout <file>`` (design §10). Seats
 are laid out two per row so the Claude TUI keeps a usable width.
 """
 from __future__ import annotations
 
-from pathlib import Path
+from ..team import runtime_team
+from ..util import YAMATO_BIN, resolve_ship
 
-from .shipfiles import ship_dir, team_seats
-
-SEAT_ATTACH = Path(__file__).resolve().parents[3] / "bin" / "yamato-seat-attach"
 COLUMNS = 2
 
 
@@ -20,13 +18,13 @@ def kdl_str(s: str) -> str:
 def _pane(seat: str, ship_ref: str, command: str, indent: str) -> list[str]:
     return [
         f"{indent}pane name={kdl_str(seat)} command={kdl_str(command)} {{",
-        f"{indent}    args {kdl_str(ship_ref)} {kdl_str(seat)}",
+        f"{indent}    args \"view\" \"attach\" {kdl_str(ship_ref)} {kdl_str(seat)}",
         f"{indent}}}",
     ]
 
 
 def build(ships: list[tuple[str, str, list[str]]], command: str) -> str:
-    """``ships`` is ``[(tab name, ship ref passed to seat-attach, seats)]``."""
+    """``ships`` is ``[(tab name, ship path passed to `view attach`, seats)]``."""
     lines = [
         "layout {",
         "    default_tab_template {",
@@ -57,11 +55,14 @@ def build(ships: list[tuple[str, str, list[str]]], command: str) -> str:
 
 
 def layout_for(refs: list[str], command: str | None = None) -> str:
-    """Build the layout for ships given by name or path."""
+    """Build the layout for ships given by name (registry, then ``$YAMATO_HOME``) or path.
+
+    Every pane gets the ship's absolute path: the panes run in the zellij
+    server's environment, which may not have this shell's YAMATO_HOME.
+    """
     ships = []
     for ref in refs:
-        shipdir = ship_dir(ref)
-        # a path is passed on as an absolute path so the pane's cwd does not matter
-        pass_ref = ref if shipdir.name == ref else str(shipdir)
-        ships.append((shipdir.name, pass_ref, team_seats(shipdir)))
-    return build(ships, command or str(SEAT_ATTACH))
+        shipdir = resolve_ship(ref)
+        team = runtime_team(shipdir)
+        ships.append((team["name"], str(shipdir.resolve()), list(team["seats"])))
+    return build(ships, command or str(YAMATO_BIN))

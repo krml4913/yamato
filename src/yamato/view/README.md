@@ -1,19 +1,21 @@
-# yamato.view — zellij で艦と席を覗く窓 (design §10, P2 の先行実装)
+# yamato.view — zellij で艦と席を覗く窓 (design §10)
 
-P0 と衝突しないよう独立したモジュールにしてある。`yamato` CLI への組み込みは P0 の merge 後に別 task で行う。
+`yamato view` として CLI に組み込み済み。艦フォルダは自分では読まず、P0 のモジュールを使う (艦の解決は `util.resolve_ship`、席の一覧は `team.runtime_team`、今のシフトは `roster`、`claude` 呼び出しは `claude.py`)。
 
 ## 使い方
 
 ```sh
 # 艦ごとに 1 タブ、席ごとに 1 ペインの layout を作って開く
-bin/yamato-seat-attach --layout dev research -o ~/yamato/view.kdl
+./yamato view layout dev research -o ~/yamato/view.kdl
 zellij --session yamato-view --new-session-with-layout ~/yamato/view.kdl
 
 # 1 席だけ (ペインの中で動かすもの)
-bin/yamato-seat-attach dev pm          # --poll 3 (秒) / 環境変数 YAMATO_VIEW_POLL
+./yamato view attach dev pm            # --poll 3 (秒) / 環境変数 YAMATO_VIEW_POLL
 ```
 
-艦は名前 (`$YAMATO_HOME/<ship>`, 既定 `~/yamato/<ship>`) かパスで指定する。
+艦は名前か艦フォルダのパスで指定する。名前は `$YAMATO_HOME/ships.json` (`ship create --path` で作った艦の登録簿)、なければ `$YAMATO_HOME/<name>` (既定 `~/yamato/<name>`) の順に探す。
+
+layout の各ペインは `<yamato> view attach <艦フォルダの絶対パス> <席>` を動かす。ペインは zellij のサーバの環境で動くため、この shell の `YAMATO_HOME` に頼らないようパスで渡している。タブの名前は team.yaml の `name`。
 
 ## 動き
 
@@ -23,16 +25,9 @@ bin/yamato-seat-attach dev pm          # --poll 3 (秒) / 環境変数 YAMATO_VI
 - attach 中に roster が別の生きているセッションを指したら、今の attach を止めて付け直す。古いシフトは止めない (席の管理側の仕事)
 - attach 先が止まると `claude attach` は自分で抜けるので、待機に戻る
 - `claude attach` はペインのフォアグラウンドで動かす (macOS ではバックグラウンドだと落ちる)
+- team に無い席名は起動時に断る (打ち間違いで待ち続けないように)。席の一覧は `.runtime/team.json` (`yamato up` が書く) を優先し、なければ team.yaml から読む
 
 「今のシフト」の解決は差し替えられる (`attach.run(resolve, ...)` に任意の `resolve()` を渡す)。既定は `attach.roster_resolver`。
-
-## P0 に合わせるところ
-
-艦フォルダを読む処理は `shipfiles.py` に集めてある。想定している形式はそこにコメントで書いた。
-
-- `roster.json`: `{"seats": {"<seat>": {"sessionId": "<フルの id>", ...}}}` (P0 の `yamato.roster`)
-- 席の一覧: `.runtime/team.json` の `seats` を優先する。無ければ `team.yaml` の `roles:` を簡易に読み、`count: n` を `<role>-1..n` に展開する (P0 の `yamato.team.expand_seats` と同じ規則)
-- 艦の場所: P0 の registry (`--path` で作った艦) にはまだ対応していない。P0 の merge 後に `yamato.util.resolve_ship` に置き換える
 
 ## 実機で分かったこと (Claude Code 2.1.283 / zellij 0.45.1)
 
