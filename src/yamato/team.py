@@ -13,11 +13,13 @@ from .util import YamatoError, check_name, parse_duration, read_json
 SHIFTS = ("per_task", "persistent")
 STATES = ("open", "active", "blocked", "done")
 TOP_KEYS = {"name", "hub", "workspace", "charter", "roles", "time_limit", "grace", "deny", "board",
-            "settings", "seat_stop", "env_unset", "inject", "notify", "git"}
+            "settings", "seat_stop", "env_unset", "inject", "notify", "git", "report"}
 # what SessionStart can inject (design §8.2); the header is always there
-INJECT_PARTS = ("handoff", "log_tail", "mine", "inbox", "memory", "knowledge")
+INJECT_PARTS = ("handoff", "log_tail", "mine", "inbox", "memory", "knowledge", "last_report")
+# what a ship that names no parts gets: the captain's report excerpt (design-p1 §2.3) is opt-in
+DEFAULT_INJECT_PARTS = tuple(p for p in INJECT_PARTS if p != "last_report")
 INJECT_LIMIT_KEYS = ("handoff", "memory", "knowledge", "log_tail", "mine_items", "inbox_messages",
-                     "inbox_chars", "total_chars")
+                     "inbox_chars", "total_chars", "last_report")
 RESERVED_SEATS = ("owner",)   # the human's inbox; not a seat
 SEAT_STOP_DEFAULTS = {"require_handoff": True, "require_delivery": True}
 ROLE_KEYS = {"model", "shift", "count", "description", "inject"}
@@ -162,6 +164,13 @@ def validate(data: dict, shipdir: Path) -> dict:
 
     git = _git(data.get("git"))
 
+    report = data.get("report") or {}
+    daily = report.get("daily", "on_down") if isinstance(report, dict) else None
+    if daily is False:   # an unquoted `off` is false in YAML 1.1
+        daily = "off"
+    if not isinstance(report, dict) or set(report) - {"daily"} or daily not in ("on_down", "off"):
+        raise YamatoError("team.yaml: report は {daily: on_down | off}")
+
     board = data.get("board") or {}
     if not isinstance(board, dict):
         raise YamatoError("team.yaml: board が mapping ではありません")
@@ -195,6 +204,7 @@ def validate(data: dict, shipdir: Path) -> dict:
         "notify": {"via": [str(v) for v in notify.get("via") or []], "command": notify.get("command"),
                    "slack": {"webhook_env": slack.get("webhook_env")}},
         "git": git,
+        "report": {"daily": daily},
         "warnings": warnings,
     }
 
@@ -241,7 +251,7 @@ def inject_parts(team: dict, seat: str) -> list[str]:
     parts = team["roles"].get(role, {}).get("inject")
     if parts is None:
         parts = (team.get("inject") or {}).get("parts")
-    return list(INJECT_PARTS) if parts is None else parts
+    return list(DEFAULT_INJECT_PARTS) if parts is None else parts
 
 
 def git_conf(team: dict) -> dict:

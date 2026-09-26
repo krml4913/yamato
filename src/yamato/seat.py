@@ -16,7 +16,7 @@ import time
 import uuid
 from pathlib import Path
 
-from . import claude, deadline, events, inbox, notify, roster, runtime, usage
+from . import claude, deadline, events, inbox, notify, report, roster, runtime, usage
 from .team import load_team, seat_spec
 from .util import (YAMATO_BIN, YamatoError, append_log, fmt_span, fmt_time, read_json,
                    seat_lock, ship_lock, write_json)
@@ -232,6 +232,9 @@ def force_stop_all(shipdir: Path, team: dict, reason: str) -> list[str]:
                         data={"reason": reason, "shiftNo": rec.get("shiftNo"), "sessionId": rec["sessionId"]})
             finish_shift(shipdir, seat, reason=reason, forced=True)
             stopped.append(seat)
+    if stopped:
+        for line in report.safety_net(shipdir, team, f"強制停止 ({reason})"):
+            out(line)
     return stopped
 
 
@@ -402,6 +405,8 @@ def watchdog(shipdir: Path, token: str) -> int:
                 stopped = enforce(shipdir, team)
                 for seat in stopped:
                     append_log(shipdir, seat, "watchdog: 猶予を過ぎたので強制停止")
+                if not stopped:
+                    report.safety_net(shipdir, team, "終業のときに日報がなかった")
                 return 0
             if now >= dl["deadline"]:
                 team = current_team(shipdir)
@@ -409,6 +414,7 @@ def watchdog(shipdir: Path, token: str) -> int:
                 reconcile(shipdir, team, listing)
                 if not any(claude.is_alive(claude.by_session(listing).get(r.get("sessionId")))
                            for r in roster.load(shipdir)["seats"].values()):
+                    report.safety_net(shipdir, team, "終業のときに日報がなかった")
                     return 0
             time.sleep(max(1.0, min(WATCHDOG_POLL, dl["graceUntil"] - now)))
     finally:
@@ -433,9 +439,16 @@ def down(shipdir: Path, force: bool) -> int:
                 deadline.write_raw(shipdir, dl)
         stopped = force_stop_all(shipdir, team, reason="down-force")
         out(f"強制停止した席: {', '.join(stopped) if stopped else '(なし)'}")
+        if dl is not None and not stopped:
+            for line in report.safety_net(shipdir, team, "down --force"):
+                out(line)
         return 0
     by = claude.by_session(listing)
     alive = [s for s in team["seats"] if claude.is_alive(by.get(roster.seat(shipdir, s).get("sessionId")))]
+    if dl is not None and not alive:
+        # nobody is left to write it (design-p1 §2.2 の 2); with seats alive the watchdog does this
+        for line in report.safety_net(shipdir, team, "down のとき captain が動いていなかった"):
+            out(line)
     if dl is not None:
         spawn_watchdog(shipdir, dl["token"])
         out(f"終業を指示した。動いている席 ({', '.join(alive) if alive else 'なし'}) は hook 経由で引き継ぎを書いて止まる。")
