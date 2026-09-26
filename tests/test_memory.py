@@ -181,6 +181,19 @@ class StatusTest(_Base):
         rc, out = self.cli("memory", "status", str(self.shipdir))
         self.assertIn("impl: 候補 4 件", out)
 
+    def test_never_applied_counts_from_the_oldest_candidate(self):
+        now = time.time()
+        memory.memo(self.shipdir, "impl-1", "古い", now=now - 9 * 86400)
+        memory.memo(self.shipdir, "impl-2", "新しい", now=now)
+        row = next(r for r in memory.status(self.shipdir, self.t, now) if r["role"] == "impl")
+        self.assertTrue(row["due"])
+        impl = next(x for x in memory.status_lines(self.shipdir, self.t, now) if x.startswith("impl:"))
+        self.assertIn("前回の棚卸しなし (一番古い候補から 9 日) ← 棚卸しの目安", impl)
+
+    def test_item_is_one_line(self):
+        line = memory.memo(self.shipdir, "impl-1", "本文", item=" T-1\nx ")
+        self.assertIn("impl-1 [T-1 x] (role) 本文", line)
+
     def test_count_alone_is_a_sign(self):
         with mock.patch.dict(self.t["memory"], curate_at=2):
             memory.memo(self.shipdir, "impl-1", "a")

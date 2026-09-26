@@ -218,7 +218,8 @@ def memo(shipdir: Path, seat: str, text: str, *, item: str | None = None, scope:
     if scope not in SCOPES:
         raise YamatoError(f"--scope は {' / '.join(SCOPES)} のどれか (今: {scope})")
     date = time.strftime("%Y-%m-%d", time.localtime(time.time() if now is None else now))
-    line = f"- {date} {seat}" + (f" [{item.strip()}]" if item and item.strip() else "") + f" ({scope}) {text}"
+    item = " ".join(str(item or "").split())
+    line = f"- {date} {seat}" + (f" [{item}]" if item else "") + f" ({scope}) {text}"
     with ship_lock(shipdir):
         _append(inbox_path(shipdir, seat), line + "\n")
     return line
@@ -257,6 +258,17 @@ def _entries(text: str) -> list[str]:
 
 def candidates(shipdir: Path, team: dict, role: str) -> dict[str, list[str]]:
     return {seat: _entries(_read(inbox_path(shipdir, seat))) for seat in role_seats(team, role)}
+
+
+def _oldest(cands: dict) -> float | None:
+    """The date of the oldest candidate line (``- YYYY-MM-DD ...``), as local midnight."""
+    dates = [m.group(1) for v in cands.values() for x in v if (m := re.match(r"^- (\d{4}-\d{2}-\d{2}) ", x))]
+    if not dates:
+        return None
+    try:
+        return time.mktime(time.strptime(min(dates), "%Y-%m-%d"))
+    except ValueError:
+        return None
 
 
 def last_applied(shipdir: Path, role: str | None) -> float | None:
@@ -305,14 +317,17 @@ def status(shipdir: Path, team: dict, now: float | None = None) -> list[dict]:
         count = sum(len(v) for v in cands.values())
         last = last_applied(shipdir, role)
         days = None if last is None else int((now - last) // 86400)
-        due = count > 0 and (count >= c["curate_at"] or (last is not None and now - last >= c["curate_every"]))
+        # never applied: the days count from the oldest candidate, so a new ship gets the sign too
+        since = last if last is not None else _oldest(cands)
+        due = count > 0 and (count >= c["curate_at"] or (since is not None and now - since >= c["curate_every"]))
         prop = proposed_path(shipdir, role)
         proposal = None
         if prop.is_file():
             sec = sections(_read(prop))
             proposal = diff_counts(_read(memory_path(shipdir, role)), sec.get("memory", ""))
         rows.append({"role": role, "count": count, "seats": {s: len(v) for s, v in cands.items()},
-                     "last": last, "days": days, "due": due, "proposal": proposal,
+                     "last": last, "days": days,
+                     "oldest_days": None if last is not None or since is None else int((now - since) // 86400), "due": due, "proposal": proposal,
                      "over": over_limit(_read(memory_path(shipdir, role)), lim["memory_lines"], lim["memory_bytes"])})
     kcount = len(_entries(_read(knowledge_inbox_path(shipdir))))
     klast = last_applied(shipdir, None)
@@ -331,6 +346,8 @@ def status_lines(shipdir: Path, team: dict, now: float | None = None) -> list[st
     for r in status(shipdir, team, now):
         name = r["role"] or "knowledge"
         since = "前回の棚卸しなし" if r["days"] is None else f"前回の棚卸しから {r['days']} 日"
+        if r.get("oldest_days") is not None:
+            since += f" (一番古い候補から {r['oldest_days']} 日)"
         line = f"{name}: 候補 {r['count']} 件 / {since}"
         if r["due"]:
             line += f" ← 棚卸しの目安 ({c['curate_every'] // 86400} 日 / {c['curate_at']} 件) に達した"
@@ -737,7 +754,9 @@ def apply(shipdir: Path, team: dict, role: str, by: str, now: float | None = Non
 
 def apply_knowledge(shipdir: Path, team: dict, by: str, now: float | None = None) -> dict:
     """``memory apply <ship> --knowledge``: ``knowledge.proposed.md`` (written by the applier)
-    becomes knowledge.md; the knowledge candidates move to ``knowledge-inbox.done/<date>.md``."""
+    becomes knowledge.md; **every** candidate in knowledge-inbox.md at this moment moves to
+    ``knowledge-inbox.done/<date>.md`` (the proposal is free text, so which ones it read is
+    not known; the prompts and README say so)."""
     shipdir = Path(shipdir)
     now = time.time() if now is None else now
     lim = conf(team)["limits"]
