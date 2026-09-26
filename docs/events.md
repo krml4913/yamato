@@ -27,7 +27,7 @@
 
 ### 1.2 kind
 
-yamato が書くのは次の kind。定数は `src/yamato/events.py`。
+yamato が書くのは次の kind。定数は `src/yamato/events.py` (`notify_failed`・`report_*`・`worktree_*`・`pr_*` は各モジュールに置く。表に書いた)。
 
 | kind | 書くところ | seat | item | by | data |
 |---|---|---|---|---|---|
@@ -42,9 +42,18 @@ yamato が書くのは次の kind。定数は `src/yamato/events.py`。
 | `notify_failed` | 通知 (`notify.via`、design-p1 §2.4) が 1 方式失敗したとき。方式ごとに 1 行。OS が違うための「送らない」は書かない。定数は `notify.NOTIFY_FAILED` | ― | ― | ― | `via`、`level`、`reason` (webhook の URL は入れない) |
 | `report_made` | `report daily` と日報の安全網 (design-p1 §2.2) が日報を作ったとき | ― | ― | ― | `date`、`factsOnly`、`reason` (facts-only のとき) |
 | `report_sent` | `report send` と安全網が日報の要約を通知したとき。安全網は同じ日付の `report_sent` があれば送らない (通知の前に書く) | ― | ― | ― | `date`、`level` / `by: safety_net` |
+| `worktree_add` | `worktree add` が worktree を**新しく作った**とき (既にあるものを返しただけのときは書かない)。定数は `worktree.WORKTREE_ADD` | 項目の担当 | 項目 | 呼び出し元 (`--by`、無ければ席、無ければ `owner`) | `path`、`branch` |
+| `worktree_rm` | `worktree rm` が片付けたとき。定数は `worktree.WORKTREE_RM` | 項目の担当 | 項目 | 呼び出し元 | `path`、`branch`、`force` |
+| `worktree_add_failed` / `worktree_rm_failed` | `worktree add` / `rm` が失敗したとき。`rm` が未 commit・未 push で断ったのもここ | 項目の担当 (項目が無ければ null) | 項目 | 呼び出し元 | `reason` (1 行、300 文字まで)、`rm` は `force` も |
+| `pr_open` | `pr open` が PR を作ったとき (項目に PR が既にあって何もしなかったときは書かない)。定数は `pr.PR_OPEN` | 項目の担当 | 項目 | 呼び出し元 | `pr` (番号)、`url`、`branch`、`column` (review に動かしたとき)、`draft` (draft のとき) |
+| `pr_open_failed` | `pr open` が失敗したとき (branch が無い、`gh` の失敗など) | 項目の担当 (項目が無ければ null) | 項目 | 呼び出し元 | `reason` |
+| `pr_merge` | `pr merge` が merge したとき。既に merge されていて記録しただけのときも書く (`alreadyMerged: true`)。定数は `pr.PR_MERGE` | 項目の担当 | 項目 | 呼び出し元 | `pr`、`strategy`、`mergedBy` (= `by`。項目の `merged_by` と同じ)、`alreadyMerged` |
+| `pr_merge_failed` | `pr merge` が merge しなかったとき。`git.merge_requires` を満たさず断ったときは `unmet` に理由が入る。gh の失敗もここ | 項目の担当 (項目が無ければ null) | 項目 | 呼び出し元 | `reason`、`pr`、`unmet` (断ったときだけ。理由ごとに 1 行、300 文字まで) |
+| `pr_conflict` | `pr merge` のあと、他の開いている PR の衝突を見つけたとき。衝突の有無が分からなかった (UNKNOWN) ときは書かない。定数は `pr.PR_CONFLICT` | 衝突した項目の担当 | **衝突した項目** | merge した呼び出し元 | `pr` (衝突した PR)、`mergedItem`、`mergedPr` (merge した方)、`mergedBy`、`column` (`rebase` に動かしたとき)、`notified` (知らせた宛先。誰にも知らせなかったときは無い) |
 | `decision_open` | `decide open` | decider | 判断の id | 開いた席 (呼び出し元) | `category`、`decider`、`blocks` (blocked にしたタスク)、`links`、`urgent`、`due`、`supersedes` |
 | `decision_close` | `decide close` | decider | 判断の id | 閉じた席 (呼び出し元) | `decider`、`closed_by`、`on_behalf_of` (`--by`)、`by_decider` (false = decider 以外が閉じた。日報の「異常」の材料)、`choice`、`reason`、`was_blocking` (止めていたタスク)、`unblocked` (止まりが解けたタスク) |
 
+- `worktree_*` / `pr_*` の `by` は呼び出し元 (`worktree.caller`: `--by`、無ければ `$CLAUDE_CODE_SESSION_ID` の席、無ければ `owner`)。記録だけで誰が打てるかは検査しない (design-p1 §0.3)。日報 (design-p1 §2) は `pr_merge` を「今日終わったもの」に、`pr_conflict` と `by_decider: false` の `decision_close` を「異常」に載せる
 - deny ルールによる拒否は hook が拾わない (検証 B Q1) ので `permission_denied` には載らない
 - **記録は道具** (project memory mechanism-not-policy): `emit` はどの kind も受け付け、誰が書くかを検査しない。上の表は yamato 自身が書くものの一覧で、制限ではない
 - 書き込みは ship_lock (design §0 I1) を通す。書けなかったときは stderr に出すだけで、呼んだコマンドや hook は失敗させない

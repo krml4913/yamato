@@ -4,6 +4,9 @@ A tool only (mechanism-not-policy): yamato never assigns worktrees to seats
 and never checks who calls. Who creates one, when, and whether a seat ``cd``s
 into it are the role prompts' business. The one safety net is ``rm`` refusing
 to throw away uncommitted or unpushed work unless ``--force``.
+
+``add`` / ``rm`` leave one line each in events.jsonl (docs/events.md), success or
+refusal; a record only, so who called is written down and never checked.
 """
 from __future__ import annotations
 
@@ -11,10 +14,16 @@ import os
 import subprocess
 from pathlib import Path
 
-from . import roster
+from . import events, roster
 from .board import Board
 from .team import git_conf
 from .util import YamatoError
+
+WORKTREE_ADD = "worktree_add"                  # events.jsonl kinds (docs/events.md)
+WORKTREE_ADD_FAILED = "worktree_add_failed"
+WORKTREE_RM = "worktree_rm"
+WORKTREE_RM_FAILED = "worktree_rm_failed"
+REASON_CHARS = 300                             # a failure's reason in ``data``: one line, cut here
 
 
 def git(args: list[str], cwd: Path, check: bool = True) -> subprocess.CompletedProcess:
@@ -36,6 +45,30 @@ def caller(shipdir: Path, by: str | None) -> str:
     if by:
         return by
     return roster.seat_of_session(shipdir, os.environ.get("CLAUDE_CODE_SESSION_ID")) or "owner"
+
+
+def clip(text) -> str:
+    return " ".join(str(text).split())[:REASON_CHARS]
+
+
+def record(shipdir: Path, kind: str, item_id: str, who: str, summary: str, meta: dict | None = None,
+           **data) -> None:
+    """One events.jsonl line for a worktree / pr operation. ``seat`` is the item's assignee."""
+    events.emit(shipdir, kind, seat=(meta or {}).get("assignee"), item=item_id, by=who, summary=summary,
+                data={k: v for k, v in data.items() if v is not None})
+
+
+def record_failure(shipdir: Path, kind: str, item_id: str, who: str, err, meta: dict | None = None,
+                   **data) -> None:
+    reason = clip(err)
+    record(shipdir, kind, item_id, who, f"{item_id}: {reason}", meta, reason=reason, **data)
+
+
+def _meta(shipdir: Path, team: dict, item_id: str) -> dict:
+    try:
+        return Board(shipdir, team).read(item_id)[0]
+    except YamatoError:
+        return {}
 
 
 def repo_root(team: dict) -> Path:
@@ -90,7 +123,25 @@ def _base_ref(root: Path, team: dict, base: str | None) -> str:
 
 def add(shipdir: Path, team: dict, item_id: str, branch: str | None = None, base: str | None = None,
         path: str | None = None, by: str | None = None) -> tuple[Path, bool]:
-    """Create (or find) the item's worktree. Returns (path, created)."""
+    """Create (or find) the item's worktree. Returns (path, created).
+
+    A new worktree and a failure are recorded in events.jsonl; finding the one
+    that is already there is not (nothing happened)."""
+    who = caller(shipdir, by)
+    try:
+        wt, created = _add(shipdir, team, item_id, branch, base, path, by)
+    except YamatoError as e:
+        record_failure(shipdir, WORKTREE_ADD_FAILED, item_id, who, e, _meta(shipdir, team, item_id))
+        raise
+    if created:
+        meta = _meta(shipdir, team, item_id)
+        record(shipdir, WORKTREE_ADD, item_id, who, f"{item_id} の worktree を作った ({meta.get('branch')})", meta,
+               path=str(wt), branch=meta.get("branch"))
+    return wt, created
+
+
+def _add(shipdir: Path, team: dict, item_id: str, branch: str | None, base: str | None,
+         path: str | None, by: str | None) -> tuple[Path, bool]:
     brd = Board(shipdir, team)
     meta, _, _ = brd.read(item_id)
     root = repo_root(team)
@@ -164,6 +215,19 @@ def listing(shipdir: Path, team: dict) -> list[dict]:
 
 
 def rm(shipdir: Path, team: dict, item_id: str, force: bool = False, by: str | None = None) -> Path:
+    who = caller(shipdir, by)
+    try:
+        wt = _rm(shipdir, team, item_id, force, by)
+    except YamatoError as e:
+        record_failure(shipdir, WORKTREE_RM_FAILED, item_id, who, e, _meta(shipdir, team, item_id), force=force)
+        raise
+    meta = _meta(shipdir, team, item_id)
+    record(shipdir, WORKTREE_RM, item_id, who, f"{item_id} の worktree を片付けた" + (" (--force)" if force else ""),
+           meta, path=str(wt), branch=meta.get("branch"), force=force)
+    return wt
+
+
+def _rm(shipdir: Path, team: dict, item_id: str, force: bool, by: str | None) -> Path:
     brd = Board(shipdir, team)
     meta, _, _ = brd.read(item_id)
     root = repo_root(team)

@@ -81,6 +81,12 @@ class GitShipTestCase(ShipTestCase):
             ret = fn(*a, **kw)
         return ret, buf.getvalue()
 
+    def recorded(self, *kinds) -> list[dict]:
+        """The events.jsonl lines of these kinds, in the order written."""
+        from yamato import events
+
+        return events.read(self.shipdir, kinds=kinds)
+
 
 class WorktreeTest(GitShipTestCase):
     def test_add_is_idempotent_and_records_on_the_item(self):
@@ -200,6 +206,49 @@ class WorktreeTest(GitShipTestCase):
         self.assertEqual(worktree.caller(self.shipdir, None), "owner")
         del os.environ["CLAUDE_CODE_SESSION_ID"]
         self.assertEqual(worktree.caller(self.shipdir, None), "owner")
+
+    def test_add_and_rm_are_recorded_in_events(self):
+        from yamato import worktree
+
+        tid = self.item()
+        wt, _ = worktree.add(self.shipdir, self.team(), tid, by="impl")
+        worktree.add(self.shipdir, self.team(), tid, by="impl")   # finds the same place: nothing happened
+        (added,) = self.recorded(worktree.WORKTREE_ADD)
+        self.assertEqual((added["item"], added["seat"], added["by"]), (tid, "impl", "impl"))
+        self.assertEqual(added["data"], {"path": str(wt), "branch": f"yamato/t1/{tid}"})
+        # refused: the reason is on the line, and so is --force
+        (wt / "junk").write_text("j")
+        with self.assertRaises(YamatoError):
+            worktree.rm(self.shipdir, self.team(), tid, by="pm")
+        (refused,) = self.recorded(worktree.WORKTREE_RM_FAILED)
+        self.assertEqual((refused["item"], refused["seat"], refused["by"]), (tid, "impl", "pm"))
+        self.assertIn("commit していない変更が 1 件", refused["data"]["reason"])
+        self.assertIs(refused["data"]["force"], False)
+        self.assertEqual(self.recorded(worktree.WORKTREE_RM), [])
+        worktree.rm(self.shipdir, self.team(), tid, force=True, by="pm")
+        (removed,) = self.recorded(worktree.WORKTREE_RM)
+        self.assertEqual((removed["item"], removed["by"]), (tid, "pm"))
+        self.assertEqual(removed["data"], {"path": str(wt), "branch": f"yamato/t1/{tid}", "force": True})
+        self.assertEqual(self.recorded(worktree.WORKTREE_ADD_FAILED), [])
+
+    def test_failures_are_recorded_even_without_an_item(self):
+        from yamato import worktree
+
+        tid = self.item()
+        with self.assertRaisesRegex(YamatoError, "ブランチ名が不正"):
+            worktree.add(self.shipdir, self.team(), tid, branch="a..b", by="impl")
+        with self.assertRaisesRegex(YamatoError, "board に T-999"):
+            worktree.add(self.shipdir, self.team(), "T-999")
+        with self.assertRaisesRegex(YamatoError, "worktree がありません"):
+            worktree.rm(self.shipdir, self.team(), tid)
+        bad, missing = self.recorded(worktree.WORKTREE_ADD_FAILED)
+        self.assertEqual((bad["item"], bad["seat"], bad["by"]), (tid, "impl", "impl"))
+        self.assertIn("ブランチ名が不正", bad["data"]["reason"])
+        self.assertEqual((missing["item"], missing["seat"], missing["by"]), ("T-999", None, "owner"))
+        self.assertIn("board に T-999", missing["data"]["reason"])
+        (rm_failed,) = self.recorded(worktree.WORKTREE_RM_FAILED)
+        self.assertEqual(rm_failed["item"], tid)
+        self.assertEqual(self.recorded(worktree.WORKTREE_ADD, worktree.WORKTREE_RM), [])
 
     def test_cli(self):
         from yamato import cli
@@ -325,6 +374,108 @@ class PrTest(GitShipTestCase):
         _, out = self.quiet(pr.merge_pr, self.shipdir, self.team(), tid, by="pm")
         self.assertIn("既に merge されている", out)
         self.assertEqual(sum(c["argv"][:2] == ["pr", "merge"] for c in self.gh()["calls"]), 1)
+
+    def test_open_is_recorded_in_events(self):
+        from yamato import pr
+
+        self.team_columns()
+        tid = self.ready()
+        self.quiet(pr.open_pr, self.shipdir, self.team(), tid, by="impl")   # already has a PR: nothing happened
+        (opened,) = self.recorded(pr.PR_OPEN)
+        self.assertEqual((opened["item"], opened["seat"], opened["by"]), (tid, "impl", "impl"))
+        self.assertEqual(opened["data"], {"pr": "1", "url": "https://github.com/o/r/pull/1",
+                                          "branch": f"yamato/t1/{tid}", "column": "review"})
+        self.assertEqual(self.recorded(pr.PR_OPEN_FAILED), [])
+
+    def test_open_failures_are_recorded_in_events(self):
+        from yamato import pr
+
+        tid = self.item()
+        with self.assertRaisesRegex(YamatoError, "branch がありません"):
+            pr.open_pr(self.shipdir, self.team(), tid, by="impl")
+        branched = self.item(branch="feat/x")
+        os.environ["YAMATO_GH"] = str(self.tmp / "no-such-gh")
+        with self.assertRaisesRegex(YamatoError, "gh コマンドが見つかりません"):
+            pr.open_pr(self.shipdir, self.team(), branched)
+        no_branch, no_gh = self.recorded(pr.PR_OPEN_FAILED)
+        self.assertEqual((no_branch["item"], no_branch["seat"], no_branch["by"]), (tid, "impl", "impl"))
+        self.assertIn("branch がありません", no_branch["data"]["reason"])
+        self.assertEqual((no_gh["item"], no_gh["by"]), (branched, "owner"))
+        self.assertIn("gh コマンドが見つかりません", no_gh["data"]["reason"])
+        self.assertEqual(self.recorded(pr.PR_OPEN), [])
+        self.assertEqual(self.board().read(branched)[0].get("pr"), None)
+
+    def test_merge_is_recorded_in_events(self):
+        from yamato import pr
+
+        tid = self.ready()
+        self.set_gh(checks_rc=1, checks_out="test  fail")
+        with self.assertRaises(YamatoError):
+            self.quiet(pr.merge_pr, self.shipdir, self.team(), tid, by="pm")
+        (refused,) = self.recorded(pr.PR_MERGE_FAILED)
+        self.assertEqual((refused["item"], refused["seat"], refused["by"]), (tid, "impl", "pm"))
+        self.assertEqual(refused["data"]["pr"], "1")
+        self.assertEqual(len(refused["data"]["unmet"]), 2)   # review + ci (no merge decision on the board)
+        self.assertTrue(refused["data"]["unmet"][0].startswith("review: "))
+        self.assertTrue(refused["data"]["unmet"][1].startswith("ci: "))
+        self.assertNotIn("\n", "".join(refused["data"]["unmet"]))
+        self.assertEqual(self.recorded(pr.PR_MERGE), [])
+        # met: merged, and who merged is in both the `by` column and the data
+        self.set_requires([])
+        self.quiet(pr.merge_pr, self.shipdir, self.team(), tid, by="pm")
+        (merged,) = self.recorded(pr.PR_MERGE)
+        self.assertEqual((merged["item"], merged["seat"], merged["by"]), (tid, "impl", "pm"))
+        self.assertEqual(merged["data"], {"pr": "1", "strategy": "squash", "mergedBy": "pm"})
+        self.assertEqual(self.board().read(tid)[0]["merged_by"], "pm")
+        # merged by hand already: recorded once more, and marked
+        self.quiet(pr.merge_pr, self.shipdir, self.team(), tid, by="owner")
+        again = self.recorded(pr.PR_MERGE)[-1]
+        self.assertEqual((again["by"], again["data"]["mergedBy"], again["data"]["alreadyMerged"]),
+                         ("owner", "owner", True))
+
+    def test_merge_without_a_pr_is_recorded_as_failed(self):
+        from yamato import pr
+
+        tid = self.item()
+        with self.assertRaisesRegex(YamatoError, "pr がありません"):
+            pr.merge_pr(self.shipdir, self.team(), tid, by="pm")
+        (failed,) = self.recorded(pr.PR_MERGE_FAILED)
+        self.assertEqual((failed["item"], failed["by"]), (tid, "pm"))
+        self.assertIn("pr がありません", failed["data"]["reason"])
+        self.assertNotIn("unmet", failed["data"])
+
+    def test_conflict_is_recorded_in_events(self):
+        from yamato import pr
+
+        self.team_columns()
+        self.set_requires([])
+        first = self.ready()
+        second = self.ready()
+        third = self.ready()
+        st = self.gh()
+        st["prs"]["2"]["mergeable"] = "CONFLICTING"
+        self.set_gh(prs=st["prs"])
+        self.quiet(pr.merge_pr, self.shipdir, self.team(), first, by="pm")
+        (conflict,) = self.recorded(pr.PR_CONFLICT)   # third does not conflict
+        self.assertEqual((conflict["item"], conflict["seat"], conflict["by"]), (second, "impl", "pm"))
+        self.assertEqual(conflict["data"], {"pr": "2", "mergedItem": first, "mergedPr": "1", "mergedBy": "pm",
+                                            "column": "rebase", "notified": "impl"})
+        self.assertNotIn(third, conflict["summary"])
+
+    def test_conflict_record_when_nobody_is_told(self):
+        from yamato import pr
+
+        self.set_requires([])
+        first = self.ready()
+        second = self.ready(assignee="pm")
+        st = self.gh()
+        st["prs"]["2"]["mergeable"] = "CONFLICTING"
+        self.set_gh(prs=st["prs"])
+        self.quiet(pr.merge_pr, self.shipdir, self.team(), first, by="pm")   # the merger is the one to rebase
+        (conflict,) = self.recorded(pr.PR_CONFLICT)
+        self.assertEqual((conflict["item"], conflict["seat"]), (second, "pm"))
+        self.assertNotIn("notified", conflict["data"])   # no rebase column, and not sent to oneself
+        self.assertNotIn("column", conflict["data"])
 
     def test_merge_needs_a_pr(self):
         from yamato import pr
