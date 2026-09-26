@@ -177,6 +177,10 @@ class WorktreeTest(GitShipTestCase):
             worktree.path_of(self.shipdir, self.team(), tid)
         with self.assertRaisesRegex(YamatoError, "board に T-999"):
             worktree.add(self.shipdir, self.team(), "T-999")
+        for bad in ("--orphan", "a..b", "x y"):
+            with self.assertRaisesRegex(YamatoError, "ブランチ名が不正"):
+                worktree.add(self.shipdir, self.team(), tid, branch=bad)
+        self.assertFalse((self.shipdir / "worktrees").exists())
         team = self.team()
         plain = self.tmp / "plain"
         plain.mkdir()
@@ -192,8 +196,8 @@ class WorktreeTest(GitShipTestCase):
         os.environ["CLAUDE_CODE_SESSION_ID"] = "sid-impl"
         self.assertEqual(worktree.caller(self.shipdir, None), "impl")
         self.assertEqual(worktree.caller(self.shipdir, "pm"), "pm")
-        os.environ["CLAUDE_CODE_SESSION_ID"] = "unknown"
-        self.assertEqual(worktree.caller(self.shipdir, None), "?")
+        os.environ["CLAUDE_CODE_SESSION_ID"] = "unknown"   # owner's own Claude Code session
+        self.assertEqual(worktree.caller(self.shipdir, None), "owner")
         del os.environ["CLAUDE_CODE_SESSION_ID"]
         self.assertEqual(worktree.caller(self.shipdir, None), "owner")
 
@@ -400,7 +404,7 @@ class TeamGitTest(ShipTestCase):
     def test_deny_defaults_follow_the_git_flow(self):
         deny = self.team()["deny"]
         self.assertNotIn("Bash(git push*)", deny)          # own-branch push is part of the flow
-        for rule in ("Bash(git push --force*)", "Bash(git push -f*)", "Bash(gh pr create*)",
+        for rule in ("Bash(git push --force*)", "Bash(git push -f*)", "Bash(git push *+*)", "Bash(gh pr create*)",
                      "Bash(gh pr merge*)", f"Edit(/{self.workspace}/**)", f"Write(/{self.workspace}/**)"):
             self.assertIn(rule, deny)
 

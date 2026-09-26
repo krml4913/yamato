@@ -26,6 +26,7 @@ deny:
   - "Bash(git push -f*)"
   - "Bash(git push * --force*)"
   - "Bash(git push * -f*)"
+  - "Bash(git push *+*)"      # refspec の + (git push origin +<branch>) も force push
   - "Bash(git reset --hard*)"
   # PR と merge は yamato pr open / pr merge を通す (項目に pr・merged_by が残り、merge が 1 本ずつになる)
   - "Bash(gh pr create*)"

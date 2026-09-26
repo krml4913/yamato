@@ -31,13 +31,11 @@ def git(args: list[str], cwd: Path, check: bool = True) -> subprocess.CompletedP
 
 def caller(shipdir: Path, by: str | None) -> str:
     """Who ran the command, for the record only (design-p1 §0.3): ``--by``, else the seat
-    whose shift is ``$CLAUDE_CODE_SESSION_ID``, else a human at a terminal (owner)."""
+    whose shift is ``$CLAUDE_CODE_SESSION_ID``, else a human (owner, at a terminal or in
+    their own Claude Code session, which is not in the roster)."""
     if by:
         return by
-    sid = os.environ.get("CLAUDE_CODE_SESSION_ID")
-    if not sid:
-        return "owner"
-    return roster.seat_of_session(shipdir, sid) or "?"
+    return roster.seat_of_session(shipdir, os.environ.get("CLAUDE_CODE_SESSION_ID")) or "owner"
 
 
 def repo_root(team: dict) -> Path:
@@ -97,6 +95,9 @@ def add(shipdir: Path, team: dict, item_id: str, branch: str | None = None, base
     meta, _, _ = brd.read(item_id)
     root = repo_root(team)
     branch = branch or meta.get("branch") or default_branch(team, item_id)
+    # a value starting with `-` would be read as an option by `git worktree add`
+    if branch.startswith("-") or git(["check-ref-format", "--branch", branch], root, check=False).returncode:
+        raise YamatoError(f"ブランチ名が不正です: {branch!r}")
     if path:
         wt = Path(path).expanduser().resolve()
     elif meta.get("worktree"):
