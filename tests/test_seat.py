@@ -72,6 +72,12 @@ class SeatTest(ShipTestCase):
         self.assertIn("新しいシフトを起動した", out)
         self.assertIsNone(roster.seat(self.shipdir, "impl").get("sessionId"))  # only the hub
 
+    def test_launch_adopts_the_session_when_the_output_has_no_id(self):
+        self.set_fake_mode(noid=True)
+        self.up()
+        rec = roster.seat(self.shipdir, "pm")
+        self.assertEqual(rec["sessionId"], self.fake()["sessions"][0]["sessionId"])
+
     def test_up_twice_does_not_start_a_second_hub(self):
         self.up()
         out = self.up()
@@ -224,6 +230,36 @@ class SeatTest(ShipTestCase):
         self.assertEqual((rec["state"], rec["endReason"], rec["handoffWritten"], rec["note"]),
                          (roster.OFF, "seat-stop", True, None))
         self.assertTrue((self.shipdir / "usage.jsonl").is_file())
+
+    def test_seat_stop_refuses_while_a_live_recipient_has_not_read_the_report(self):
+        self.up()
+        self.run_cmd(seat.send, self.shipdir, "impl", "T-001", "pm")
+        impl = roster.seat(self.shipdir, "impl")
+        (self.shipdir / "seats/impl/handoff.md").write_text("# impl\n")
+        self.run_cmd(seat.send, self.shipdir, "pm", "T-001 done", "impl")  # pm alive: SendMessage owed
+        with mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": impl["sessionId"]}):
+            with self.assertRaises(YamatoError) as cm:
+                seat.seat_stop(self.shipdir, "impl", 10)
+            self.assertIn('to="t1.pm" inbox #1', str(cm.exception))
+            # once pm has read its inbox, the debt is settled
+            from yamato import inbox
+            inbox.mark_read(self.shipdir, "pm", 1)
+            self.run_cmd(seat.seat_stop, self.shipdir, "impl", 10)
+        self.assertEqual(roster.seat(self.shipdir, "impl")["state"], roster.STOPPING)
+
+    def test_seat_stop_delivered_flag(self):
+        self.up()
+        self.run_cmd(seat.send, self.shipdir, "impl", "T-001", "pm")
+        impl = roster.seat(self.shipdir, "impl")
+        (self.shipdir / "seats/impl/handoff.md").write_text("# impl\n")
+        self.run_cmd(seat.send, self.shipdir, "pm", "T-001 done", "impl")
+        with mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": impl["sessionId"]}):
+            self.run_cmd(seat.seat_stop, self.shipdir, "impl", 10, True)
+        self.assertEqual(roster.seat(self.shipdir, "impl")["state"], roster.STOPPING)
+        # a new shift starts with a clean slate
+        self.stop_session("impl")
+        self.run_cmd(seat.send, self.shipdir, "impl", "T-002", "pm")
+        self.assertEqual(seat.unresolved_pending(self.shipdir, "impl"), [])
 
     def test_reconcile_closes_shifts_whose_process_vanished(self):
         self.up()

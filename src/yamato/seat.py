@@ -19,7 +19,7 @@ from pathlib import Path
 from . import claude, deadline, inbox, roster, runtime, usage
 from .team import load_team, seat_spec
 from .util import (YAMATO_BIN, YamatoError, append_log, fmt_span, fmt_time, read_json,
-                   ship_lock)
+                   ship_lock, write_json)
 
 SEAT_FILES = ("memory.md", "memory-inbox.md")
 WATCHDOG_POLL = 30
@@ -71,6 +71,32 @@ def handoff_written_since(shipdir: Path, seat: str, since: float | None) -> bool
         return False
 
 
+# --- deliveries the sender still owes -----------------------------------------
+# `send` to a live seat leaves the delivery to the sender's SendMessage (§0 B1).
+# E2E run 2: a seat recorded its report, then ended its shift without the
+# SendMessage, and the idle captain never heard of it. seat-stop checks these.
+
+def _pending_path(shipdir: Path, seat: str) -> Path:
+    return shipdir / ".runtime" / f"pending-{seat}.json"
+
+
+def add_pending(shipdir: Path, sender: str, to: str, n: int, name: str) -> None:
+    with ship_lock(shipdir):
+        items = read_json(_pending_path(shipdir, sender), []) or []
+        items.append({"to": to, "n": n, "name": name})
+        write_json(_pending_path(shipdir, sender), items)
+
+
+def unresolved_pending(shipdir: Path, sender: str) -> list[dict]:
+    """Pending deliveries the recipient has not read yet."""
+    items = read_json(_pending_path(shipdir, sender), []) or []
+    return [p for p in items if inbox.cursor(shipdir, p["to"]) < p["n"]]
+
+
+def clear_pending(shipdir: Path, seat: str) -> None:
+    _pending_path(shipdir, seat).unlink(missing_ok=True)
+
+
 # --- shifts ------------------------------------------------------------------
 
 def _first_prompt(shipdir: Path, seat: str) -> str:
@@ -97,6 +123,7 @@ def start_new_shift(shipdir: Path, team: dict, seat: str) -> dict:
         add_dir=str(shipdir), prompt=_first_prompt(shipdir, seat),
     )
     rec = roster.start_shift(shipdir, seat, session_id=full, short_id=short, session_name=name, how="new")
+    clear_pending(shipdir, seat)
     append_log(shipdir, seat, f"シフト開始 #{rec['shiftNo']} (new) session={full}")
     return rec
 
@@ -109,6 +136,7 @@ def resume_shift(shipdir: Path, team: dict, seat: str, rec: dict) -> dict:
     claude.resume(sid, _resume_prompt(shipdir, seat))
     new = roster.start_shift(shipdir, seat, session_id=sid, short_id=rec.get("shortId") or sid[:8],
                              session_name=session_name(team, seat), how="resume")
+    clear_pending(shipdir, seat)
     append_log(shipdir, seat, f"シフト開始 #{new['shiftNo']} (resume) session={sid}")
     return new
 
@@ -246,6 +274,7 @@ def send(shipdir: Path, seat: str, text: str, sender: str) -> int:
     name = session_name(team, seat)
     if what == "alive":
         if sender in team["seats"]:
+            add_pending(shipdir, sender, seat, entry["n"], name)
             out(f"宛先 {seat} は生きている。yamato は配送しない。SendMessage ツールで to=\"{name}\" に次の本文を届けること:")
             out(f"  [yamato inbox #{entry['n']} from {sender}] {text}")
             out(f"  (SendMessage が success:false なら、もう一度 `{y} send` する)")
@@ -259,7 +288,7 @@ def send(shipdir: Path, seat: str, text: str, sender: str) -> int:
     return 0
 
 
-def seat_stop(shipdir: Path, seat: str, after: int) -> int:
+def seat_stop(shipdir: Path, seat: str, after: int, delivered: bool = False) -> int:
     team = current_team(shipdir)
     seat_spec(team, seat)
     sid = os.environ.get("CLAUDE_CODE_SESSION_ID")
@@ -273,6 +302,12 @@ def seat_stop(shipdir: Path, seat: str, after: int) -> int:
         return 0
     if not handoff_written_since(shipdir, seat, rec.get("shiftStartedAt")):
         raise YamatoError(f"handoff.md が今回のシフトで更新されていません。先に {_handoff(shipdir, seat)} を上書きしてから、もう一度 seat-stop してください")
+    pending = unresolved_pending(shipdir, seat)
+    if pending and not delivered:
+        listing = "\n".join(f"  - to=\"{p['name']}\" inbox #{p['n']}" for p in pending)
+        raise YamatoError("生きている宛先に SendMessage で届けるはずのメッセージが、まだ読まれていません:\n"
+                          f"{listing}\n"
+                          "SendMessage で届けていなければ今届けてから、届けたなら `seat-stop --delivered` で終業してください")
     lines = len(_handoff(shipdir, seat).read_text(encoding="utf-8").splitlines())
     if lines > HANDOFF_MAX_LINES:
         out(f"注意: handoff.md が {lines} 行ある (目安 {HANDOFF_MAX_LINES} 行)。次のシフトでは上限で切られる。")

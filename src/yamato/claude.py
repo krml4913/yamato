@@ -22,6 +22,7 @@ from .util import YamatoError
 # the CLAUDE_CODE_* ones belong to the calling session, not to the new seat).
 STRIP_ENV = ("GH_TOKEN", "GITHUB_TOKEN", "CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_ENTRYPOINT")
 
+_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 _BG_RE = re.compile(r"backgrounded\s+·\s+([0-9a-f]{8})\b")
 _COPY_RE = re.compile(r"started a copy(?: of that conversation)? as ([0-9a-f]{8})")
 
@@ -38,6 +39,11 @@ def _run(args: list[str], *, cwd: str | None = None, env: dict | None = None, ti
         raise YamatoError(f"claude コマンドが見つかりません ({claude_bin()})") from None
     except subprocess.TimeoutExpired:
         raise YamatoError(f"claude {' '.join(args[:2])} がタイムアウトしました") from None
+
+
+def _output(cp) -> str:
+    """stdout + stderr without ANSI colours (claude colours the id when it thinks it has a tty)."""
+    return _ANSI_RE.sub("", (cp.stdout or "") + (cp.stderr or ""))
 
 
 def seat_env() -> dict:
@@ -137,11 +143,18 @@ def launch(*, cwd: str, name: str, role: str, agents_json: str, model: str,
         "--add-dir", add_dir,
         "--", prompt,
     ]
+    started = time.time()
     cp = _run(args, cwd=cwd, env=seat_env())
-    out = (cp.stdout or "") + (cp.stderr or "")
+    out = _output(cp)
     if "Workspace not trusted" in out:
         raise YamatoError(untrusted_message(Path(cwd)))
     m = _BG_RE.search(out)
+    if cp.returncode == 0 and not m:
+        # the output format changed but a session may be running: adopt it rather than leak it
+        fresh = [a for a in agents() if a.get("name") == name
+                 and (a.get("startedAt") or 0) / 1000 >= started - 5 and a.get("sessionId")]
+        if len(fresh) == 1:
+            return fresh[0]["sessionId"][:8], fresh[0]["sessionId"]
     if cp.returncode != 0 or not m:
         raise YamatoError(f"席の起動に失敗しました (exit {cp.returncode}): {out.strip()}")
     short = m.group(1)
@@ -156,7 +169,7 @@ def launch(*, cwd: str, name: str, role: str, agents_json: str, model: str,
 def resume(session_id: str, prompt: str) -> str:
     """Wake a stopped session under its own id. Raises if Claude started a copy."""
     cp = _run(["--resume", session_id, "--bg", "--", prompt], env=seat_env())
-    out = (cp.stdout or "") + (cp.stderr or "")
+    out = _output(cp)
     copy = _COPY_RE.search(out)
     if copy:
         discard(copy.group(1))

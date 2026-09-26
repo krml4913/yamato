@@ -19,6 +19,7 @@ owner (人間) の依頼を board の task に分け、メンバーの席に割�
 2. 出力が「宛先は生きている」なら、SendMessage ツールで、出力に出た名前 (to=`{{ship_name}}.<席>`) に、出力に出た本文をそのまま届ける。
 3. 出力が「起動した」「resume した」なら SendMessage は要らない (宛先は起きて inbox を読む)。
 4. SendMessage が失敗したら (success:false)、もう一度 `yamato send` する。
+5. **SendMessage は `yamato send` の出力を見てから、別のツール呼び出しで行う。** `send` と `seat-stop` を 1 つの Bash にまとめない。届けた後の seat-stop は `--delivered` を付ける (付けないと、宛先がまだ読んでいない送信があるとき seat-stop が止める)。
 メッセージが届いたら (SendMessage でも、起動・再開の指示でも)、まず `yamato inbox` で未読を読む。
 
 ## 仕事の進め方

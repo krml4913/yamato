@@ -78,6 +78,8 @@ def _parser() -> argparse.ArgumentParser:
     ss.add_argument("ship")
     ss.add_argument("seat")
     ss.add_argument("--after", type=int, default=10, help="何秒後に止めるか")
+    ss.add_argument("--delivered", action="store_true",
+                    help="生きている宛先への SendMessage を済ませた (未読の送信が残っていても終業する)")
 
     h = sub.add_parser("hook", help="(Claude Code の hook から呼ばれる)")
     h.add_argument("event")
@@ -217,7 +219,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd == "send":
             return seat.send(resolve_ship(args.ship), args.seat, args.message, args.sender)
         if args.cmd == "seat-stop":
-            return seat.seat_stop(resolve_ship(args.ship), args.seat, args.after)
+            return seat.seat_stop(resolve_ship(args.ship), args.seat, args.after, args.delivered)
         if args.cmd == "_watchdog":
             return seat.watchdog(Path(args.ship), args.token)
         if args.cmd == "_shift-ended":

@@ -8,6 +8,7 @@ appended to state["calls"] with its argv and a few env vars.
 import json
 import os
 import sys
+import time
 import uuid
 
 path = os.environ["FAKE_CLAUDE_STATE"]
@@ -37,7 +38,8 @@ def find(short):
 def new_session(name):
     sid = str(uuid.uuid4())
     s = {"pid": alive_pid, "id": sid[:8], "sessionId": sid, "name": name, "kind": "background",
-         "status": "idle", "state": "working", "cwd": os.getcwd()}
+         "status": "idle", "state": "working", "cwd": os.getcwd(),
+         "startedAt": int(time.time() * 1000)}
     if mode.get("waitingFor"):
         s["waitingFor"] = mode["waitingFor"]
     st["sessions"].append(s)
@@ -69,14 +71,20 @@ elif "--resume" in argv:
         s["pid"] = alive_pid
         save()
         print(f"note: woke session {sid[:8]} with its saved options (--name, --agent, --settings).")
-        print(f"backgrounded · {s['id']} · {s['name']}")
+        print(f"backgrounded · \x1b[36m{s['id']}\x1b[39m · {s['name']}")
 elif "--bg" in argv:
     if mode.get("untrusted"):
         print("Workspace not trusted. Run `claude` in x once and accept the trust prompt, then retry.")
         sys.exit(1)
     s = new_session(argv[argv.index("--name") + 1])
     save()
-    print(f"backgrounded · {s['id']} · {s['name']}")
+    if mode.get("noid"):
+        print("session started")
+        sys.exit(0)
+    # real claude colours the id when run from inside a Claude session's Bash (E2E run 1)
+    print(f"backgrounded · \x1b[36m{s['id']}\x1b[39m · {s['name']}")
+    print(f"warning: no agent named '{argv[argv.index('--agent') + 1]}' — spawning with default template",
+          file=sys.stderr)
 else:
     print("fake claude: unsupported " + " ".join(argv), file=sys.stderr)
     sys.exit(2)
