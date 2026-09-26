@@ -1,5 +1,7 @@
 # yamato
 
+> 初めての人 (エージェントも) は [docs/handoff.md](docs/handoff.md) から読む (今の状態・読む順番・dogfooding の始め方)。
+
 役割の違う複数の AI エージェントが「艦 (ship)」として協調して仕事を進める、常設チームのためのシステム。
 Claude Code の background session の上に薄く乗る。agent-fleet の後継。
 
