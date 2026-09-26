@@ -167,7 +167,7 @@ owner (人間)
   - `--agents '<json>'`: 役割の定義。艦フォルダの `roles/<role>.md` から `.runtime/agents.json` に生成する (ファイルパス指定は `--print` のときだけなので、JSON 文字列で渡す)。役割プロンプトの `{{yamato}}` などは生成時に置き換える
   - `--add-dir <ship>`: 記録を読み書きできるようにする。`--add-dir` は複数の値を取って後ろのプロンプトまで食うので、プロンプトの前に `--` を置く
   - `--setting-sources project,local`: ユーザー設定 (`~/.claude`) の plugin hooks・言語設定・CLAUDE.md を席に持ち込まない (検証 B Q3)。作業対象の repo の設定は効く
-  - `env -u`: team.yaml の `env_unset` の環境変数を外して起動する (ひな形の既定は `GH_TOKEN` / `GITHUB_TOKEN`)。呼び出し元のセッションの識別子 (`CLAUDE_CODE_SESSION_ID` など) は、新しい席に漏らさないよう常に外す (技術的な理由)
+  - `env -u`: team.yaml の `env_unset` の環境変数を外して起動する (ひな形の既定は `GH_TOKEN` / `GITHUB_TOKEN`)。bg の席には効かないので、同じ名前を席の settings の `env` に空文字で書く (下の検証済み)。呼び出し元のセッションの識別子 (`CLAUDE_CODE_SESSION_ID` など) は、新しい席に漏らさないよう常に外す (技術的な理由)
 - `.runtime/` は `yamato up` のたびに team.yaml から作り直す。settings はパスで渡すので、resume のときにファイルが読み直され、変更が次のシフトから効く (検証 B Q2)。hook は YAML を読まず、`.runtime/team.json` (team.yaml の検証済みの写し) を読む
 - hook のコマンドには、艦の場所と席名を**引数として埋め込む**。環境変数では渡さない。Claude Code の常駐 daemon が環境変数を焼き付ける問題があるため (fleet #315 の教訓)
 - 作業対象の repo 自身の CLAUDE.md と設定は、そのまま効く (上乗せになる)。プロジェクトの規律はそちらが担う
@@ -178,7 +178,7 @@ owner (人間)
 検証済み (v1 の【要検証 P0】の答え):
 - 再開したあとも、`--name --agent --settings --agents --add-dir --model` は引き継がれる。ただし `stop` の直後に `--resume` すると、フラグ抜きのコピーが起動する。**pid が消えるのを待ってから、フルの sessionId で `--resume <id> --bg`** する。短い id だとコピーになる。出力に `started a copy` が出たら失敗として扱い、コピーを止めて消す (検証 A Q2、検証 B Q2)
 - ユーザー設定の hooks は席に漏れる (plugin の hooks が乗ってくる)。`--setting-sources project,local` で外せる (検証 B Q3)
-- 【要検証】`env_unset` が、daemon 経由で起動する席にも効くか (検証 B から未確認。`-p` では効いた、検証 D V1)
+- `env -u` は daemon 経由で起動する bg の席には効かない (席は daemon の環境で動く。e2e-p1 の D)。そこで `env_unset` の名前を席の settings の `env` に空文字で書き出す。席の Bash では空になり、gh は空の `GH_TOKEN` を未設定と同じに扱う (保存した認証だけを使う)。ただし席の claude のプロセス自体の環境には daemon の値が残る (e2e-p1 の追記)。`-p` は `env -u` と settings の両方が効く
 
 使わないもの:
 - **Agent teams (実験機能)**: 1 セッションに 1 チームしか持てず、再開で復元されない。常設チームの土台にならない
@@ -571,7 +571,7 @@ design-p1 には、別の名前で書かれている箇所がある (`ship up / 
 - zellij で窓を開いている席は常駐する (attach で 1h 停止を免れる)。全席を開くか、見たい席だけ開くか
 - fleet からの移行手順 (fleet を引退させる時期と手順)
 - 会話ログ (transcript) を艦フォルダに保存する SessionEnd hook (§8.3)。未実装だが、design-p1 §1.5 の代筆の追跡が前提にしている。headless の席では SessionEnd hook の待ちが 1.5 秒なので、保存はそれに収めるか `timeout` を付ける (design-p1 §4.2)
-- **【要検証】** design-p1 §11 の未確認のうち: サブスクの枠切れのとき、bg の席と `-p` がどうなるか (V5)。SessionStart の `additionalContext` の長さの上限 (V8。検証 C の担当。P0 は約 1 万文字で切られる前提で `inject.limits.total_chars` を 9500 にしている)。bg の席 + Remote Control からの `PushNotification` (V11)。`env_unset` が daemon 経由で起動する席に効くか (§4.1)
+- **【要検証】** design-p1 §11 の未確認のうち: サブスクの枠切れのとき、bg の席と `-p` がどうなるか (V5)。SessionStart の `additionalContext` の長さの上限 (V8。検証 C の担当。P0 は約 1 万文字で切られる前提で `inject.limits.total_chars` を 9500 にしている)。bg の席 + Remote Control からの `PushNotification` (V11)
 
 **P0 の実装と design-p1 で、名前や置き場が食い違っていたもの: 決定済み (leader, 2026-09-26)**
 
