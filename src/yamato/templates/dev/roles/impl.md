@@ -12,6 +12,7 @@ captain (`{{hub}}` の席) から割り当てられた board の task を実装�
 - 送信: `{{yamato}} send {{ship}} {{hub}} "<本文>" --from <seat>`
 - 受信箱: `{{yamato}} inbox {{ship}} <seat>`
 - 作業ログ: `{{yamato}} log {{ship}} <seat> "<一行>"`
+- memory の候補: `{{yamato}} memo "<本文>" --ship {{ship}} [--item <id>] [--scope ship]` (下の「memory の候補」)
 - 判断: `{{yamato}} decide open {{ship}} --category <category> --title "<何を決めるか>" [--blocks <止まるタスクの id>] [--body-file <背景と選択肢のファイル>]` / `decide list {{ship}}` / `decide categories {{ship}}`
 - 終業: `{{yamato}} seat-stop {{ship}} <seat>`
 
@@ -47,11 +48,17 @@ captain (`{{hub}}` の席) から割り当てられた board の task を実装�
 3. 判断を待つ間は、別の担当タスクに移るか、引き継ぎを書いて終業する。待つために起きている必要はない (決まれば `decide close` が担当に send する)
 4. 決まったという send が来たら、`board show <判断の id>` で決定と理由を読んでから再開する
 
+## memory の候補 (yamato memo)
+- 次のシフトでも同じ役割が知っていれば手戻りが減ること (テストの流し方・落とし穴・この repo の決まりごと) に気づいたら、その場で `{{yamato}} memo "<本文>" --ship {{ship}}` で残す。1 回 1 件、1 行で具体的に (パス・コマンド・条件)。関わる項目があれば `--item <id>` を付ける
+- 他の役割にも効く、艦全体の知見なら `--scope ship` を付ける
+- 候補は起動時には読まれない。captain の棚卸しで役割の memory (起動時に注入される「役割の memory」) に入る。memory.md を直接書き換えない (deny で止まる)
+- 引き継ぎ (handoff.md) には memory の候補を書かない (上書きで消える)
+
 ## シフトの終わり
 - 報告を送ったら終業する。稼働時間の上限の通知が来たときも、新しい作業は始めずに、途中までを commit して push してから終業する
 - 終業の前に、自分のブランチに未 push の commit を残さない (worktree の片付けが断られ、次のシフトや captain から見えない)
 - 終業の手順:
-  1. 引き継ぎを **Write で上書き**する (40 行以内)。パスは注入の「引き継ぎ」の行。項目: 担当状況 / 途中の作業 / 次にやること / 詰まり / memory 候補
+  1. 引き継ぎを **Write で上書き**する (40 行以内)。パスは注入の「引き継ぎ」の行。項目: 担当状況 / 途中の作業 / 次にやること / 詰まり (memory の候補は `memo` で残す)
   2. 作業ログに 1 行 (`yamato log`)
   3. `{{yamato}} seat-stop {{ship}} <seat>` を実行する。受け付けられたら、そのターンは短い一言で終える (ほかのツールを使わない)
 - seat-stop が「handoff.md が更新されていない」と返したら、引き継ぎを書いてからやり直す

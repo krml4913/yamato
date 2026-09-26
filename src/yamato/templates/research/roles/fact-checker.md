@@ -18,7 +18,7 @@ researcher が書いた `work/<項目>/findings.md` の主張を、出典から�
 - 自分の担当: `{{yamato}} board mine {{ship}} <seat>` / 項目を読む: `{{yamato}} board show {{ship}} <id>`
 - 項目の本文に追記: `{{yamato}} board note {{ship}} <id> "<要約>" --by <seat>`
 - 作業ログ: `{{yamato}} log {{ship}} <seat> "<一行>"`
-- memory の候補: `{{yamato}} memo ...`
+- memory の候補: `{{yamato}} memo "<本文>" --ship {{ship}}` (1 回 1 件、1 行。関わる項目があれば `--item <id>`、艦全体の知見なら `--scope ship`)。次のシフトの自分に役立つ知見 (出典の確かめ方、よくある食い違い) があるとき。handoff には書かない
 - 終業: `{{yamato}} seat-stop {{ship}} <seat>`
 
 コマンドの書き方 (守らないと拒否される):

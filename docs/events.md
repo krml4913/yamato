@@ -27,7 +27,7 @@
 
 ### 1.2 kind
 
-yamato が書くのは次の kind。定数は `src/yamato/events.py` (`notify_failed`・`report_*`・`worktree_*`・`pr_*` は各モジュールに置く。表に書いた)。
+yamato が書くのは次の kind。定数は `src/yamato/events.py` (`notify_failed`・`report_*`・`worktree_*`・`pr_*`・`memory_*` は各モジュールに置く。表に書いた)。
 
 | kind | 書くところ | seat | item | by | data |
 |---|---|---|---|---|---|
@@ -52,6 +52,9 @@ yamato が書くのは次の kind。定数は `src/yamato/events.py` (`notify_fa
 | `pr_merge` | `pr merge` が merge したとき。既に merge されていて記録しただけのときも書く (`alreadyMerged: true`)。定数は `pr.PR_MERGE` | 項目の担当 | 項目 | 呼び出し元 | `pr`、`strategy`、`mergedBy` (= `by`。項目の `merged_by` と同じ)、`alreadyMerged` |
 | `pr_merge_failed` | `pr merge` が merge しなかったとき。`git.merge_requires` を満たさず断ったときは `unmet` に理由が入る。gh の失敗もここ | 項目の担当 (項目が無ければ null) | 項目 | 呼び出し元 | `reason`、`pr`、`unmet` (断ったときだけ。理由ごとに 1 行、300 文字まで) |
 | `pr_conflict` | `pr merge` のあと、他の開いている PR の衝突を見つけたとき。衝突の有無が分からなかった (UNKNOWN) ときは書かない。定数は `pr.PR_CONFLICT` | 衝突した項目の担当 | **衝突した項目** | merge した呼び出し元 | `pr` (衝突した PR)、`mergedItem`、`mergedPr` (merge した方)、`mergedBy`、`column` (`rebase` に動かしたとき)、`notified` (知らせた宛先。誰にも知らせなかったときは無い) |
+| `memory_migrate` | P0 の `seats/<seat>/memory.md` を `roles/<role>/memory.md` に移したとき (`memory migrate`・注入の前) | 元の席 | ― | ― | `role`、`lines`、`kept` (元のファイルを残した場所) |
+| `memory_curate` | `memory curate` の棚卸しのシフトが終わったとき (案を作った・時間切れ・異常)。定数は `memory.MEMORY_CURATE` | ― | ― | ― | `role`、`outcome` (`正常` / `時間切れ` / `異常`)、`sessionId`、案を作ったときは `plus`・`minus`・`candidates`・`over` (上限超え)、異常のときは `exitCode`・`failures` |
+| `memory_apply` | `memory apply` が反映したとき (上限で断ったときは書かない)。定数は `memory.MEMORY_APPLY`。`memory status` の「前回の棚卸し」はこの行の時刻 | ― | ― | 呼び出し元 (`--by`、無ければ席、無ければ `owner`) | `role` (knowledge.md は null)、`lines`、`bytes`、`plus`、`minus`、`candidates` (処理した候補)、`archived` (外れた行)、`knowledge` (knowledge-inbox に回した数) |
 | `decision_open` | `decide open` | decider | 判断の id | 開いた席 (呼び出し元) | `category`、`decider`、`blocks` (blocked にしたタスク)、`links`、`urgent`、`due`、`supersedes` |
 | `decision_close` | `decide close` | decider | 判断の id | 閉じた席 (呼び出し元) | `decider`、`closed_by`、`on_behalf_of` (`--by`)、`by_decider` (false = decider 以外が閉じた。日報の「異常」の材料)、`choice`、`reason`、`was_blocking` (止めていたタスク)、`unblocked` (止まりが解けたタスク) |
 

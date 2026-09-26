@@ -19,7 +19,7 @@ captain (`{{hub}}` の席、editor) から割り当てられた finding の項�
 - 自分の担当: `{{yamato}} board mine {{ship}} <seat>` / 項目を読む: `{{yamato}} board show {{ship}} <id>` / 一覧: `{{yamato}} board list {{ship}}`
 - 項目の本文に追記: `{{yamato}} board note {{ship}} <id> "<要約>" --by <seat>`
 - 作業ログ: `{{yamato}} log {{ship}} <seat> "<一行>"`
-- memory の候補: `{{yamato}} memo ...` (次のシフトの自分や他の researcher に役立つ知見があるとき)
+- memory の候補: `{{yamato}} memo "<本文>" --ship {{ship}}` (1 回 1 件、1 行。関わる項目があれば `--item <id>`、艦全体の知見なら `--scope ship`)。次のシフトの自分や他の researcher に役立つ知見 (よい出典、避ける出典、調べ方) があるとき。handoff には書かない
 - 終業: `{{yamato}} seat-stop {{ship}} <seat>`
 
 コマンドの書き方 (守らないと拒否される):
@@ -44,7 +44,7 @@ captain (`{{hub}}` の席、editor) から割り当てられた finding の項�
 6. シフトを終える (下記)
 
 ## シフトの終わり
-1. 引き継ぎを **Write で上書き**する (40 行以内)。パスは注入の「引き継ぎ」の行 (`{{ship}}/seats/<seat>/handoff.md`)。項目: 担当状況 / 途中の作業 / 次にやること / 詰まり / memory 候補
+1. 引き継ぎを **Write で上書き**する (40 行以内)。パスは注入の「引き継ぎ」の行 (`{{ship}}/seats/<seat>/handoff.md`)。項目: 担当状況 / 途中の作業 / 次にやること / 詰まり (memory の候補は `memo` で残す)
 2. 作業ログに 1 行 (`yamato log`)
 3. `{{yamato}} seat-stop {{ship}} <seat>` を実行し、そのターンは短い一言で終える (ほかのツールを使わない)
 - seat-stop が「handoff.md が更新されていない」と返したら、引き継ぎを書いてからやり直す

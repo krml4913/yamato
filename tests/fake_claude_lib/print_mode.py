@@ -13,6 +13,7 @@ Modes (state["mode"]):
   p_no_result: exit 1 without a result line
   p_seat_stop: write handoff.md and run ``yamato seat-stop`` like a seat that finishes properly
   p_inbox_once: on the first -p only, append this text to the seat's inbox (mail during the shift)
+  p_result: the final response text (the memory curate shift's proposal)
 """
 import json
 import os
@@ -98,7 +99,7 @@ def run(argv, mode):
     status = mode.get("p_api_error")
     _emit({"type": "result", "subtype": "success", "is_error": bool(status), "api_error_status": status,
            "terminal_reason": "api_error" if status else "completed",
-           "result": "API Error: Rate limit reached" if status else RESULT_TEXT,
+           "result": "API Error: Rate limit reached" if status else (mode.get("p_result") or RESULT_TEXT),
            "num_turns": 3, "duration_ms": 1234, "total_cost_usd": 0.0 if status else 0.0421,
            "usage": {"input_tokens": 10, "output_tokens": 20, "cache_creation_input_tokens": 300,
                      "cache_read_input_tokens": 4000},

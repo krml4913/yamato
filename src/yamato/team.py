@@ -14,7 +14,7 @@ SHIFTS = ("per_task", "persistent", "headless")
 STATES = ("open", "active", "blocked", "done")
 TOP_KEYS = {"name", "hub", "workspace", "charter", "roles", "time_limit", "grace", "deny", "board",
             "settings", "seat_stop", "env_unset", "inject", "notify", "git", "report", "decisions",
-            "watch", "talk_default", "profiles"}
+            "watch", "talk_default", "profiles", "memory"}
 # what SessionStart can inject (design §8.2); the header is always there
 INJECT_PARTS = ("handoff", "log_tail", "mine", "inbox", "memory", "knowledge", "last_report")
 # what a ship that names no parts gets: the captain's report excerpt (design-p1 §2.3) is opt-in
@@ -267,6 +267,7 @@ def validate(data: dict, shipdir: Path) -> dict:
         "report": {"daily": daily},
         "watch": {"stale_after": stale_after},
         "talk_default": talk_default,
+        "memory": _memory(data.get("memory"), roles),
         "warnings": warnings,
     }
 
@@ -325,6 +326,13 @@ def profile_of(team: dict, role: str) -> dict | None:
     """The trust profile of ``role`` (None when the role names none, or a team.json from before P1)."""
     trust = (team["roles"].get(role) or {}).get("trust")
     return (team.get("profiles") or {}).get(trust) if trust else None
+
+
+def _memory(raw, roles: dict) -> dict:
+    """``memory:`` (design-p1 §3). Lives with the commands in memory.py."""
+    from .memory import validate_conf
+
+    return validate_conf(raw, roles)
 
 
 def _decisions(table, seats: dict) -> dict:

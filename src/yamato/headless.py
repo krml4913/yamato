@@ -352,13 +352,14 @@ def _watch(shipdir: Path, seat: str, proc, role: dict, started: float, no: int, 
     return killed, kill_reason
 
 
-def _failures(stream: _Stream, rc, killed, launch_error) -> list[tuple[str, str]]:
-    """[(what, detail)]: ``what`` goes into the report, ``detail`` (may quote Claude's text) only into records."""
+def _failures(stream: _Stream, rc, killed, launch_error, need_hook: bool = True) -> list[tuple[str, str]]:
+    """[(what, detail)]: ``what`` goes into the report, ``detail`` (may quote Claude's text) only into records.
+    ``need_hook=False``: a run without seat hooks (the memory curate shift, design-p1 §3.3)."""
     if launch_error:
         return [("起動できない", launch_error)]
     out = []
     # a run stopped before it got going says nothing about the hook
-    if not stream.hook_ok and (stream.init or not killed):
+    if need_hook and not stream.hook_ok and (stream.init or not killed):
         out.append(("SessionStart hook なし",
                     "SessionStart hook が走った印 (hook_response) がない。--bare 化などで記録を読まずに働いた可能性"))
     res = stream.result

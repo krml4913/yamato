@@ -74,6 +74,13 @@ deny:
   - "Write(/{{ship}}/seats/*/inbox.*)"
   - "Edit(/{{ship}}/decisions/**)"
   - "Write(/{{ship}}/decisions/**)"
+  # memory 本体は yamato memory apply だけが書く (案の memory.proposed.md・knowledge.proposed.md は直してよい)
+  - "Edit(/{{ship}}/roles/*/memory.md)"
+  - "Write(/{{ship}}/roles/*/memory.md)"
+  - "Edit(/{{ship}}/roles/*/memory-archive.md)"
+  - "Write(/{{ship}}/roles/*/memory-archive.md)"
+  - "Edit(/{{ship}}/knowledge.md)"
+  - "Write(/{{ship}}/knowledge.md)"
 
 # 席を起動するときに外す環境変数 (席に gh の権限を渡さない)。gh を使わせる艦は消してよい
 env_unset: [GH_TOKEN, GITHUB_TOKEN]
@@ -103,7 +110,7 @@ inject:
   parts: [handoff, log_tail, mine, inbox, memory, knowledge]
   limits:
     handoff: [40, 2000]      # [行数, 文字数]
-    memory: [40, 1500]
+    memory: [40, 1500]       # 役割の memory (roles/<役割>/memory.md)。全文はパスを示して読ませる
     knowledge: [60, 1500]
     log_tail: [20, 1200]     # 前のシフトが引き継ぎなしで終わったときの作業ログの末尾
     mine_items: 15
@@ -111,6 +118,22 @@ inject:
     inbox_chars: 400         # 1 通あたり
     total_chars: 9500        # 全体 (Claude Code の hook 出力は約 1 万文字で切られる)
     last_report: [30, 1500]  # 前回の日報の 3 節 (inject に last_report を入れた役割だけ)
+
+# memory の棚卸し (design-p1 §3)。役割の memory は roles/<役割>/memory.md (同じ役割の席で共有)
+#   候補: 席が `yamato memo "<本文>"` で seats/<席>/memory-inbox.md に溜める (起動時には読まない)
+#   案:   `yamato memory curate <ship> [<役割>]` が役割ごとに headless のシフト (claude -p 1 回) を走らせ、
+#         roles/<役割>/memory.proposed.md に置く。シフトの役割プロンプトは roles/_memory-curator.md
+#   反映: `yamato memory apply <ship> <役割>` (knowledge.md は --knowledge)。誰が打つかはコードは検査しない
+memory:
+  applier: pm                # 反映を打つ役割 (省略時は hub)。この役割のその日の最初のシフトに memory status が注入される
+  curate_every: 7d           # 前回の反映からこの日数が経ったら棚卸しの目安 (memory status に出るだけ。自動では走らない)
+  curate_at: 30              # 候補がこの件数に達したら棚卸しの目安
+  max_duration: 15m          # 棚卸しのシフト 1 回の上限
+  limits:                    # 超える案は memory apply が反映を拒否する。手で編集して超えたら注入で切って警告する
+    memory_lines: 80
+    memory_bytes: 8192
+    knowledge_lines: 120
+    knowledge_bytes: 12288
 
 # owner 宛ての send (`yamato send <ship> owner "..."`) の通知経路 (design-p1 §2.4)。
 # via に並べた方式すべてに送る (複数可)。どれかが失敗しても他は送り、失敗は events.jsonl (notify_failed) に残る。

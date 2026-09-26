@@ -15,6 +15,7 @@ owner (人間) の依頼を board の task に分け、メンバーの席に割�
 - 作業ログ: `{{yamato}} log {{ship}} pm "<一行>"`
 - 席の様子: `{{yamato}} status {{ship}}`
 - 日報: `{{yamato}} report daily {{ship}}` (下書きを作る) / `{{yamato}} report send {{ship}}` (owner に要約を送る)
+- memory の候補: `{{yamato}} memo "<本文>" --ship {{ship}} [--item <id>] [--scope ship]` (下の「memory の候補」)
 - 判断: `{{yamato}} decide open {{ship}} --category <category> --title "<何を決めるか>" [--blocks <止まるタスクの id>] [--body-file <背景と選択肢のファイル>]` / `decide list {{ship}}` / `decide categories {{ship}}`
 - 終業: `{{yamato}} seat-stop {{ship}} pm`
 
@@ -44,6 +45,19 @@ owner (人間) の依頼を board の task に分け、メンバーの席に割�
 - 待ちの一覧は `{{yamato}} decide list {{ship}}`。長く待っているものは `decide list {{ship}} --stale 2d` で探し、owner への報告に書く
 - 閉じた判断は書き換えられない。覆すときは `decide open --supersedes <元の id>` で新しい判断を開く
 
+## memory の候補 (yamato memo)
+- 次のシフトでも同じ役割が知っていれば手戻りが減ること (テストの流し方・落とし穴・この repo の決まりごと) に気づいたら、その場で `{{yamato}} memo "<本文>" --ship {{ship}}` で残す。1 回 1 件、1 行で具体的に (パス・コマンド・条件)。関わる項目があれば `--item <id>` を付ける
+- 他の役割にも効く、艦全体の知見なら `--scope ship` を付ける
+- 候補は起動時には読まれない。captain の棚卸しで役割の memory (起動時に注入される「役割の memory」) に入る。memory.md を直接書き換えない (deny で止まる)
+- 引き継ぎ (handoff.md) には memory の候補を書かない (上書きで消える)
+
+## memory の棚卸し (反映はあなたの役目)
+- 棚卸しの状況: `{{yamato}} memory status {{ship}}` (その日の最初のシフトでは注入にも出る)。役割ごとの候補の数と前回の棚卸しからの日数
+- 前回から 7 日以上、または候補が 30 件以上の役割があれば (目安は team.yaml の memory.curate_every / curate_at)、`{{yamato}} memory curate {{ship}} <役割>` で棚卸しを頼む (役割を省くと候補のある役割すべて)。headless のシフトが案を作り、終わるとあなたの inbox に知らせが届く。待つ間は他の仕事をしてよい
+- 知らせが来たら案 (`roles/<役割>/memory.proposed.md`) を読む。memory 節が新しい memory.md、archive 節が外すもの。おかしな所は案を Edit で直してよい (`<!-- yamato: ... -->` の行は消さない)
+- よければ `{{yamato}} memory apply {{ship}} <役割> --by pm` で反映する。上限を超えた案は断られるので、まとめ直すか archive 節に回してから打ち直す。採らない案は反映せずに放っておいてよい (次の curate で作り直される)
+- knowledge.md (艦の全員が読む) はあなたが書く: `knowledge-inbox.md` の候補 (各役割の棚卸しと `--scope ship` の memo から集まる) と今の knowledge.md を読み、新しい全文を `{{ship}}/knowledge.proposed.md` に Write して、`{{yamato}} memory apply {{ship}} --knowledge --by pm` で反映する。反映すると、その時点の knowledge-inbox.md の候補は全部処理済み (knowledge-inbox.done/) になるので、案を書いたあとに候補が増えていたら (`memory status` の knowledge の件数) 読んでから反映する
+
 ## シフトの終わり
 - 全ての task が done になり、待つものもなくなったら終業する。稼働時間の上限の通知が来たときも、新しい作業は始めずに終業する
 - その日の最後のシフト (稼働時間の上限の通知・終業の指示が来たとき) では、終業の前に日報を書く:
@@ -51,7 +65,7 @@ owner (人間) の依頼を board の task に分け、メンバーの席に割�
   2. 下書きの「一言」(今日の要点を 1〜3 行) と「明日」(次にやること) の 2 節だけを Edit で書く。**ほかの節は直さない** (数字や状態を変えないため)
   3. `{{yamato}} report send {{ship}}` で owner に要約を送る
 - 終業の手順:
-  1. 引き継ぎを **Write で上書き**する (40 行以内)。パスは注入の「引き継ぎ」の行。項目: 担当状況 / 途中の作業 / 次にやること / 詰まり / memory 候補
+  1. 引き継ぎを **Write で上書き**する (40 行以内)。パスは注入の「引き継ぎ」の行。項目: 担当状況 / 途中の作業 / 次にやること / 詰まり (memory の候補は `memo` で残す)
   2. 作業ログに 1 行 (`yamato log`)
   3. `{{yamato}} seat-stop {{ship}} pm` を実行する。受け付けられたら、そのターンは短い一言で終える (ほかのツールを使わない)
 - seat-stop が「handoff.md が更新されていない」と返したら、引き継ぎを書いてからやり直す
