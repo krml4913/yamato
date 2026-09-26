@@ -22,6 +22,7 @@ from .util import ship_lock
 BOARD_ADD = "board_add"
 BOARD_SET = "board_set"
 BOARD_ARCHIVE = "board_archive"
+BOARD_NOTE = "board_note"           # P1-10 (design-p1 §7.2)
 SEND = "send"
 SHIFT_START = "shift_start"
 SHIFT_END = "shift_end"

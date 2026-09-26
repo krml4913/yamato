@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -18,9 +19,9 @@ def _parser() -> argparse.ArgumentParser:
     ship_sub = ship.add_subparsers(dest="ship_cmd", required=True)
     c = ship_sub.add_parser("create", help="ひな形から艦フォルダを作る")
     c.add_argument("name")
-    c.add_argument("--workspace", required=True, help="席の作業ディレクトリ (作業対象の repo)")
+    c.add_argument("--workspace", help="席の作業ディレクトリ (作業対象の repo)。repo の無いひな形 (research) では省く")
     c.add_argument("--path", help="艦フォルダの場所 (既定 ~/yamato/<name>)")
-    c.add_argument("--template", default="dev")
+    c.add_argument("--template", default="dev", help="dev (開発艦) / research (調査艦)")
 
     u = sub.add_parser("up", help="captain の席を起動し、稼働時間の上限を設定する")
     u.add_argument("ship")
@@ -64,6 +65,11 @@ def _parser() -> argparse.ArgumentParser:
     bset.add_argument("fields", nargs="*", help="key=value")
     bset.add_argument("--note")
     bset.add_argument("--by")
+    bn = bs.add_parser("note", help="項目の本文に追記する (frontmatter は変えない)")
+    bn.add_argument("ship")
+    bn.add_argument("id")
+    bn.add_argument("text")
+    bn.add_argument("--by", help="書き手の席名 (省略時は呼び出した席)")
     bsh = bs.add_parser("show", help="項目を表示する")
     bsh.add_argument("ship")
     bsh.add_argument("id")
@@ -144,6 +150,12 @@ def _board(args) -> int:
         meta = brd.set(args.id, bmod.parse_assignments(args.fields), note=args.note, by=args.by)
         where = " (archive へ移動)" if meta.get("state") == "done" else ""
         print(f"更新: {bmod.format_item(meta)}{where}")
+    elif args.board_cmd == "note":
+        from . import roster
+
+        by = args.by or roster.seat_of_session(shipdir, os.environ.get("CLAUDE_CODE_SESSION_ID"))
+        meta = brd.note(args.id, args.text, by=by)
+        print(f"追記: {meta['id']} {meta.get('title')}")
     elif args.board_cmd == "show":
         _, _, path = brd.read(args.id)
         print(path.read_text(encoding="utf-8"), end="")

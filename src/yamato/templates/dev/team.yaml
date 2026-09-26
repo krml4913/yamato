@@ -14,6 +14,7 @@ roles:
     model: opus
     shift: persistent
     description: captain。owner の依頼を board の task に分けて席に割り振り、成果を確認して回収する
+    remote_control: true     # この席だけ --remote-control を付けて起こす (スマホから話せる席を captain に絞る。design-p1 §1.5)
     inject: [handoff, log_tail, mine, last_report, inbox, memory, knowledge]   # last_report: 前回の日報の「一言」「owner の判断待ち」「明日」
   impl:
     model: sonnet
@@ -27,6 +28,7 @@ roles:
   #   max_duration: 30m        # 1 シフトの上限 (艦の deadline + grace と早い方で止める)
   #   max_budget_usd: 1.0      # 書いたときだけ --max-budget-usd を付ける (既定は掛けない)
   #   report_to: pm            # シフト終了の定型文の報告先 (省略時は hub)
+  #   trust: external          # 下の profiles の名前。外を読む役割の組み方は research のひな形 (design-p1 §7.2) を参照
   #   description: 調査担当
 
 # yamato status / ships で赤く出す目安 (design-p1 §5.2)。生きているのに最後に動いてからこれより長い席
@@ -80,6 +82,15 @@ env_unset: [GH_TOKEN, GITHUB_TOKEN]
 settings:
   worktree:
     bgIsolation: none        # 席は workspace を共有し、自動 worktree を作らない (repo がない艦では yamato が常に none にする)
+  remoteControlAtStartup: false   # 席を Remote Control につながない。つなぐ席は roles.<role>.remote_control: true (検証 D V10)
+
+# trust のプロファイル (design-p1 §7.2)。役割の trust: <名前> で選ぶ。書いたものが席の settings と役割の定義に入る
+#   mode   permissions.defaultMode (省略時は auto)
+#   tools  役割が使えるツールの一覧 (省略時は制限なし)
+#   allow / deny  席の settings の permissions に足すルール。{{ship}} / {{yamato}} / {{seat}} が置き換わる
+#   send   false にすると、その席からの yamato send を断る
+# 開発艦の既定では使わない。外を読む役割を置くなら research のひな形の profiles.external を写す
+profiles: {}
 
 # seat-stop が終業前に確かめること
 seat_stop:

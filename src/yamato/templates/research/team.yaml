@@ -1,0 +1,167 @@
+# yamato の艦の定義 (research ひな形: 調査艦)。書式は docs/design.md §5、docs/design-p1.md §7 と README を参照
+# repo の無い艦。席の作業ディレクトリは艦フォルダ自身で、成果物は work/<項目>/ と reports/ に置く
+name: {{name}}
+hub: editor                  # captain を務める役割
+workspace: .                 # 艦フォルダ自身 (repo なし。自動 worktree は作らない)
+charter: charter.md
+
+talk_default: editor         # yamato talk <ship> で席を省いたときに attach する席
+
+time_limit: 3h               # yamato up からの稼働時間 (up --for で上書き)
+grace: 20m                   # 終業の指示から強制停止までの猶予
+
+# 外を読む役割 (researcher, fact-checker) と権限のある役割 (editor) を分ける (design-p1 §7.2)。
+# 外部の文章に仕込まれた指示に乗っ取られても何もできない席にだけ Web を読ませる
+roles:
+  editor:
+    model: opus
+    shift: persistent
+    trust: clean
+    remote_control: true     # この席だけ --remote-control を付けて起こす (スマホから話せる席を captain に絞る)
+    inject: [handoff, log_tail, mine, last_report, inbox, memory, knowledge]
+    description: captain。owner の問いを項目に分けて調査を割り振り、確認を経た成果を報告書にまとめる。Web は読まない
+  researcher:
+    model: sonnet
+    shift: headless          # 1 シフト = claude -p 1 回 (design-p1 §4)
+    count: 3                 # 席は researcher-1, researcher-2, researcher-3
+    trust: external
+    max_duration: 40m
+    description: 調査担当。割り当てられた finding の項目を Web で調べ、主張ごとに出典を付けて work/<項目>/findings.md に書く
+  fact-checker:
+    model: opus
+    shift: headless
+    trust: external
+    max_duration: 30m
+    description: 確認担当。findings.md の主張を出典から読み直し、主張ごとの判定を work/<項目>/check.md に書く
+
+# trust のプロファイル (design-p1 §7.2)。役割の trust: <名前> で選ぶ。yamato は書いたとおりに
+#   mode        -> 席の settings の permissions.defaultMode (省略時は auto)
+#   tools       -> 役割の定義の tools (使えるツールの一覧。省略時は制限なし)
+#   allow/deny  -> 席の settings の permissions.allow / deny (最上位の deny にも足される)
+#   send: false -> その席からの yamato send を断る (コードが強制する)
+# を作るだけで、external / clean の中身は知らない。以下は既定値で、艦ごとに変えてよい
+#
+# 規則の中の {{ship}} は艦フォルダ、{{yamato}} は yamato のコマンド、{{seat}} は席の名前に置き換わる。
+# 絶対パスは /{{ship}}/... と書く (// 始まりになる。/ 始まりは作業ディレクトリ相対。検証 D V1)
+profiles:
+  external:
+    # dontAsk: allow に無い操作は全部 deny (検証 D V7)。auto にすると allow で絞っても他の Bash
+    # (curl・python3 など) が classifier に通されるので、外を読む役割は auto にしない
+    mode: dontAsk
+    tools: [Read, Grep, Glob, Write, Edit, Bash, WebFetch, WebSearch]
+    # dontAsk は ask ではなく deny なので、ここに無い正当な操作で席が止まる。役割プロンプトに書いたコマンドは
+    # 全部ここで通すこと (ひな形のテストで確かめている)。$VAR の展開は書かない (展開を含む Bash は allow でも拒否される)
+    # read-only のコマンド (ls・cat・grep など) は allow なしで通る。seat-stop は yamato が常に allow する
+    allow:
+      - "WebFetch"
+      - "WebSearch"
+      - "Bash({{yamato}} inbox {{ship}} {{seat}}*)"
+      - "Bash({{yamato}} board mine {{ship}} {{seat}}*)"
+      - "Bash({{yamato}} board show {{ship}} *)"
+      - "Bash({{yamato}} board list {{ship}}*)"
+      - "Bash({{yamato}} board note {{ship}} *)"     # 本文への追記だけ。state・assignee は変えられない
+      - "Bash({{yamato}} log {{ship}} {{seat}} *)"
+      - "Bash({{yamato}} memo *)"                     # memory の候補 (design-p1 §3)
+      - "Write(/{{ship}}/work/**)"                      # 成果物の置き場
+      - "Edit(/{{ship}}/work/**)"
+      - "Write(/{{ship}}/seats/{{seat}}/handoff.md)"    # 自分の引き継ぎ
+      - "Edit(/{{ship}}/seats/{{seat}}/handoff.md)"
+    deny:
+      # 秘密を読ませない (Read の deny は Bash の cat・grep にも効く。検証 D V7)。WebFetch は URL に載せて外に送れる
+      - "Read(~/.ssh/**)"
+      - "Read(~/.aws/**)"
+      - "Read(~/.config/gh/**)"
+      - "Read(~/.netrc)"
+      - "Read(~/.claude.json)"
+      - "Read(**/.env)"
+    send: false              # 終わりの報告は yamato が定型文で editor に送る (design-p1 §4.2)
+  clean:
+    # 外部の文章を読まない。モードは既定の auto (最上位の deny つき)
+    deny:
+      - "WebFetch"
+      - "WebSearch"
+
+# 全席の permissions.deny (無人の席にやらせない操作)。艦ごとに自由に変えてよい
+deny:
+  # 席の出入りは yamato を通す (自分を止めるのは seat-stop だけ)
+  - "Bash(claude stop*)"
+  - "Bash(claude rm*)"
+  - "Bash(claude --resume*)"
+  - "Edit(.claude/**)"
+  - "Write(.claude/**)"
+  # 役割プロンプトと艦の定義は owner が手で直す (仕込まれた文章で席の指示を書き換えさせない)
+  - "Edit(/{{ship}}/roles/**)"
+  - "Write(/{{ship}}/roles/**)"
+  - "Edit(/{{ship}}/charter.md)"
+  - "Write(/{{ship}}/charter.md)"
+  # yamato のコマンドだけが書く記録
+  - "Edit(/{{ship}}/team.yaml)"
+  - "Write(/{{ship}}/team.yaml)"
+  - "Edit(/{{ship}}/roster.json)"
+  - "Write(/{{ship}}/roster.json)"
+  - "Edit(/{{ship}}/usage.jsonl)"
+  - "Write(/{{ship}}/usage.jsonl)"
+  - "Edit(/{{ship}}/events.jsonl)"
+  - "Write(/{{ship}}/events.jsonl)"
+  - "Edit(/{{ship}}/.runtime/**)"
+  - "Write(/{{ship}}/.runtime/**)"
+  - "Edit(/{{ship}}/seats/*/inbox.*)"
+  - "Write(/{{ship}}/seats/*/inbox.*)"
+  - "Edit(/{{ship}}/decisions/**)"
+  - "Write(/{{ship}}/decisions/**)"
+
+# 席を起動するときに外す環境変数 (秘密を席の環境に置かない)
+env_unset: [GH_TOKEN, GITHUB_TOKEN]
+
+# 全席の settings.json に重ねる中身
+settings:
+  remoteControlAtStartup: false   # 席を Remote Control につながない。つなぐ席は roles.<role>.remote_control: true (検証 D V10)
+
+watch:
+  stale_after: 20m
+
+seat_stop:
+  require_handoff: true
+  require_delivery: true
+
+inject:
+  parts: [handoff, log_tail, mine, inbox, memory, knowledge]
+  limits:
+    handoff: [40, 2000]
+    memory: [40, 1500]
+    knowledge: [60, 1500]
+    log_tail: [20, 1200]
+    mine_items: 15
+    inbox_messages: 10
+    inbox_chars: 400
+    total_chars: 9500
+    last_report: [30, 1500]
+
+# owner 宛ての通知経路 (design-p1 §2.4)。書き方は dev のひな形と同じ
+notify:
+  via: []                    # 例: [slack, mac]
+  slack:
+    webhook_env: YAMATO_SLACK_WEBHOOK
+  decisions: digest
+
+# 判断 (yamato decide) の種類と決める人 (design-p1 §1.4)。decider は席の名前か owner (人間)
+# publish の decider は艦ごとに決める (owner の決定 Q6)。既定の owner なら「外部の文章 → 艦の外に出す操作」の
+# 経路に必ず人間が 1 回入る。editor にした艦ではこの網が外れる (承知で選ぶ)
+decisions:
+  publish:      { decider: owner,  when: "成果物を艦の外に出す (共有、公開、他の repo への書き込み)" }
+  scope_change: { decider: owner,  when: "問いや charter の範囲を変える" }
+  default:      { decider: editor }
+
+report:
+  daily: on_down
+
+board:
+  archive_on_done: true
+  columns:
+    - { name: question, state: open }
+    - { name: research, state: active }
+    - { name: check,    state: active }
+    - { name: edit,     state: active }
+    - { name: done,     state: done }
+  kinds: [question, finding, report]   # 最初の値が board add の既定
+  fields: [rework, topic]              # 目安: rework (差し戻しの回数)、topic (報告書の名前)
