@@ -47,16 +47,21 @@ def stale_after(team: dict) -> int:
 
 
 def red_flags(team: dict, rec: dict, live: dict | None, now: float) -> list[str]:
-    """Why a seat shows red: a live seat idle for longer than ``watch.stale_after``,
-    one waiting on a permission prompt, or one whose API call failed (``state: failed``,
-    verify-p1-d V5). A stopped seat is not red."""
+    """Why a seat shows red: a live seat idle for longer than ``watch.stale_after``, one
+    waiting on an open prompt (``status: waiting``), one whose last words ask something of
+    a human (``state: blocked`` while idle), or one whose API call failed (``state: failed``,
+    verify-p1-d V5). A stopped seat is not red: liveness is the pid, never ``state``
+    (verify-p0-c Q5). ``blocked`` while ``busy`` is a seat waiting on its Monitor: normal."""
     if not claude.is_alive(live):
         return []
     flags = []
     waiting = str(live.get("waitingFor") or "")
-    if "permission" in waiting:
-        flags.append(f"詰まり: 権限の確認で止まっている (waitingFor: {waiting})")
-    if live.get("state") == "failed":
+    status, state = live.get("status"), live.get("state")
+    if status == "waiting" or waiting:
+        flags.append(f"詰まり: {waiting or '何か'} で止まっている (status: waiting, waitingFor: {waiting or '-'})")
+    elif state == "blocked" and status != "busy":
+        flags.append("人間の返事待ちの疑い (state: blocked。最後の発言が質問か「できなかった」の報告)")
+    if state == "failed":
         flags.append("API エラー (state: failed)")
     last = seat._last_active(rec)
     limit = stale_after(team)

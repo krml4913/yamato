@@ -136,6 +136,7 @@ def start_new_shift(shipdir: Path, team: dict, seat: str, rotated: list[str] | N
         # in a worktree already: Claude Code must not cut another one from it (bgIsolation: none)
         settings = runtime.write_cwd_settings(shipdir, team, seat)
     name = session_name(team, seat)
+    started = time.time()
     short, full = claude.launch(
         cwd=str(workspace), name=name, role=spec["role"],
         agents_json=runtime.agents_path(shipdir).read_text(encoding="utf-8"),
@@ -143,6 +144,7 @@ def start_new_shift(shipdir: Path, team: dict, seat: str, rotated: list[str] | N
         add_dir=str(shipdir), prompt=_first_prompt(shipdir, seat), env_unset=team.get("env_unset") or (),
         remote_control=bool(team["roles"][spec["role"]].get("remote_control")),
     )
+    _check_started(shipdir, seat, short, full, started, "new")
     if cwd:
         roster.update(shipdir, seat, nextCwd=None)
     rec = roster.start_shift(shipdir, seat, session_id=full, short_id=short, session_name=name, how="new",
@@ -158,13 +160,32 @@ def resume_shift(shipdir: Path, team: dict, seat: str, rec: dict, reason: str = 
     # resume right after stop starts a flagless copy: wait for the pid to vanish (verify-p0-b Q2)
     if not claude.wait_gone(sid, timeout=30):
         raise YamatoError(f"席 {seat} の前のプロセスがまだ残っているので resume できません ({sid})")
+    started = time.time()
     claude.resume(sid, _resume_prompt(shipdir, seat, reason), env_unset=team.get("env_unset") or (),
                   cwd=team["workspace"])
+    _check_started(shipdir, seat, rec.get("shortId") or sid[:8], sid, started, "resume")
     new = roster.start_shift(shipdir, seat, session_id=sid, short_id=rec.get("shortId") or sid[:8],
                              session_name=session_name(team, seat), how="resume")
     clear_pending(shipdir, seat)
     append_log(shipdir, seat, f"シフト開始 #{new['shiftNo']} (resume) session={sid}")
     return new
+
+
+def _check_started(shipdir: Path, seat: str, short: str, sid: str, started: float, how: str) -> None:
+    """``claude --bg`` / ``--resume`` exit 0 even when the worker dies before init (verify-p0-c
+    Q5): the listing decides. A failure is recorded (roster ``launchFailed``, events
+    ``launch_failed``), a session left running is stopped, and the caller gets the error."""
+    why = claude.started_failure(sid, started)
+    if why is None:
+        return
+    if claude.is_alive(claude.find(sid)):
+        claude.stop(short)   # it would run outside the roster, and outside the time limit
+    roster.update(shipdir, seat, launchFailed={"at": time.time(), "how": how, "sessionId": sid, "reason": why})
+    events.emit(shipdir, events.LAUNCH_FAILED, seat=seat, summary=f"席 {seat} の起動に失敗 ({how}): {why}",
+                data={"how": how, "sessionId": sid, "reason": why})
+    append_log(shipdir, seat, f"起動に失敗 ({how}) session={sid}: {why}")
+    raise YamatoError(f"席 {seat} の起動に失敗しました ({how}, session {short}): {why}。"
+                      f"`claude agents --all` で確かめる")
 
 
 def wake(shipdir: Path, team: dict, seat: str, reason: str = "send") -> tuple[str, dict]:
@@ -384,7 +405,10 @@ def send(shipdir: Path, seat: str, text: str, sender: str, cwd: str | None = Non
             out(deadline.WRAP_UP_MESSAGE.format(yamato=y, ship=shipdir, seat=sender))
         return 0
 
-    what, rec = wake(shipdir, team, seat)
+    try:
+        what, rec = wake(shipdir, team, seat)
+    except YamatoError as e:
+        raise YamatoError(f"{e}\n  メッセージは inbox に記録済み ({seat} #{entry['n']})。次に席が起きたときに読まれる") from None
     name = session_name(team, seat)
     if cwd and what in ("alive", "queued"):
         out(f"宛先 {seat} はシフト中なので、--cwd は次のシフトから効く")
@@ -628,6 +652,7 @@ def status(shipdir: Path) -> int:
             f"{spec['shift']:<10}",
             f"生存={'yes pid ' + str(live.get('pid')) if alive else 'no'}",
             f"status={(live or {}).get('status') or '-'}",
+            f"state={(live or {}).get('state') or '-'}",
             f"最終={fmt_time(last)}" + (f" ({fmt_span(now - last)}前)" if last else ""),
             f"shift#{rec.get('shiftNo', 0)} {rec.get('state') or '未起動'}",
         ]
@@ -636,6 +661,9 @@ def status(shipdir: Path) -> int:
             cols.append(f"waitingFor={waiting}")
         if rec.get("note"):
             cols.append(f"[{rec['note']}]")
+        failed = rec.get("launchFailed")
+        if failed:
+            cols.append(f"[起動失敗 {fmt_time(failed['at'])} ({failed.get('how')}): {failed.get('reason')}]")
         out("  " + "  ".join(cols))
         for flag in admiral.red_flags(team, rec, live, now):   # design-p1 §5.2
             out(f"  !!! {seat}: {flag} (claude attach {rec.get('shortId')} で確認)")

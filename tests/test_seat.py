@@ -223,6 +223,56 @@ class SeatTest(_SeatBase):
         self.assertIn("stop", argvs)
         self.assertIn("rm", argvs)
 
+    # --- a launch that did not come up (verify-p0-c Q5) ---
+
+    def short_launch_check(self):
+        for name, value in (("LAUNCH_SETTLE", 0.02), ("LAUNCH_CHECK_TIMEOUT", 0.05), ("LAUNCH_CHECK_POLL", 0.01)):
+            p = mock.patch.object(seat.claude, name, value)
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_a_worker_that_died_before_init_fails_the_send(self):
+        self.short_launch_check()
+        self.up()
+        self.set_fake_mode(session={"pid": None, "state": "failed", "detail": "exit 1 before init"})
+        with self.assertRaises(YamatoError) as cm:
+            self.run_cmd(seat.send, self.shipdir, "impl", "T-001", "pm")
+        msg = str(cm.exception)
+        self.assertIn("席 impl の起動に失敗しました (new", msg)
+        self.assertIn("state: failed, pid なし): exit 1 before init", msg)
+        self.assertIn("inbox に記録済み (impl #1)", msg)
+        rec = roster.seat(self.shipdir, "impl")
+        self.assertIsNone(rec.get("state"))   # no shift was started
+        self.assertEqual(rec["launchFailed"]["how"], "new")
+        [ev] = events.read(self.shipdir, kinds=events.LAUNCH_FAILED)
+        self.assertEqual(ev["seat"], "impl")
+        self.assertIn("exit 1 before init", ev["data"]["reason"])
+        self.assertIn("[起動失敗", self.run_cmd(seat.status, self.shipdir))
+        # the next launch that comes up clears it
+        self.set_fake_mode()
+        self.run_cmd(seat.send, self.shipdir, "impl", "again", "pm")
+        self.assertIsNone(roster.seat(self.shipdir, "impl")["launchFailed"])
+
+    def test_a_live_session_in_state_failed_is_stopped_and_fails(self):
+        self.short_launch_check()
+        self.set_fake_mode(session={"state": "failed"})   # a bad --model: the process lives on
+        with self.assertRaises(YamatoError) as cm:
+            self.up()
+        self.assertIn("エラーで止まっている (state: failed)", str(cm.exception))
+        self.assertIsNone(self.fake()["sessions"][0]["pid"])   # stopped: it would escape the time limit
+        self.assertIn("stop", [c["argv"][0] for c in self.fake()["calls"]])
+
+    def test_a_resume_that_did_not_come_up_fails(self):
+        self.short_launch_check()
+        self.up()
+        self.stop_session("pm")
+        self.set_fake_mode(session={"pid": None, "state": "failed"})
+        with self.assertRaises(YamatoError) as cm:
+            self.run_cmd(seat.send, self.shipdir, "pm", "x", "impl")
+        self.assertIn("(resume", str(cm.exception))
+        rec = roster.seat(self.shipdir, "pm")
+        self.assertEqual((rec["shiftNo"], rec["launchFailed"]["how"]), (1, "resume"))
+
     def test_send_to_per_task_starts_a_new_shift_every_time(self):
         self.up()
         self.run_cmd(seat.send, self.shipdir, "impl", "T-001", "pm")

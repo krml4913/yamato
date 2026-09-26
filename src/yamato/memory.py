@@ -41,10 +41,12 @@ MEMORY_CURATE = "memory_curate"
 MEMORY_APPLY = "memory_apply"
 
 SCOPES = ("role", "ship")
-LIMIT_KEYS = ("memory_lines", "memory_bytes", "knowledge_lines", "knowledge_bytes")
-# only what a ship without a `memory:` section gets; the template spells them out
+LIMIT_KEYS = ("memory_lines", "memory_chars", "knowledge_lines", "knowledge_chars")
+# only what a ship without a `memory:` section gets; the template spells them out. The limits
+# are also where the SessionStart injection cuts, in characters as Claude Code counts them:
+# both fit the 10,000 characters of the knowledge hook (verify-p0-c Q1)
 FALLBACK = {"applier": None, "curate_every": 7 * 86400, "curate_at": 30, "max_duration": 15 * 60,
-            "limits": {"memory_lines": 80, "memory_bytes": 8192, "knowledge_lines": 120, "knowledge_bytes": 12288}}
+            "limits": {"memory_lines": 80, "memory_chars": 4000, "knowledge_lines": 120, "knowledge_chars": 5000}}
 
 CURATOR = "memory-curator"                 # the agent name of a curate shift (not a seat)
 CURATOR_PROMPT = "_memory-curator.md"      # under roles/ in the ship; `_` keeps it off role names
@@ -297,14 +299,14 @@ def diff_counts(old: str, new: str) -> tuple[int, int]:
     return sum((b - a).values()), sum((a - b).values())
 
 
-def over_limit(text: str, max_lines: int, max_bytes: int) -> str | None:
+def over_limit(text: str, max_lines: int, max_chars: int) -> str | None:
     """'95 行 / 上限 80 行' when ``text`` is over either limit."""
-    lines, size = len(text.rstrip("\n").splitlines()), len(text.encode("utf-8"))
+    lines, size = len(text.rstrip("\n").splitlines()), len(text.rstrip("\n"))
     over = []
     if lines > max_lines:
         over.append(f"{lines} 行 (上限 {max_lines} 行)")
-    if size > max_bytes:
-        over.append(f"{size} bytes (上限 {max_bytes} bytes)")
+    if size > max_chars:
+        over.append(f"{size} 文字 (上限 {max_chars} 文字)")
     return "、".join(over) or None
 
 
@@ -329,14 +331,14 @@ def status(shipdir: Path, team: dict, now: float | None = None) -> list[dict]:
         rows.append({"role": role, "count": count, "seats": {s: len(v) for s, v in cands.items()},
                      "last": last, "days": days,
                      "oldest_days": None if last is not None or since is None else int((now - since) // 86400), "due": due, "proposal": proposal,
-                     "over": over_limit(_read(memory_path(shipdir, role)), lim["memory_lines"], lim["memory_bytes"])})
+                     "over": over_limit(_read(memory_path(shipdir, role)), lim["memory_lines"], lim["memory_chars"])})
     kcount = len(_entries(_read(knowledge_inbox_path(shipdir))))
     klast = last_applied(shipdir, None)
     rows.append({"role": None, "count": kcount, "last": klast,
                  "days": None if klast is None else int((now - klast) // 86400),
                  "due": False, "proposal": diff_counts(_read(knowledge_path(shipdir)), _read(knowledge_proposed_path(shipdir)))
                  if knowledge_proposed_path(shipdir).is_file() else None,
-                 "over": over_limit(_read(knowledge_path(shipdir)), lim["knowledge_lines"], lim["knowledge_bytes"])})
+                 "over": over_limit(_read(knowledge_path(shipdir)), lim["knowledge_lines"], lim["knowledge_chars"])})
     return rows
 
 
@@ -384,13 +386,12 @@ def applier_notice(shipdir: Path, team: dict, seat: str, now: float | None = Non
 def within_limits(text: str, team: dict, kind: str) -> tuple[str, str | None]:
     """``text`` cut to ``memory.limits`` (kind: memory / knowledge), and the warning if it was."""
     lim = conf(team)["limits"]
-    max_lines, max_bytes = lim[f"{kind}_lines"], lim[f"{kind}_bytes"]
-    over = over_limit(text, max_lines, max_bytes)
+    max_lines, max_chars = lim[f"{kind}_lines"], lim[f"{kind}_chars"]
+    over = over_limit(text, max_lines, max_chars)
     if not over:
         return text, None
     cut = "\n".join(text.rstrip("\n").splitlines()[:max_lines])
-    cut = cut.encode("utf-8")[:max_bytes].decode("utf-8", errors="ignore")
-    return cut, f"({kind}.md が上限を超えている ({over})。上限で切った。棚卸しが必要)"
+    return cut[:max_chars], f"{kind}.md が上限を超えている ({over})。上限で切った。棚卸しが必要"
 
 
 # --- the proposal format --------------------------------------------------------------------
@@ -441,14 +442,14 @@ def proposal_text(shipdir: Path, team: dict, role: str, *, new: str, archive: st
     plus, minus = diff_counts(old, new)
     count = sum(len(v) for v in cands.values())
     per_seat = ", ".join(f"{s}: {len(v)}" for s, v in cands.items() if v) or "なし"
-    over = over_limit(new, lim["memory_lines"], lim["memory_bytes"])
+    over = over_limit(new, lim["memory_lines"], lim["memory_chars"])
     head = [
         f"# memory の棚卸し案: {role}",
         "",
         f"- 作成: {_stamp(now)} / 棚卸しのシフト {sid}",
         f"- 候補: {count} 件 ({per_seat})",
         f"- memory.md: {len(old.rstrip().splitlines())} 行 → {len(new.rstrip().splitlines())} 行 "
-        f"(+{plus} / -{minus} 行)。上限 {lim['memory_lines']} 行 / {lim['memory_bytes']} bytes"
+        f"(+{plus} / -{minus} 行)。上限 {lim['memory_lines']} 行 / {lim['memory_chars']} 文字"
         + (f"。**上限を超えている ({over})。このままでは反映できない**" if over else ""),
         f"- 反映: `{YAMATO_BIN} memory apply {shipdir} {role}`。反映の前にこのファイルを直してよい "
         "(`<!-- yamato: ... -->` の行は消さない)",
@@ -475,7 +476,7 @@ def curate_prompt(shipdir: Path, team: dict, role: str, current: str, cands: dic
     return "\n".join([
         f"[yamato] 役割 {role} の memory の棚卸し。この 1 回の応答で案を返してください (ファイルは書かない)。",
         f"- 役割 {role}: {spec['description']} (役割プロンプト: {Path(shipdir) / 'roles' / (role + '.md')})",
-        f"- 新しい memory.md の上限: {lim['memory_lines']} 行 / {lim['memory_bytes']} bytes (UTF-8)。超えた案は反映できない",
+        f"- 新しい memory.md の上限: {lim['memory_lines']} 行 / {lim['memory_chars']} 文字。超えた案は反映できない",
         "- 候補の (ship) は艦全体の knowledge の候補で、yamato が knowledge-inbox.md に自動で回す。"
         "knowledge 節には、それ以外で艦全体に効くものだけを書く",
         "",
@@ -630,7 +631,7 @@ def run_curate(shipdir: Path, team: dict, role: str, now: float | None = None) -
                 knowledge=sec.get("knowledge", ""), cands=cands, sid=sid, now=ended))
             plus, minus = diff_counts(current, sec.get("memory", ""))
             count = sum(len(v) for v in cands.values())
-            over = over_limit(sec.get("memory", ""), c["limits"]["memory_lines"], c["limits"]["memory_bytes"])
+            over = over_limit(sec.get("memory", ""), c["limits"]["memory_lines"], c["limits"]["memory_chars"])
             msg = f"案を作った: {proposed_path(shipdir, role)} (+{plus} / -{minus} 行、候補 {count} 件)" \
                   + (f"。上限を超えている ({over})" if over else "")
             events.emit(shipdir, MEMORY_CURATE, summary=f"{role} の棚卸し案 (+{plus} / -{minus} 行、候補 {count} 件)",
@@ -696,8 +697,8 @@ def _move_candidates(shipdir: Path, seat: str, lines: list[str], date: str) -> i
     return len(moved)
 
 
-def _refuse_over(text: str, max_lines: int, max_bytes: int, what: str, path: Path) -> None:
-    over = over_limit(text, max_lines, max_bytes)
+def _refuse_over(text: str, max_lines: int, max_chars: int, what: str, path: Path) -> None:
+    over = over_limit(text, max_lines, max_chars)
     if over:
         raise YamatoError(f"{what} が上限を超えているので反映しない: {over}。"
                           f"案 ({path}) をまとめ直すか、archive 節に回してから、もう一度 apply する")
@@ -717,7 +718,7 @@ def apply(shipdir: Path, team: dict, role: str, by: str, now: float | None = Non
         raise YamatoError(f"案に {_mark('memory')} の節がありません: {prop}")
     new = sec["memory"].strip("\n")
     new = new + "\n" if new.strip() else ""
-    _refuse_over(new, lim["memory_lines"], lim["memory_bytes"], "新しい memory.md", prop)
+    _refuse_over(new, lim["memory_lines"], lim["memory_chars"], "新しい memory.md", prop)
     date = time.strftime("%Y-%m-%d", time.localtime(now))
     moved, unknown, to_knowledge = 0, [], []
     with ship_lock(shipdir):
@@ -749,7 +750,7 @@ def apply(shipdir: Path, team: dict, role: str, by: str, now: float | None = Non
         prop.replace(prop.with_name("memory.proposed.applied.md"))
     plus, minus = diff_counts(old, new)
     events.emit(shipdir, MEMORY_APPLY, by=by, summary=f"{role} の memory を反映 (+{plus} / -{minus} 行、候補 {moved} 件を処理)",
-                data={"role": role, "lines": len(new.splitlines()), "bytes": len(new.encode("utf-8")),
+                data={"role": role, "lines": len(new.splitlines()), "chars": len(new.rstrip("\n")),
                       "plus": plus, "minus": minus, "candidates": moved, "archived": len(dropped),
                       "knowledge": len(to_knowledge)}, now=now)
     return {"role": role, "plus": plus, "minus": minus, "moved": moved, "dropped": len(dropped),
@@ -769,7 +770,7 @@ def apply_knowledge(shipdir: Path, team: dict, by: str, now: float | None = None
         raise YamatoError(f"knowledge の案がありません: {prop} (knowledge-inbox.md の候補と今の knowledge.md から書く)")
     new = _read(prop).strip("\n")
     new = new + "\n" if new.strip() else ""
-    _refuse_over(new, lim["knowledge_lines"], lim["knowledge_bytes"], "新しい knowledge.md", prop)
+    _refuse_over(new, lim["knowledge_lines"], lim["knowledge_chars"], "新しい knowledge.md", prop)
     date = time.strftime("%Y-%m-%d", time.localtime(now))
     with ship_lock(shipdir):
         old = _read(knowledge_path(shipdir))
@@ -785,7 +786,7 @@ def apply_knowledge(shipdir: Path, team: dict, by: str, now: float | None = None
         prop.replace(prop.with_name("knowledge.proposed.applied.md"))
     plus, minus = diff_counts(old, new)
     events.emit(shipdir, MEMORY_APPLY, by=by, summary=f"knowledge.md を反映 (+{plus} / -{minus} 行、候補 {len(cands)} 件を処理)",
-                data={"role": None, "lines": len(new.splitlines()), "bytes": len(new.encode("utf-8")),
+                data={"role": None, "lines": len(new.splitlines()), "chars": len(new.rstrip("\n")),
                       "plus": plus, "minus": minus, "candidates": len(cands), "archived": len(dropped)}, now=now)
     return {"plus": plus, "minus": minus, "moved": len(cands), "dropped": len(dropped)}
 

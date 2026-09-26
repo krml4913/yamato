@@ -54,7 +54,8 @@ CAPTAIN_SECTIONS = (S_WORD, S_TOMORROW)
 # sent means the report is out of date. Not shift starts/ends (the captain's own
 # seat-stop after `report send`), nor notify_failed (the report's own notification)
 FACT_KINDS = (events.BOARD_ADD, events.BOARD_SET, events.BOARD_ARCHIVE, events.DECISION_OPEN,
-              events.DECISION_CLOSE, events.FORCE_STOP, events.SHIFT_FAILED, events.PERMISSION_DENIED,
+              events.DECISION_CLOSE, events.FORCE_STOP, events.SHIFT_FAILED, events.LAUNCH_FAILED,
+              events.PERMISSION_DENIED,
               events.SPIN_SUSPECTED, events.DUPLICATE_SUSPECTED, events.CAPTAIN_GAP,
               PR_OPEN, PR_MERGE, PR_CONFLICT)
 FORCED_KINDS = ("down-force", "grace-exceeded")
@@ -260,7 +261,7 @@ def anomaly_lines(shipdir: Path, team: dict, since: float, until: float, live: b
         elif kind == events.SHIFT_END and d.get("handoffWritten") is False \
                 and d.get("reason") not in FORCED_KINDS and (e.get("seat"), d.get("shiftNo")) not in forced:
             lines.append(f"- {e.get('seat')} が {_hm(e['ts'])} に引き継ぎなしで終了 ({d.get('reason') or '?'})")
-        elif kind in (notify.NOTIFY_FAILED, events.CAPTAIN_GAP):
+        elif kind in (notify.NOTIFY_FAILED, events.CAPTAIN_GAP, events.LAUNCH_FAILED):
             lines.append(f"- {_hm(e['ts'])} {e.get('summary')}")
         elif kind == events.DECISION_CLOSE and d.get("by_decider") is False:
             on = f"。--by は {d['on_behalf_of']}" if d.get("on_behalf_of") else ""

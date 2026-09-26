@@ -107,7 +107,8 @@ def build_settings(shipdir: Path, team: dict, seat: str) -> dict:
             "deny": deny,
         },
         "hooks": {
-            "SessionStart": [{"hooks": [hook("session-start")]}],
+            # two hooks: Claude Code takes 10,000 characters from each (verify-p0-c Q1)
+            "SessionStart": [{"hooks": [hook("session-start"), hook("session-start-knowledge")]}],
             "UserPromptSubmit": [{"hooks": [hook("user-prompt-submit")]}],
             "PreCompact": [{"hooks": [hook("pre-compact")]}],
             "Stop": [{"hooks": [

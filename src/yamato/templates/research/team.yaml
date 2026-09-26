@@ -121,11 +121,11 @@ memory:
   curate_every: 7d           # 前回の反映からこの日数で棚卸しの目安 (memory status に出るだけ)
   curate_at: 30              # 候補がこの件数に達したら棚卸しの目安
   max_duration: 15m          # 棚卸しのシフト 1 回の上限
-  limits:                    # 超える案は memory apply が反映を拒否する。手で編集して超えたら注入で切って警告する
+  limits:                    # 超える案は memory apply が反映を拒否する。注入もこの上限で切る (手で編集して超えたら警告)
     memory_lines: 80
-    memory_bytes: 8192
+    memory_chars: 4000       # 文字数 (Claude Code の hook の上限と同じ数え方)。memory + knowledge が注入の hook 1 本 (1 万文字) に収まる数字
     knowledge_lines: 120
-    knowledge_bytes: 12288
+    knowledge_chars: 5000
 
 # 席を起動するときに外す環境変数 (秘密を席の環境に置かない)。bg の席には `env -u` が効かないので、席の settings の env に空文字でも書く
 env_unset: [GH_TOKEN, GITHUB_TOKEN]
@@ -145,8 +145,6 @@ inject:
   parts: [handoff, log_tail, mine, inbox, memory, knowledge]
   limits:
     handoff: [40, 2000]
-    memory: [40, 1500]
-    knowledge: [60, 1500]
     log_tail: [20, 1200]
     mine_items: 15
     inbox_messages: 10

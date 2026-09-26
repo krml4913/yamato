@@ -68,8 +68,8 @@ class ConfTest(_Base):
         self.assertEqual(c["applier"], "pm")
         self.assertEqual(c["curate_every"], 7 * 86400)
         self.assertEqual(c["curate_at"], 30)
-        self.assertEqual(c["limits"], {"memory_lines": 80, "memory_bytes": 8192,
-                                       "knowledge_lines": 120, "knowledge_bytes": 12288})
+        self.assertEqual(c["limits"], {"memory_lines": 80, "memory_chars": 4000,
+                                       "knowledge_lines": 120, "knowledge_chars": 5000})
         d = {"name": "dev", "hub": "pm", "workspace": "/tmp", "roles": {"pm": {}, "impl": {}}}
         c = memory.conf(validate(d, Path("/ship")))
         self.assertEqual(c["applier"], "pm")          # hub
@@ -80,7 +80,7 @@ class ConfTest(_Base):
         c = memory.conf(validate(d, Path("/ship")))
         self.assertEqual(c["curate_every"], 36 * 3600)
         self.assertEqual(c["limits"]["memory_lines"], 10)
-        self.assertEqual(c["limits"]["memory_bytes"], 8192)
+        self.assertEqual(c["limits"]["memory_chars"], 4000)
         for bad in ({"applier": "nobody"}, {"curate_at": 0}, {"limits": {"memory_lines": 0}},
                     {"limits": {"lines": 3}}, {"curate_every": "x"}, {"unknown": 1}):
             d["memory"] = bad
@@ -117,7 +117,7 @@ class MigrateTest(_Base):
 
     def test_injection_migrates_and_reads_the_role_memory(self):
         (self.shipdir / "seats/impl-1/memory.md").write_text("- P0 の席の知見\n")
-        text, _ = inject.build(self.shipdir, self.t, "impl-2")
+        text = inject.build_knowledge(self.shipdir, self.t, "impl-2")
         self.assertIn("## 役割の memory (roles/impl/memory.md)", text)
         self.assertIn("- P0 の席の知見", text)   # shared by the role: impl-2 reads impl-1's
 
@@ -214,12 +214,13 @@ class StatusTest(_Base):
         self.mem().parent.mkdir(parents=True, exist_ok=True)
         self.mem().write_text("".join(f"- {i}\n" for i in range(12)))
         (self.shipdir / "knowledge.md").write_text("k" * 50)
-        lim = {"memory_lines": 10, "memory_bytes": 8192, "knowledge_lines": 120, "knowledge_bytes": 20}
+        lim = {"memory_lines": 10, "memory_chars": 4000, "knowledge_lines": 120, "knowledge_chars": 20}
         with mock.patch.dict(self.t["memory"], limits=lim):
-            text, _ = inject.build(self.shipdir, self.t, "impl-1")
-        self.assertIn("- 9\n(memory.md が上限を超えている (12 行 (上限 10 行))。上限で切った。棚卸しが必要)", text)
+            text = inject.build_knowledge(self.shipdir, self.t, "impl-1")
+        self.assertIn(f"- 9\n…(memory.md が上限を超えている (12 行 (上限 10 行))。上限で切った。棚卸しが必要。"
+                      f"全文は `{self.mem()}` を Read せよ)", text)
         self.assertNotIn("- 10", text)
-        self.assertIn("k" * 20 + "\n(knowledge.md が上限を超えている (50 bytes (上限 20 bytes))", text)
+        self.assertIn("k" * 20 + "\n…(knowledge.md が上限を超えている (50 文字 (上限 20 文字))", text)
 
 
 class _Curated(_Base):
@@ -260,7 +261,7 @@ class CurateTest(_Curated):
         prompt = a[-1]
         self.assertIn("- モックは 30 日で切れる", prompt)
         self.assertIn("impl-1 [T-1] (role) テストは", prompt)
-        self.assertIn("80 行 / 8192 bytes", prompt)
+        self.assertIn("80 行 / 4000 文字", prompt)
 
         prop = memory.proposed_path(self.shipdir, "impl").read_text()
         sec = memory.sections(prop)
@@ -395,10 +396,10 @@ class ApplyTest(_Curated):
         self.assertTrue(memory.proposed_path(self.shipdir, "impl").exists())
         self.assertIn("unittest", (self.shipdir / "seats/impl-1/memory-inbox.md").read_text())
         self.assertIn("上限を超えている", inbox.entries(self.shipdir, "pm")[0]["text"])
-        # bytes too
+        # characters too
         with mock.patch.dict(self.t["memory"], limits={**memory.conf(self.t)["limits"], "memory_lines": 500,
-                                                       "memory_bytes": 100}):
-            with self.assertRaisesRegex(YamatoError, "bytes"):
+                                                       "memory_chars": 100}):
+            with self.assertRaisesRegex(YamatoError, "文字"):
                 memory.apply(self.shipdir, self.t, "impl", "pm")
 
     def test_a_hand_edited_proposal_is_what_gets_applied(self):

@@ -1,6 +1,10 @@
 """What SessionStart injects into a seat, each part with its own cap (design §8.2, §0 I5).
 
-However long the ship runs, what a seat reads at start stays bounded.
+However long the ship runs, what a seat reads at start stays bounded. Claude Code
+takes up to 10,000 characters from one hook and swaps anything longer for a 2KB
+preview (verify-p0-c Q1, counted per hook): the injection is two hooks, the records
+(``build``) and the role's memory + knowledge.md (``build_knowledge``), each capped
+at ``total_chars``. What is cut says which file to Read for the rest.
 """
 from __future__ import annotations
 
@@ -11,16 +15,15 @@ from . import deadline, inbox, memory, roster
 from .team import inject_parts
 from .util import YAMATO_BIN, today
 
-# fallback only: the template's team.yaml spells these out (`inject.limits`)
+# fallback only: the template's team.yaml spells these out (`inject.limits`). The role's
+# memory and knowledge.md are cut at `memory.limits`, the limits `memory apply` keeps to
 LIMITS = {
     "handoff": (40, 2000),     # (lines, chars)
-    "memory": (40, 1500),
-    "knowledge": (60, 1500),
     "log_tail": (20, 1200),
     "mine_items": 15,
     "inbox_messages": 10,
     "inbox_chars": 400,        # per message
-    "total_chars": 9500,       # hook output is capped by Claude Code around 10k
+    "total_chars": 9500,       # per hook: Claude Code takes 10,000 chars from one (verify-p0-c Q1)
     "last_report": (30, 1500), # the previous daily report's 3 sections (design-p1 §2.3)
 }
 
@@ -34,8 +37,23 @@ def cap_text(text: str, max_lines: int, max_chars: int, source: str = "") -> str
     if cut_chars:
         out = out[:max_chars]
     if cut_lines or cut_chars:
-        out += f"\n…(上限で省略。全文: {source})" if source else "\n…(上限で省略)"
+        out += f"\n…(上限で切った。全文は `{source}` を Read せよ)" if source else "\n…(上限で切った)"
     return out
+
+
+def cap_total(shipdir: Path, seat: str, kind: str, text: str, total: int) -> str:
+    """One hook's whole output within ``total``. What is over is kept in full in
+    ``.runtime/inject-<seat>-<kind>.md`` for the seat to Read (verify-p0-c Q1 の 2)."""
+    if len(text) <= total:
+        return text
+    path = Path(shipdir) / ".runtime" / f"inject-{seat}-{kind}.md"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        tail = f"\n…(注入の上限 {total} 文字で切った。全文は `{path}` を Read せよ)"
+    except OSError:
+        tail = f"\n…(注入の上限 {total} 文字で切った)"
+    return text[:max(0, total - len(tail))] + tail
 
 
 def _read(path: Path) -> str:
@@ -52,15 +70,16 @@ def _file_section(title: str, path: Path, limit: tuple[int, int]) -> str:
     return f"## {title}\n{cap_text(text, *limit, source=str(path))}"
 
 
-def _memory_section(title: str, path: Path, limit: tuple[int, int], team: dict, kind: str) -> str:
-    """Like ``_file_section``, but a file over ``memory.limits`` (a hand edit: ``memory apply``
-    refuses those) is cut there first and says so (design-p1 §3.5)."""
+def _memory_section(title: str, path: Path, team: dict, kind: str) -> str:
+    """The role's memory / knowledge.md, cut at ``memory.limits``: the same limits ``memory apply``
+    keeps to, so only a hand edit is ever cut, and says so (design-p1 §3.5)."""
     text = _read(path).strip()
     if not text:
         return f"## {title}\n(なし)"
     text, warning = memory.within_limits(text, team, kind)
-    out = f"## {title}\n{cap_text(text, *limit, source=str(path))}"
-    return out + (f"\n{warning}" if warning else "")
+    if warning:
+        text += f"\n…({warning}。全文は `{path}` を Read せよ)"
+    return f"## {title}\n{text}"
 
 
 def _last_report(shipdir: Path, limit: tuple[int, int]) -> str:
@@ -89,10 +108,16 @@ def _orphans(shipdir: Path, team: dict, max_items: int, y: str) -> str:
             + "\n割り当て直すか、同じ席に send して起こし直す")
 
 
+def _limits(team: dict, limits: dict | None) -> dict:
+    return {**LIMITS, **((team.get("inject") or {}).get("limits") or {}), **(limits or {})}
+
+
 def build(shipdir: Path, team: dict, seat: str, source: str = "startup",
-          limits: dict | None = None) -> tuple[str, int]:
-    """Returns (context text, inbox cursor to advance to)."""
-    lim = {**LIMITS, **((team.get("inject") or {}).get("limits") or {}), **(limits or {})}
+          limits: dict | None = None, notice: str | None = None) -> tuple[str, int]:
+    """The records hook (hook A): the header, handoff, work log, board, report, the notices
+    (``notice``: the captain's last call) and the inbox. Returns (context text, inbox cursor
+    to advance to)."""
+    lim = _limits(team, limits)
     want = set(inject_parts(team, seat))
     shipdir = Path(shipdir)
     spec = team["seats"][seat]
@@ -111,6 +136,8 @@ def build(shipdir: Path, team: dict, seat: str, source: str = "startup",
     ]
     if deadline.phase(dl) in (deadline.OVER, deadline.FORCE):
         head.append(deadline.WRAP_UP_MESSAGE.format(yamato=y, ship=shipdir, seat=seat))
+    if notice:
+        parts.append(notice)
     parts.append("\n".join(head))
 
     if "handoff" in want:
@@ -145,10 +172,12 @@ def build(shipdir: Path, team: dict, seat: str, source: str = "startup",
 
     cursor_to = inbox.cursor(shipdir, seat)
     if "inbox" in want:
-        # the inbox gets what is left of the total budget after the parts above,
-        # keeping room for memory / knowledge; the cursor only moves over what was shown
-        budget = lim["total_chars"] - len("\n\n".join(parts)) - 800
+        # the inbox comes last and gets what is left of the hook's budget; the cursor only
+        # moves over what was shown, so nothing past it may be cut by the total cap
         unread = inbox.unread(shipdir, seat)
+        title = f"## 未読の inbox ({len(unread)} 件)"
+        more = f"…続きと省略された全文は `{y} inbox {shipdir} {seat}` で読む"
+        budget = lim["total_chars"] - len("\n\n".join([*parts, title])) - len(more) - 2
         lines = []
         contiguous = True
         for e in unread[:lim["inbox_messages"]]:
@@ -165,18 +194,26 @@ def build(shipdir: Path, team: dict, seat: str, source: str = "startup",
                 contiguous = False
         rest = len(unread) - len(lines)
         if unread and (rest > 0 or not contiguous):
-            lines.append(f"…続きと省略された全文は `{y} inbox {shipdir} {seat}` で読む")
-        parts.append(f"## 未読の inbox ({len(unread)} 件)\n" + ("\n".join(lines) if lines else "(なし)"))
+            lines.append(more)
+        parts.append(f"{title}\n" + ("\n".join(lines) if lines else "(なし)"))
+
+    return cap_total(shipdir, seat, "records", "\n\n".join(parts), lim["total_chars"]), cursor_to
+
+
+def build_knowledge(shipdir: Path, team: dict, seat: str, limits: dict | None = None) -> str:
+    """The knowledge hook (hook B): the role's memory and knowledge.md, "" when the seat's
+    ``inject`` has neither."""
+    lim = _limits(team, limits)
+    want = set(inject_parts(team, seat))
+    if not want & {"memory", "knowledge"}:
+        return ""
+    shipdir = Path(shipdir)
+    parts = [f"# yamato: 役割の memory と艦の knowledge (席 {seat})"]
     if "memory" in want:
         memory.migrate(shipdir, team)   # a P0 ship's seats/<seat>/memory.md moves in on first read
-        role = spec["role"]
+        role = team["seats"][seat]["role"]
         parts.append(_memory_section(f"役割の memory (roles/{role}/memory.md)", memory.memory_path(shipdir, role),
-                                     lim["memory"], team, "memory"))
+                                     team, "memory"))
     if "knowledge" in want:
-        parts.append(_memory_section("チームの knowledge.md", memory.knowledge_path(shipdir), lim["knowledge"],
-                                     team, "knowledge"))
-
-    text = "\n\n".join(parts)
-    if len(text) > lim["total_chars"]:
-        text = text[:lim["total_chars"]] + "\n…(注入の全体上限で省略)"
-    return text, cursor_to
+        parts.append(_memory_section("チームの knowledge.md", memory.knowledge_path(shipdir), team, "knowledge"))
+    return cap_total(shipdir, seat, "knowledge", "\n\n".join(parts), lim["total_chars"])

@@ -26,20 +26,30 @@ class InjectTest(ShipTestCase):
         board.Board(self.shipdir, self.t).add("関数を足す", {"assignee": "impl"})
         inbox.append(self.shipdir, "impl", "pm", "T-001 を頼む")
         text, cur = self.build()
-        for s in ("あなたの席: impl", "前回: T-001 途中", "モックは 30 日", "T-001 [open] impl: 関数を足す",
-                  "T-001 を頼む", "knowledge", str(self.shipdir)):
+        for s in ("あなたの席: impl", "前回: T-001 途中", "T-001 [open] impl: 関数を足す",
+                  "T-001 を頼む", str(self.shipdir)):
             self.assertIn(s, text)
         self.assertEqual(cur, 1)
+        # the role's memory and knowledge.md are the other hook's (verify-p0-c Q1)
+        self.assertNotIn("モックは 30 日", text)
+        knowledge = inject.build_knowledge(self.shipdir, self.t, "impl")
+        for s in ("モックは 30 日", "チームの knowledge.md", "席 impl"):
+            self.assertIn(s, knowledge)
+        self.assertNotIn("T-001", knowledge)
 
     def test_parts_follow_team_yaml(self):
         (self.sdir / "handoff.md").write_text("HANDOFF-X")
         (self.shipdir / "knowledge.md").write_text("KNOW-X")
         self.t["roles"]["impl"]["inject"] = ["knowledge"]
         text, _ = self.build()
-        self.assertIn("KNOW-X", text)
         self.assertNotIn("HANDOFF-X", text)
         self.assertNotIn("未読の inbox", text)
         self.assertIn("あなたの席: impl", text)  # the header is always there
+        knowledge = inject.build_knowledge(self.shipdir, self.t, "impl")
+        self.assertIn("KNOW-X", knowledge)
+        self.assertNotIn("## 役割の memory", knowledge)
+        self.t["roles"]["impl"]["inject"] = ["handoff"]
+        self.assertEqual(inject.build_knowledge(self.shipdir, self.t, "impl"), "")
 
     def test_limits_from_team_yaml(self):
         (self.sdir / "handoff.md").write_text("\n".join(f"line{i}" for i in range(100)))
@@ -53,16 +63,19 @@ class InjectTest(ShipTestCase):
         text, _ = self.build(handoff=(40, 10000))
         self.assertIn("line39", text)
         self.assertNotIn("line40", text)
-        self.assertIn("上限で省略", text)
+        self.assertIn(f"…(上限で切った。全文は `{self.sdir / 'handoff.md'}` を Read せよ)", text)
 
-    def test_memory_and_knowledge_capped_by_chars(self):
+    def test_memory_and_knowledge_capped_by_memory_limits(self):
+        """One set of limits: where memory apply refuses is where the injection cuts."""
         (self.rdir / "memory.md").write_text("m" * 5000)
-        (self.shipdir / "knowledge.md").write_text("k" * 5000)
-        text, _ = self.build(memory=(40, 100), knowledge=(60, 200))
-        self.assertIn("m" * 100 + "\n…(上限で省略", text)
-        self.assertNotIn("m" * 101, text)
-        self.assertIn("k" * 200 + "\n…(上限で省略", text)
-        self.assertNotIn("k" * 201, text)
+        (self.shipdir / "knowledge.md").write_text("k" * 6000)
+        text = inject.build_knowledge(self.shipdir, self.t, "impl")
+        self.assertIn("m" * 4000 + "\n…(memory.md が上限を超えている (5000 文字 (上限 4000 文字))", text)
+        self.assertNotIn("m" * 4001, text)
+        self.assertIn(f"全文は `{self.rdir / 'memory.md'}` を Read せよ", text)
+        self.assertIn("k" * 5000 + "\n…(knowledge.md が上限を超えている", text)
+        self.assertNotIn("k" * 5001, text)
+        self.assertLessEqual(len(text), inject.LIMITS["total_chars"])   # both fit the hook at the default limits
 
     def test_board_mine_capped(self):
         b = board.Board(self.shipdir, self.t)
@@ -96,9 +109,18 @@ class InjectTest(ShipTestCase):
             inbox.append(self.shipdir, "impl", "pm", "x" * 390)
         (self.shipdir / "knowledge.md").write_text("k" * 3000)
         text, cur = self.build(total_chars=3000, handoff=(40, 1500))
-        self.assertLessEqual(len(text), 3000 + 50)
+        self.assertLessEqual(len(text), 3000)
         shown = text.count("from pm")
         self.assertEqual(cur, shown)  # only what fit is marked read
+        self.assertNotIn("k" * 100, text)   # knowledge.md is the other hook's
+
+    def test_total_cap_keeps_the_whole_text_to_read(self):
+        (self.sdir / "handoff.md").write_text("\n".join(f"h{i:04d}" for i in range(1000)))
+        text, _ = self.build(total_chars=500, handoff=(1000, 100000))
+        full = self.shipdir / ".runtime" / "inject-impl-records.md"
+        self.assertLessEqual(len(text), 500)
+        self.assertTrue(text.endswith(f"…(注入の上限 500 文字で切った。全文は `{full}` を Read せよ)"))
+        self.assertIn("h0999", full.read_text())
 
     def test_no_handoff_shift_shows_log_tail(self):
         roster.start_shift(self.shipdir, "impl", session_id="a" * 36, short_id="aaaaaaaa",
@@ -134,6 +156,21 @@ class HookTest(ShipTestCase):
         self.assertIn("(compact)", data["additionalContext"])
         self.assertIn("hello", data["additionalContext"])
         self.assertEqual(inbox.unread(self.shipdir, "impl"), [])
+
+    def test_session_start_knowledge_is_its_own_hook(self):
+        (self.shipdir / "knowledge.md").write_text("KNOW-X")
+        code, out, _ = self.run_hook(hooks.session_start, {})
+        self.assertNotIn("KNOW-X", json.loads(out)["hookSpecificOutput"]["additionalContext"])
+        code, out, _ = self.run_hook(hooks.session_start_knowledge, {})
+        self.assertEqual(code, 0)
+        data = json.loads(out)["hookSpecificOutput"]
+        self.assertEqual(data["hookEventName"], "SessionStart")
+        self.assertIn("KNOW-X", data["additionalContext"])
+        # two hooks with different commands (one command twice would be merged into one)
+        settings = json.loads(runtime.settings_path(self.shipdir, "impl").read_text())
+        cmds = [h["command"] for g in settings["hooks"]["SessionStart"] for h in g["hooks"]]
+        self.assertEqual(len(set(cmds)), 2)
+        self.assertTrue(any(" session-start-knowledge " in c for c in cmds))
 
     def test_stop_hook_quiet_before_deadline(self):
         deadline.write(self.shipdir, limit=600, grace=60, token="t")

@@ -75,6 +75,7 @@ def _handle(argv, st, path, cwd, alive_pid, out, err) -> int:
              "startedAt": int(time.time() * 1000)}
         if mode.get("waitingFor"):
             s["waitingFor"] = mode["waitingFor"]
+        s.update(mode.get("session") or {})   # e.g. a worker that died before init (verify-p0-c Q5)
         st["sessions"].append(s)
         return s
 
@@ -102,6 +103,7 @@ def _handle(argv, st, path, cwd, alive_pid, out, err) -> int:
             print(f"backgrounded · {c['id']} · copy", file=out)
         else:
             s["pid"] = alive_pid
+            s.update(mode.get("session") or {})
             _save(path, st)
             print(f"note: woke session {sid[:8]} with its saved options (--name, --agent, --settings).", file=out)
             print(f"backgrounded · \x1b[36m{s['id']}\x1b[39m · {s['name']}", file=out)

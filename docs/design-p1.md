@@ -1,12 +1,24 @@
-# yamato P1 設計 (v3)
+# yamato P1 設計 (v4)
 
 - 作成: 2026-09-26 / driver (task-p1-design)
 - 改訂: 2026-09-26 v1 / driver (task-policy-audit)。owner の方針「仕組みは道具・記録・安全網だけ、運用の方針は強制しない」(project memory `mechanism-not-policy`) に合わせて、強制を外した。§12 の Q1〜Q6 は owner の決定に書き換えた。洗い出しの全体は `docs/policy-audit.md`
 - 改訂: 2026-09-26 v2 / driver (task-p1-design-verify-d)。検証 D (`docs/verify-p1-d.md`) の V1〜V7・V9〜V11 の結果を反映した。§11 を判定の一覧に書き換え、本文の【要検証】は判定に置き換えた (V5 の枠切れ・V8・V11 の bg + Remote Control は【要検証】のまま)。V7 の結果 (外を読む役割は dontAsk で組む) は、`mechanism-not-policy` に沿って**ひな形の既定値**として書き、コードでは強制しない
-- 改訂: 2026-09-26 v3 / driver (task-p1-doc-names)。design.md v2 §15 の表への leader の決定に沿って、名前を P0 の実装に揃えた (下の「改訂の要約」)
+- 改訂: 2026-09-26 v3 / driver (task-p1-doc-names)。design.md v2 §15 の表への leader の決定に沿って、名前を P0 の実装に揃えた (下の「改訂の要約 (v3)」)
+- 改訂: 2026-09-26 v4 / driver (task-verify-c-apply)。検証 C (`docs/verify-p0-c.md`) の結果と leader の決定を反映した (下の「改訂の要約 (v4)」)
 - 位置づけ: `docs/design.md` の P0 の範囲から外した論点について、実装に入れる粒度の設計を出す。**design.md §0 の決定が前提**。design.md 本文のうち方針に移すものは §0.3 に一覧にした (P0 の実装中なので design.md は書き換えない)
 - 根拠: `design.md` (§0 と本文) / `verify-p0-a.md` (配送・席のライフサイクル) / `verify-p0-b.md` (権限・起動フラグ・worktree・起動レシピ) / `review-da-v0.md` / `research-claude-primitives.md` (docs 調査) / `policy-audit.md` / `verify-p1-d.md` (P1 の要検証 V1〜V7・V9〜V11 の結果)
 - Claude Code の挙動について: 検証レポートで確かめたものは「(検証 A Q2)」「(検証 D V7)」のように出典を付ける。docs の記述だけのものは「(docs)」、まだ確かめていないものは **【要検証】** と書く。要検証と判定の一覧は §11 にまとめた
+
+## 改訂の要約 (v4, 2026-09-26)
+
+検証 C (`docs/verify-p0-c.md`) の結果を、leader の決定 (2026-09-26) に沿って反映した。
+
+- **V8 を判定した** (§11): SessionStart hook の注入は **hook 1 本あたり 10,000 文字**まで (合算ではない。数え方はバイトではなく文字数)。超えると本文の代わりに約 2KB のプレビューが届く (検証 C Q1)
+- **注入を hook 2 本に分けた** (§3.5): 記録 (handoff・作業ログ・担当・日報・inbox・注記) の hook と、知見 (役割の memory・knowledge.md) の hook。それぞれ `inject.limits.total_chars` (既定 9,500 文字) まで。切ったところには「全文は `<path>` を Read せよ」を付ける
+- **memory の上限を 1 つにした** (§3.5): `memory.limits` (`memory apply` が反映を拒否する上限) を注入でも使う。`inject.limits.memory` / `knowledge` は無くした。単位はバイトから文字数に変え、既定は memory 80 行 / 4,000 文字、knowledge 120 行 / 5,000 文字 (知見の hook 1 本に収まる数字)
+- **起動の失敗を検知する** (§5.1): `claude --bg` は worker が起動前に落ちても exit 0 を返す (検証 C Q5)。`yamato up` と `send` は起動・resume のあとに `claude agents --json` を見て、`state == failed` や pid なしを失敗として扱う
+- **`yamato status` の詰まりの表示** (§5.2): 生存は pid で見る。`status == waiting` は `waitingFor` を出して赤、`state == blocked` (idle のとき) は「人間の返事待ちの疑い」
+- **§2.2 の 1 を実装に合わせた**: captain の `seat-stop` は `report daily` を呼ばない。captain の役割プロンプトの終業の手順で captain が `report daily` を打つ (2 回目以降は更新。e2e-p1 の E)
 
 ## 改訂の要約 (v3, 2026-09-26)
 
@@ -279,7 +291,7 @@ T-042 (ログイン) は review 済みで merge 待ち。T-044 は D-007 待ち�
 ひな形の captain の役割プロンプトには「下書きの『一言』と『明日』だけを書き、他の節は直さない」と書く (事実の節を LLM に要約させると、数字や状態が変わる恐れがある)。コードは他の節の書き換えを検査しない。
 
 いつ作るか (team.yaml の `report.daily`。既定は `on_down`、日報の要らない艦は `off`):
-1. **captain の終業処理の一部にする**。captain の `seat-stop` は、その日の最後のシフト (終業の合図 = deadline を過ぎた / `yamato down`) のときだけ `report daily` を呼び、「一言」「明日」を書かせてから届ける
+1. **captain の終業処理の一部にする**。コードが呼ぶのではなく、captain の役割プロンプト (ひな形) の終業の手順に「`report daily` で下書きを作り、「一言」「明日」を書いて `report send` で届けてから `seat-stop`」と書く。`seat-stop` 自体は `report daily` を呼ばない (v4 で実装に合わせて直した。v3 までは「captain の `seat-stop` が呼ぶ」と書いていた)。その日の 2 回目以降の終業では、下の 3 のとおり日報を更新する
 2. **captain がいないときの保険** (安全網): `yamato down` と強制停止の処理は、その日の日報がまだ無ければ `report daily --facts-only` を作って届ける。「一言」は「captain が書けなかった (理由: 強制停止)」になる。captain が落ちていても、owner には必ず何か届く (§0 I4 の懸念への答え)。`report.daily: off` の艦では作らない
 3. **同じ日の 2 回目以降の終業** (e2e-p1 の E): captain には「その日の最後のシフト」かどうかが分からないので、終業のたびに日報を書いてよい。日報がすでにあれば、`report daily` と安全網は「一言」「明日」を残して事実の節を作り直し、送り直す (件名に「(更新)」)。送るかどうかは「最後に送ったあとに、日報に載る出来事 (board・判断・PR・異常の events) があるか」で決める。席のシフトの始まり・終わりだけでは送り直さない (captain の `report send` のあとの `seat-stop` で毎回送り直さないため)
 
@@ -361,13 +373,18 @@ knowledge.md は、各役割の棚卸しが挙げた knowledge 候補と `--scop
 
 | ファイル | 上限 (既定) | 超えたら |
 |---|---|---|
-| `roles/<role>/memory.md` | 80 行 / 8KB | `memory apply` が反映を拒否する。案を作り直す (まとめる・archive に回す) |
-| `knowledge.md` | 120 行 / 12KB | 同上 |
+| `roles/<role>/memory.md` | 80 行 / 4,000 文字 | `memory apply` が反映を拒否する。案を作り直す (まとめる・archive に回す) |
+| `knowledge.md` | 120 行 / 5,000 文字 | 同上 |
 | `memory-inbox.md` | 上限なし (起動時に読まないため) | 30 件で棚卸しの合図になる |
 
-- 上限の数値は team.yaml の `memory.limits` で変えられる (既定は上の表)
-- SessionStart hook の注入は、上限を超えたファイルを**上限で切って**入れ、末尾に「(memory.md が上限を超えている。棚卸しが必要)」と書く。手で編集されて上限を超えた場合の安全網
-- SessionStart の `additionalContext` 自体の長さ制限は【要検証】(DA I5)。上の上限は、合計で起動時の注入が 40KB 程度に収まるように置いた数字
+- 上限の数値は team.yaml の `memory.limits` (`memory_lines` / `memory_chars` / `knowledge_lines` / `knowledge_chars`) で変えられる (既定は上の表)。**単位は文字数** (Claude Code の hook の上限と同じ数え方。検証 C Q1)
+- **同じ上限を注入でも使う** (v4)。`memory apply` が拒否する上限と、注入で切る上限が同じなので、`apply` を通った memory が注入で切られることはない。v3 までは注入の側に別の上限 (`inject.limits.memory` / `knowledge`、40 行 / 1,500 文字) があり、反映できた memory の後半が読まれない食い違いがあった
+- SessionStart hook の注入は、上限を超えたファイル (手で編集された場合) を**上限で切って**入れ、末尾に「(memory.md が上限を超えている (…)。上限で切った。棚卸しが必要。全文は `<path>` を Read せよ)」と書く
+- **注入の長さ** (V8、検証 C Q1): Claude Code は SessionStart hook 1 本の出力を **10,000 文字**まで受け取る (合算ではなく hook ごと。超えると本文の代わりに約 2KB のプレビューと保存先のパスが届き、hook のエラーにはならない)。yamato は注入を 2 本の hook に分ける
+  - 記録の hook (`yamato hook session-start`): 見出し・最終受付の注意・handoff・作業ログの末尾・担当・孤児・前回の日報・memory status の注記・未読の inbox
+  - 知見の hook (`yamato hook session-start-knowledge`): 役割の memory と knowledge.md。既定の上限 (4,000 + 5,000 文字) は見出しを足しても 1 本に収まる
+  - 各 hook の全体を `inject.limits.total_chars` (既定 9,500 文字) で切る。切ったときは全文を `.runtime/inject-<seat>-<records|knowledge>.md` に書き、「全文は `<path>` を Read せよ」を付ける。部品ごとの上限で切ったところも、元のファイルのパスを付けて同じ書き方にする
+  - 同じコマンド文字列の hook は 1 本に統合される (検証 C Q1) ので、2 本はサブコマンドで分ける
 
 ### 3.6 design §6.6 との関係 (決定)
 
@@ -457,8 +474,10 @@ design §6.6 は「memory に書き込むのは PM の週次の棚卸しだけ�
 ### 5.1 最後に動いた時刻
 
 - 全席の SessionStart / UserPromptSubmit / Stop hook で `roster.json` のその席の `last_active` を更新する (hook の引数に艦と席が埋め込まれている、design §4.1)
-- 生きているかは `claude agents --json --all` の `pid != null` で見る (`state` は生死の判定には使えない、検証 A Q3)。`waitingFor == "permission prompt"` は「詰まり」(検証 A Q1)
+- 生きているかは `claude agents --json --all` の `pid != null` で見る (`state` は生死の判定には使えない、検証 A Q3)。**`state` は席の最後の発言から「人間に何を求めているか」を意味づけしたラベルで、プロセスの実状態は `status` と `pid`** (検証 C Q5)。`state` 単体で生死も完了も判定しない
+- 詰まりの見分け (検証 C Q5。v4): `status == "waiting"` は開いているダイアログ (`waitingFor` が `permission prompt` / `dialog open` など) で、`waitingFor` を出して赤。`state == "blocked"` で `status == "idle"` は、最後の発言が質問か「できなかった」の報告 = **人間の返事待ちの疑い**として赤。`blocked` で `busy` は Monitor の待ち (正常な常駐) なので赤くしない
 - bg の席の API エラーは `state == "failed"` で拾える。`pid` は生きたまま `status: idle` になり、JSON にエラー文のキーは無い (検証 D V5。存在しない model 名の 404 で確認。枠切れで同じになるかは未確認)。生死の判定には使わないが、異常の合図として赤く出す
+- **起動の失敗** (検証 C Q5。v4): `claude --bg` は worker が起動前に落ちても exit 0 で `backgrounded · <id>` を出す。失敗は後から `state == "failed"`・pid なしで分かる。`yamato up` と `send` (新しいシフトと resume) は、起動のあとに `claude agents --json` を見て、pid が付き `status` が出る (または 2 秒たつ) のを待つ。`failed` で pid なし、または 20 秒たっても起きないものは失敗として扱い、roster の `launchFailed` と events の `launch_failed` に残して、送り手にエラーを返す (send の本文は inbox に残る)。生きたまま `failed` のもの (モデル名の誤りなど) は、roster の外で動き続けないよう止める
 
 ### 5.2 誰が見るか: 仕事が流れるところで見る
 
@@ -467,7 +486,7 @@ design §6.6 は「memory に書き込むのは PM の週次の棚卸しだけ�
 | いつ | 何をする |
 |---|---|
 | メンバーが `send <hub>` / `seat-stop` を呼んだとき | captain が止まっていれば、§5.3 の規則で起こす (send の通常の動作)。**止まってから一度も起きていない時間**が 30 分 (設定) を超えていれば events に「captain 空白」を書く |
-| 誰かが `yamato status` / `ships` を見たとき | captain の `last_active` と、生きているのに `last_active` が古い (既定 20 分。設定で変えられる) 席を赤く出す。`waiting (permission prompt)` も赤 |
+| 誰かが `yamato status` / `ships` を見たとき | captain の `last_active` と、生きているのに `last_active` が古い (既定 20 分。設定で変えられる) 席を赤く出す。`status == waiting` (`waitingFor` を出す) と、idle の `state == blocked` (人間の返事待ちの疑い) も赤 (§5.1) |
 | deadline の確認 (§0 B4 の hook と send) のついで | captain の最後の日報 (§2.2) が作られないまま終業を過ぎたら、`report daily --facts-only` を作る |
 
 - **これで拾えないもの**: メンバーが全員止まっていて、captain も止まっているとき (誰も何も呼ばない)。この状態では仕事も進まないので、害は「気づくのが遅れる」だけ。気づくのは owner が `ships` を見たときか、日報が来ないとき
@@ -738,7 +757,7 @@ P0 は「終業 + 強制」の 2 段 (§0)。**最終受付を軽い形で戻す
 
 ## 11. 要検証の一覧と判定
 
-検証 D (`docs/verify-p1-d.md`、2026-09-26、Claude Code 2.1.283) で V1〜V7・V9〜V11 を確かめた。**V8 は検証 C の担当で、この表では未判定**。判定の印は ✅ 動く / 🟡 部分的 (条件つきで使える) / ❌ できない / ❓ 未確認。出典は `verify-p1-d.md` の同じ番号の節 (「V7」なら「V7. `tools` の制限と `Bash(...)` を絞った allow」)。判定のあと、本文の該当の節を書き換えた。
+検証 D (`docs/verify-p1-d.md`、2026-09-26、Claude Code 2.1.283) で V1〜V7・V9〜V11 を確かめた。**V8 は検証 C (`docs/verify-p0-c.md` Q1) で判定した** (v4)。判定の印は ✅ 動く / 🟡 部分的 (条件つきで使える) / ❌ できない / ❓ 未確認。出典は `verify-p1-d.md` の同じ番号の節 (「V7」なら「V7. `tools` の制限と `Bash(...)` を絞った allow」)。判定のあと、本文の該当の節を書き換えた。
 
 | # | 確かめたこと | 判定 | 結果と設計への反映 | 反映した節 | 出典 (`verify-p1-d.md`) |
 |---|---|---|---|---|---|
@@ -749,7 +768,7 @@ P0 は「終業 + 強制」の 2 段 (§0)。**最終受付を軽い形で戻す
 | V5 | サブスクの枠に当たったとき、bg と `-p` がどうなるか | ❓ | **実際の枠切れは未確認** (当てていない)。代用の観察 (存在しない model 名の 404): `subtype` は `success` のまま `is_error: true`、終了コード 1。bg の席は `state == "failed"` (pid は生きたまま)。反映: 失敗の判定は `is_error` / `api_error_status` / `terminal_reason` で、終了コードと `subtype` に頼らない。stream-json の `rate_limit_event` (使用率と回復時刻) をシフトの記録に残す。分類できなければ「異常終了 (API エラー)」で自動の再実行はしない。**枠切れ時に `-p` が待つのか失敗で返るのか、`result` の文言、429 になるか、bg の状態は【要検証】のまま** | §4.2 の 2、§4.4、§5.1 | V5 |
 | V6 | (a) workspace で起きた席が、艦フォルダの `worktrees/<item>/` (add-dir 側) に `cd` して auto で git 操作と編集をできるか (b) worktree を cwd にした bg の席が trust を求めずに起動するか (c) `bgIsolation: none` の席が頼まれずに commit / push するか | ✅ | (a)(b)(c) とも動く。(b) は main repo が trust 済みなら (worktree の trust は main repo から引き継がれる)。(c) は commit も push もしなかった (n=2)。**§8.2 の 2 つの移り方はどちらも使え、V6 の NG のときの代替は要らない**。git の規律の注入 (§8.1) は (c) が n=2 なので残す | §6.2、§8.2、§10 | V6 |
 | V7 | `tools` の制限と、`Bash(...)` に絞った allow が、bg と `-p` で効くか (それ以外の Bash が止まるか) | 🟡 | `tools` の制限は bg でも `-p` でも効く。**auto では Bash を allow で絞っても他の Bash が止まらない** (`curl` の外部通信も通った)。dontAsk なら allow に無いものは全部 deny。反映: 外を読む役割は **`dontAsk` + allow + `tools`** で組む。**ひな形の既定値 (`profiles.external.mode`) で、コードでは強制しない**。dontAsk の席は haiku でもよく、「haiku の無人の席に警告」は auto の席だけにする | §7.1、§7.2、§0.4 | V7 |
-| V8 | SessionStart hook の `additionalContext` の長さの上限 | ― | 検証 C の担当。この表では未判定 (NG のときは注入の上限を下げる) | §3.5 | ― |
+| V8 | SessionStart hook の `additionalContext` の長さの上限 | ✅ | **hook 1 本 10,000 文字** (検証 C Q1、`verify-p0-c.md`)。合算ではなく hook ごと、バイトではなく文字数。超えると約 2KB のプレビューに化ける (hook のエラーにはならない)。反映: 注入を記録と知見の hook 2 本に分け、それぞれ 9,500 文字で切る。memory の上限を注入と `memory apply` で 1 つにした (v4) | §3.5 | (検証 C Q1) |
 | V9 | Stop hook の `transcript_path` から今のコンテキストの量を読めるか | 🟡 | 読める (最後の assistant の `usage` の input + cache_creation + cache_read)。ただし**最大 1 API 呼び出し分遅れる** (観測 0.5k〜1.8k トークン)。窓はモデルで違う (haiku が 200k、sonnet が 1M) ので、**閾値はモデルの窓に対する割合** (既定 30%) にする | §0.4、§5.3、§5.4 | V9 |
 | V10 | 席ごとに Remote Control につなぐかどうかを制御できるか | ✅ | 動く。`--settings` の `remoteControlAtStartup: false` で外し、`--remote-control` で足す (フラグが勝つ)。**ひな形の既定値**は、全席 `remoteControlAtStartup: false`、captain だけ `--remote-control`。外した席にも SendMessage は届く | §0.4、§1.5 | V10 |
 | V11 | `PushNotification` を席の外から出せるか | ❌ | `-p` からは送られない (`Not sent — this terminal is active`)。送るかは tool の内部の判定で、呼ぶ側が強制できない。**`notify.command` の候補にしない**。bg の席 + Remote Control からの送信は**【要検証】(未確認)** | §2.4 | V11 |
@@ -757,7 +776,7 @@ P0 は「終業 + 強制」の 2 段 (§0)。**最終受付を軽い形で戻す
 ### 残る未確認 (検証 D の「未確認・注意」)
 
 - **V5**: 枠切れそのもの (`-p` が待つか失敗で返るか、`result` の文言、`api_error_status`、bg の席の状態)。実際に枠に当たらないと分からない。404 での代用観察と docs で判定の規則を作った (§4.4)
-- **V8**: 検証 C の担当
+- **V8**: 検証 C で判定済み (✅)。閾値 (10,000 文字) は 2.1.283 での観測で、設定で変えられるかは調べていない
 - **V11**: bg の席 + Remote Control (captain のような席) からの `PushNotification`。実際に通知が届くので試していない
 - **V3**: `crossSessionInbound: "accept"` を外した `-p` (承認する人がいないので保留のまま残るはずだが未確認)
 - **V1**: `env -u GH_TOKEN` が bg (daemon から起動) で効くか。検証 B から引き続き未確認
