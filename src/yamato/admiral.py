@@ -123,10 +123,11 @@ def up(shipdir: Path, for_: str | None, seats: str | None) -> int:
     if rc or not extra:
         return rc
     team = seat.current_team(shipdir)
-    label = {"alive": "すでに動いている", "resumed": "resume した", "started": "新しいシフトを起動した"}
+    label = {"alive": "すでに動いている", "resumed": "resume した", "started": "新しいシフトを起動した",
+             "spawned": "headless のシフトを起動した (run-headless)", "queued": "headless のシフト中"}
     for s in extra:
         what, rec = seat.wake(shipdir, team, s, reason="up")
-        out(f"  席 {s}: {label[what]} (session {rec.get('sessionId')})")
+        out(f"  席 {s}: {label[what]}" + (f" (session {rec.get('sessionId')})" if what != "spawned" else ""))
     return 0
 
 
@@ -217,7 +218,10 @@ def talk(shipdir: Path, name: str | None, *, execvp=os.execvp) -> int:
     stopped session would start a copy (design §10)."""
     team = seat.current_team(shipdir)
     name = name or team.get("talk_default") or team["hub"]
-    seat_spec(team, name)
+    if seat_spec(team, name)["shift"] == "headless":
+        # claude -p has no session to attach to; send reaches it at its next shift
+        raise YamatoError(f"席 {name} は headless (claude -p) なので attach できない。"
+                          f"`yamato send {team['name']} {name} \"...\"` で頼む")
     short = _live_short(shipdir, name)
     if short is None:
         if deadline.phase(deadline.read(shipdir)) != deadline.RUNNING:

@@ -9,7 +9,7 @@ from contextlib import redirect_stdout
 from unittest import mock
 
 from tests.helpers import ShipTestCase
-from yamato import admiral, claude, cli, deadline, events, inbox, report, roster, seat
+from yamato import admiral, claude, cli, deadline, events, headless, inbox, report, roster, seat
 from yamato.util import YamatoError
 
 
@@ -71,6 +71,21 @@ class AdmiralTest(ShipTestCase):
         self.assertEqual(rc, 1)
         self.assertEqual(self.bg_names(), [])
         self.assertIsNone(deadline.read(self.shipdir))
+
+    def add_headless_role(self):
+        ty = self.shipdir / "team.yaml"
+        ty.write_text(ty.read_text().replace(
+            "roles:\n", "roles:\n  researcher:\n    shift: headless\n    description: 調査担当\n", 1))
+        (self.shipdir / "roles" / "researcher.md").write_text("あなたは researcher です。\n")
+        seat.prepare(self.shipdir)
+
+    def test_up_seats_starts_a_headless_seat(self):
+        self.add_headless_role()
+        with mock.patch.object(headless, "wake", return_value=("spawned", {})) as wake:
+            rc, out = self.cli("up", str(self.shipdir), "--for", "1h", "--seats", "researcher")
+        self.assertEqual(rc, 0)
+        self.assertEqual(wake.call_args.args[2], "researcher")
+        self.assertIn("席 researcher: headless のシフトを起動した", out)
 
     def test_up_without_seats_starts_only_the_captain(self):
         self.cli("up", str(self.shipdir))
@@ -245,6 +260,17 @@ class AdmiralTest(ShipTestCase):
         self.assertEqual(calls, [])
         self.assertEqual(self.bg_names(), [])
         self.assertEqual(inbox.entries(self.shipdir, "pm"), [])
+
+    def test_talk_refuses_a_headless_seat_without_waking_it(self):
+        self.add_headless_role()
+        self.run_cmd(seat.up, self.shipdir, "1h")
+        calls = []
+        with mock.patch.object(headless, "wake") as wake, self.assertRaises(YamatoError) as cm:
+            self.run_cmd(admiral.talk, self.shipdir, "researcher", execvp=lambda f, a: calls.append(a))
+        self.assertIn("headless", str(cm.exception))
+        wake.assert_not_called()
+        self.assertEqual(calls, [])
+        self.assertEqual(inbox.entries(self.shipdir, "researcher"), [])
 
     # --- ship create: trust on the main repo (V6) ---
 
