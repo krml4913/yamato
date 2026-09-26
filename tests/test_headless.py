@@ -2,6 +2,9 @@
 import io
 import json
 import os
+import signal
+import subprocess
+import sys
 import threading
 import time
 import unittest
@@ -21,6 +24,12 @@ ROLE = """roles:
     shift: headless
     description: 調査担当
 """
+
+
+def _reap(proc):
+    if proc.poll() is None:
+        proc.kill()
+    proc.wait()
 
 
 class _Base(ShipTestCase):
@@ -74,6 +83,12 @@ class HeadlessTest(_Base):
         self.assertEqual(t["roles"]["fc"]["max_budget_usd"], 0.5)
         self.assertEqual(t["roles"]["fc"]["report_to"], "owner")
         self.assertIsNone(t["roles"]["pm"]["max_budget_usd"])
+        d["roles"]["pm"]["max_duration"] = "1h"
+        d["roles"]["pm"]["max_budget_usd"] = 2
+        warnings = validate(d, Path("/ship"))["warnings"]
+        self.assertTrue(any("roles.pm.max_duration" in w and "headless" in w for w in warnings))
+        self.assertTrue(any("roles.pm.max_budget_usd" in w for w in warnings))
+        self.assertFalse(any("roles.fc." in w for w in warnings))
         for bad in ({"report_to": "nobody"}, {"max_budget_usd": 0}, {"max_budget_usd": "1"},
                     {"max_duration": "0m"}):
             d["roles"]["fc"] = {"shift": "headless", **bad}
@@ -201,6 +216,64 @@ class HeadlessTest(_Base):
         self.assertIn(rec["endReason"], ("down-force", "grace-exceeded"))
         self.assertIn(rec["outcome"], (headless.FORCED, headless.TIMEOUT))
         self.assertEqual(len(events.read(self.shipdir, kinds=events.FORCE_STOP)), 1)
+
+    # --- a wrapper that goes away must not leave claude -p without its time limit ---
+
+    def _orphan(self):
+        """A shift whose wrapper is gone but whose claude -p (a stand-in carrying its --session-id) runs."""
+        sid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)", "--session-id", sid])
+        self.addCleanup(_reap, child)
+        roster.start_shift(self.shipdir, "researcher", session_id=sid, short_id=sid[:8],
+                           session_name="t1.researcher", how="headless")
+        roster.update(self.shipdir, "researcher", pid=child.pid)
+        return child
+
+    def test_reconcile_stops_an_orphaned_p_and_closes_the_shift(self):
+        child = self._orphan()
+        seat.reconcile(self.shipdir, self.team(), [])
+        self.assertIsNotNone(child.wait(10))
+        rec = roster.seat(self.shipdir, "researcher")
+        self.assertEqual((rec["state"], rec["endReason"]), (roster.OFF, "wrapper-lost"))
+        [fs] = events.read(self.shipdir, kinds=events.FORCE_STOP)
+        self.assertTrue(fs["data"]["orphan"])
+
+    def test_force_stop_all_stops_an_orphaned_p(self):
+        child = self._orphan()
+        with mock.patch.object(seat.report, "safety_net", return_value=[]):
+            stopped = seat.force_stop_all(self.shipdir, self.team(), "down-force")
+        self.assertEqual(stopped, ["researcher"])
+        self.assertIsNotNone(child.wait(10))
+        self.assertEqual(roster.seat(self.shipdir, "researcher")["endReason"], "down-force")
+
+    def test_a_reused_pid_is_not_taken_for_the_p(self):
+        other = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        self.addCleanup(_reap, other)
+        sid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        roster.start_shift(self.shipdir, "researcher", session_id=sid, short_id=sid[:8],
+                           session_name="t1.researcher", how="headless")
+        roster.update(self.shipdir, "researcher", pid=other.pid)
+        self.assertFalse(headless.stop_orphan(self.shipdir, "researcher", "x"))
+        self.assertIsNone(other.poll())
+
+    def test_sigterm_to_the_wrapper_is_forwarded_and_the_shift_is_closed(self):
+        self.set_fake_mode(p_sleep=60)
+        yamato = Path(__file__).resolve().parents[1] / "yamato"
+        wrapper = subprocess.Popen([sys.executable, str(yamato), "run-headless", str(self.shipdir), "researcher"],
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.addCleanup(_reap, wrapper)
+        for _ in range(200):
+            rec = roster.seat(self.shipdir, "researcher")
+            if rec.get("pid") and headless.live_pid(rec):
+                break
+            time.sleep(0.05)
+        pid = rec["pid"]
+        wrapper.send_signal(signal.SIGTERM)
+        wrapper.wait(20)
+        with self.assertRaises(ProcessLookupError):
+            os.kill(pid, 0)
+        rec = roster.seat(self.shipdir, "researcher")
+        self.assertEqual((rec["state"], rec["endReason"]), (roster.OFF, "wrapper-signal"))
 
     # --- failures (V1, V5) ---
 

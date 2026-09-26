@@ -22,6 +22,7 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -125,6 +126,47 @@ def terminate(shipdir: Path, seat: str, reason: str, timeout: float = 30) -> boo
         except (ProcessLookupError, PermissionError):
             pass
     return wait_idle(shipdir, seat, timeout)
+
+
+def live_pid(rec: dict) -> int | None:
+    """The shift's ``claude -p`` if it is still alive. The pid alone may have been reused:
+    it counts only if its command line carries the shift's ``--session-id``."""
+    pid, sid = rec.get("pid"), rec.get("sessionId")
+    if not pid or not sid:
+        return None
+    try:
+        cp = subprocess.run(["ps", "-p", str(int(pid)), "-o", "command="], capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return None
+    return int(pid) if cp.returncode == 0 and sid in cp.stdout else None
+
+
+def stop_orphan(shipdir: Path, seat: str, reason: str, timeout: float = 10) -> bool:
+    """The wrapper is gone (killed, crashed) but its ``claude -p`` still runs: nothing holds
+    its time limit any more (safety net). SIGTERM it (SIGKILL after ``timeout``). The caller
+    closes the shift. Returns True if there was one."""
+    rec = roster.seat(shipdir, seat)
+    if rec.get("state") not in (roster.ON_SHIFT, roster.STOPPING) or running(shipdir, seat):
+        return False
+    pid = live_pid(rec)
+    if pid is None:
+        return False
+    for sig, wait in ((signal.SIGTERM, timeout), (signal.SIGKILL, 5)):
+        try:
+            os.kill(pid, sig)
+        except ProcessLookupError:
+            break
+        end = time.time() + wait
+        while time.time() < end and live_pid(rec):
+            time.sleep(0.2)
+        if not live_pid(rec):
+            break
+    append_log(shipdir, seat, f"headless: ラッパーが居ないまま claude -p (pid {pid}) が残っていたので止めた ({reason})")
+    events.emit(shipdir, events.FORCE_STOP, seat=seat, summary=f"孤児の claude -p を停止 ({reason})",
+                data={"reason": reason, "shiftNo": rec.get("shiftNo"), "sessionId": rec.get("sessionId"),
+                      "pid": pid, "orphan": True})
+    roster.update(shipdir, seat, pid=None)
+    return True
 
 
 # --- the wrapper -----------------------------------------------------------------
@@ -243,7 +285,8 @@ def run_shift(shipdir: Path, team: dict, seat: str) -> dict:
     killed, kill_reason, rc, launch_error = None, None, None, None
     try:
         with open(out_dir / f"shift-{no}.stderr", "a", encoding="utf-8") as err:
-            proc = subprocess.Popen(argv, cwd=team["workspace"], env=claude.seat_env([*claude.PRINT_CALLER_ENV, *(team.get("env_unset") or ())]),
+            env = claude.seat_env([*claude.PRINT_CALLER_ENV, *(team.get("env_unset") or ())])
+            proc = subprocess.Popen(argv, cwd=team["workspace"], env=env,
                                     stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=err,
                                     text=True, encoding="utf-8", errors="replace")
     except OSError as e:
@@ -253,19 +296,11 @@ def run_shift(shipdir: Path, team: dict, seat: str) -> dict:
         stream.src = proc.stdout
         reader = threading.Thread(target=stream, daemon=True)
         reader.start()
-        while proc.poll() is None:
-            now = time.time()
-            if killed is None:
-                kill_reason = _time_up(shipdir, started, role.get("max_duration"), now)
-                if kill_reason:
-                    proc.terminate()
-                    killed = now
-                    append_log(shipdir, seat, f"headless: 時間切れ ({kill_reason}) → SIGTERM")
-                    events.emit(shipdir, events.FORCE_STOP, seat=seat, summary=f"時間切れで停止 ({kill_reason})",
-                                data={"reason": kill_reason, "shiftNo": no, "sessionId": sid})
-            elif now - killed > KILL_WAIT:
-                proc.kill()
-            time.sleep(POLL)
+        restore = _forward_signals(shipdir, seat, proc)
+        try:
+            killed, kill_reason = _watch(shipdir, seat, proc, role, started, no, sid)
+        finally:
+            restore()
         reader.join(timeout=10)
         proc.stdout.close()
         rc = proc.returncode
@@ -276,6 +311,45 @@ def run_shift(shipdir: Path, team: dict, seat: str) -> dict:
                         data={"reason": forced, "shiftNo": no, "sessionId": sid})
     return _close(shipdir, team, seat, sid=sid, no=no, started=started, stream=stream,
                   rc=rc, killed=kill_reason if killed else None, launch_error=launch_error)
+
+
+def _forward_signals(shipdir: Path, seat: str, proc):
+    """SIGTERM / SIGINT to the wrapper go on to its ``claude -p``, and the wrapper still
+    closes the shift: a stopped wrapper must not leave a -p running without its time limit.
+    (A SIGKILLed wrapper cannot forward; ``stop_orphan`` is the net for that.)"""
+    if threading.current_thread() is not threading.main_thread():
+        return lambda: None
+
+    def forward(signum, _frame):
+        roster.update(shipdir, seat, forceStop="wrapper-signal")
+        if proc.poll() is None:
+            proc.terminate()
+
+    old = {sig: signal.signal(sig, forward) for sig in (signal.SIGTERM, signal.SIGINT)}
+
+    def restore():
+        for sig, h in old.items():
+            signal.signal(sig, h)
+    return restore
+
+
+def _watch(shipdir: Path, seat: str, proc, role: dict, started: float, no: int, sid: str):
+    """Wait for claude -p, sending SIGTERM at the time limit. Returns (killed at, reason)."""
+    killed, kill_reason = None, None
+    while proc.poll() is None:
+        now = time.time()
+        if killed is None:
+            kill_reason = _time_up(shipdir, started, role.get("max_duration"), now)
+            if kill_reason:
+                proc.terminate()
+                killed = now
+                append_log(shipdir, seat, f"headless: 時間切れ ({kill_reason}) → SIGTERM")
+                events.emit(shipdir, events.FORCE_STOP, seat=seat, summary=f"時間切れで停止 ({kill_reason})",
+                            data={"reason": kill_reason, "shiftNo": no, "sessionId": sid})
+        elif now - killed > KILL_WAIT:
+            proc.kill()
+        time.sleep(POLL)
+    return killed, kill_reason
 
 
 def _failures(stream: _Stream, rc, killed, launch_error) -> list[tuple[str, str]]:

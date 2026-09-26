@@ -7,19 +7,29 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .notify import CHANNELS as NOTIFY_CHANNELS
 from .util import YamatoError, check_name, parse_duration, read_json
 
 SHIFTS = ("per_task", "persistent", "headless")
 STATES = ("open", "active", "blocked", "done")
 TOP_KEYS = {"name", "hub", "workspace", "charter", "roles", "time_limit", "grace", "deny", "board",
-            "settings", "seat_stop", "env_unset", "inject", "notify"}
+            "settings", "seat_stop", "env_unset", "inject", "notify", "git", "report"}
 # what SessionStart can inject (design §8.2); the header is always there
-INJECT_PARTS = ("handoff", "log_tail", "mine", "inbox", "memory", "knowledge")
+INJECT_PARTS = ("handoff", "log_tail", "mine", "inbox", "memory", "knowledge", "last_report")
+# what a ship that names no parts gets: the captain's report excerpt (design-p1 §2.3) is opt-in
+DEFAULT_INJECT_PARTS = tuple(p for p in INJECT_PARTS if p != "last_report")
 INJECT_LIMIT_KEYS = ("handoff", "memory", "knowledge", "log_tail", "mine_items", "inbox_messages",
-                     "inbox_chars", "total_chars")
+                     "inbox_chars", "total_chars", "last_report")
 RESERVED_SEATS = ("owner",)   # the human's inbox; not a seat
 SEAT_STOP_DEFAULTS = {"require_handoff": True, "require_delivery": True}
 ROLE_KEYS = {"model", "shift", "count", "description", "inject", "max_duration", "max_budget_usd", "report_to"}
+# `git:` (design-p1 §8.3). The values a ship runs with live in the template's
+# team.yaml; these are only what a ship without a `git:` section gets.
+GIT_KEYS = {"base", "strategy", "merge_requires", "merge_decision", "conflict"}
+GIT_STRATEGIES = ("squash", "merge", "rebase")
+GIT_REQUIRES = ("review", "ci", "decision")
+GIT_FALLBACK = {"base": "main", "strategy": "squash", "merge_requires": [], "merge_decision": "off",
+                "conflict": "author"}
 # auto mode is unavailable on Haiku (verify-p0-b §総括 1): the seat would fall
 # back to manual and block on the first dialog.
 NO_AUTO_MODELS = ("haiku",)
@@ -101,6 +111,9 @@ def validate(data: dict, shipdir: Path) -> dict:
         budget = spec.get("max_budget_usd")
         if budget is not None and (isinstance(budget, bool) or not isinstance(budget, (int, float)) or budget <= 0):
             raise YamatoError(f"team.yaml: roles.{role}.max_budget_usd は正の数 (今: {budget!r})")
+        for key, value in (("max_duration", max_duration), ("max_budget_usd", budget)):
+            if value is not None and shift != "headless":
+                warnings.append(f"roles.{role}.{key} は shift: headless の役割でだけ効く (今: {shift})。無視する")
         roles[role] = {
             "inject": parts,
             "max_duration": max_duration,
@@ -157,7 +170,25 @@ def validate(data: dict, shipdir: Path) -> dict:
 
     notify = data.get("notify") or {}
     if not isinstance(notify, dict) or not isinstance(notify.get("via") or [], list):
-        raise YamatoError("team.yaml: notify は {via: [command, mac, ...], command: \"...\"}")
+        raise YamatoError(f"team.yaml: notify は {{via: [{', '.join(NOTIFY_CHANNELS)}], "
+                          "slack: {webhook_env: ...}, command: \"...\"}")
+    slack = notify.get("slack") or {}
+    if not isinstance(slack, dict) or not isinstance(slack.get("webhook_env") or "", str):
+        raise YamatoError("team.yaml: notify.slack は {webhook_env: webhook の URL が入った環境変数の名前}")
+    if not isinstance(notify.get("command") or "", str):
+        raise YamatoError("team.yaml: notify.command はシェルのコマンド (文字列)")
+    for via in notify.get("via") or []:
+        if via not in NOTIFY_CHANNELS:
+            warnings.append(f"notify.via の {via!r} は知らない経路 (選べるのは {' / '.join(NOTIFY_CHANNELS)})。送れず events に残る")
+
+    git = _git(data.get("git"))
+
+    report = data.get("report") or {}
+    daily = report.get("daily", "on_down") if isinstance(report, dict) else None
+    if daily is False:   # an unquoted `off` is false in YAML 1.1
+        daily = "off"
+    if not isinstance(report, dict) or set(report) - {"daily"} or daily not in ("on_down", "off"):
+        raise YamatoError("team.yaml: report は {daily: on_down | off}")
 
     board = data.get("board") or {}
     if not isinstance(board, dict):
@@ -189,9 +220,32 @@ def validate(data: dict, shipdir: Path) -> dict:
                   "archive_on_done": archive_on_done},
         "env_unset": env_unset,
         "inject": {"parts": inject.get("parts"), "limits": _limits(limits)},
-        "notify": {"via": [str(v) for v in notify.get("via") or []], "command": notify.get("command")},
+        "notify": {"via": [str(v) for v in notify.get("via") or []], "command": notify.get("command"),
+                   "slack": {"webhook_env": slack.get("webhook_env")}},
+        "git": git,
+        "report": {"daily": daily},
         "warnings": warnings,
     }
+
+
+def _git(git) -> dict:
+    git = git or {}
+    if not isinstance(git, dict) or set(git) - GIT_KEYS:
+        raise YamatoError(f"team.yaml: git の項目は {', '.join(sorted(GIT_KEYS))}")
+    out = {**GIT_FALLBACK, **{k: v for k, v in git.items() if v is not None}}
+    if out["merge_decision"] is False:   # an unquoted `off` is false in YAML 1.1
+        out["merge_decision"] = "off"
+    if out["strategy"] not in GIT_STRATEGIES:
+        raise YamatoError(f"team.yaml: git.strategy は {' / '.join(GIT_STRATEGIES)} のどれか (今: {out['strategy']})")
+    req = out["merge_requires"]
+    if not isinstance(req, list) or set(req) - set(GIT_REQUIRES):
+        raise YamatoError(f"team.yaml: git.merge_requires は {', '.join(GIT_REQUIRES)} から選んだリスト")
+    if out["merge_decision"] not in ("auto", "off"):
+        raise YamatoError("team.yaml: git.merge_decision は auto / off")
+    for k in ("base", "conflict"):
+        if not out[k] or not isinstance(out[k], str):
+            raise YamatoError(f"team.yaml: git.{k} は文字列")
+    return out
 
 
 def _check_parts(parts, where: str) -> None:
@@ -216,7 +270,12 @@ def inject_parts(team: dict, seat: str) -> list[str]:
     parts = team["roles"].get(role, {}).get("inject")
     if parts is None:
         parts = (team.get("inject") or {}).get("parts")
-    return list(INJECT_PARTS) if parts is None else parts
+    return list(DEFAULT_INJECT_PARTS) if parts is None else parts
+
+
+def git_conf(team: dict) -> dict:
+    """``git:`` of a validated team (a ``.runtime/team.json`` from before P1 has none)."""
+    return {**GIT_FALLBACK, **(team.get("git") or {})}
 
 
 def load_team(shipdir: Path) -> dict:

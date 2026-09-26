@@ -127,6 +127,14 @@ def seat_lock(shipdir: Path, seat: str):
 
 
 @contextlib.contextmanager
+def merge_lock(shipdir: Path):
+    """``pr merge`` runs one at a time per ship (design-p1 §0.3, §8.3). Separate from
+    ship_lock: a merge waits on the network and must not hold up the hooks."""
+    with _flock(Path(shipdir) / ".runtime" / "merge.lock"):
+        yield
+
+
+@contextlib.contextmanager
 def _flock(path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
     f = open(path, "a")

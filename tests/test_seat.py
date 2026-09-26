@@ -8,7 +8,7 @@ from contextlib import redirect_stdout
 from unittest import mock
 
 from tests.helpers import ShipTestCase
-from yamato import deadline, roster, runtime, seat
+from yamato import deadline, events, roster, runtime, seat
 from yamato.util import YamatoError
 
 
@@ -103,10 +103,14 @@ class SeatTest(ShipTestCase):
         ty = self.shipdir / "team.yaml"
         ty.write_text(ty.read_text().replace("  via: []", f'  via: [command, slack]\n  command: "echo $YAMATO_MESSAGE > {marker}"'))
         self.up()
-        out = self.run_cmd(seat.send, self.shipdir, "owner", "判断ください", "pm")
+        with mock.patch.dict(os.environ):
+            os.environ.pop("YAMATO_SLACK_WEBHOOK", None)   # never reach a real webhook from a test
+            out = self.run_cmd(seat.send, self.shipdir, "owner", "判断ください", "pm")
         self.assertIn("owner の inbox に記録した", out)
         self.assertIn("通知 command: exit 0", out)
-        self.assertIn("通知 slack: P1", out)
+        self.assertIn("通知 slack: 失敗 (環境変数 YAMATO_SLACK_WEBHOOK が空)", out)   # the command still went out
+        [failed] = events.read(self.shipdir, kinds="notify_failed")
+        self.assertEqual(failed["data"]["via"], "slack")
         self.assertEqual(marker.read_text().strip(), "判断ください")
         from yamato import inbox
         self.assertEqual(inbox.unread(self.shipdir, "owner")[0]["from"], "pm")

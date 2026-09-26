@@ -12,6 +12,7 @@ roles:
     model: opus
     shift: persistent
     description: captain。owner の依頼を board の task に分けて席に割り振り、成果を確認して回収する
+    inject: [handoff, log_tail, mine, last_report, inbox, memory, knowledge]   # last_report: 前回の日報の「一言」「owner の判断待ち」「明日」
   impl:
     model: sonnet
     shift: per_task
@@ -29,11 +30,21 @@ roles:
 # 無人の席にやらせない操作 (Claude Code の permissions.deny)。艦ごとに自由に変えてよい
 # `{{ship}}` は艦フォルダのパスに置き換わる。`ask` ルールは auto モードでも止まるので使わない
 deny:
-  # git: 頼まれていない push・PR・merge、履歴の破壊
-  - "Bash(git push*)"
+  # git: push は自分のブランチならしてよい (roles/*.md の git の流れ)。force push と履歴の破壊は止める
+  - "Bash(git push --force*)"
+  - "Bash(git push -f*)"
+  - "Bash(git push * --force*)"
+  - "Bash(git push * -f*)"
+  - "Bash(git push *+*)"      # refspec の + (git push origin +<branch>) も force push
+  - "Bash(git reset --hard*)"
+  # PR と merge は yamato pr open / pr merge を通す (項目に pr・merged_by が残り、merge が 1 本ずつになる)
   - "Bash(gh pr create*)"
   - "Bash(gh pr merge*)"
-  - "Bash(git reset --hard*)"
+  # 作業対象の repo 本体には書かず、yamato worktree add で作った worktree (艦フォルダの worktrees/) で作業する
+  # Bash 経由の書き込みまでは止まらないので、役割プロンプトの git の流れと合わせて使う
+  # 艦フォルダを workspace の中に置いた艦では、この 2 行が艦の記録 (handoff.md など) への書き込みも止めるので消す
+  - "Edit(/{{workspace}}/**)"
+  - "Write(/{{workspace}}/**)"
   # 席の出入りは yamato を通す (自分を止めるのは seat-stop だけ)
   - "Bash(claude stop*)"
   - "Bash(claude rm*)"
@@ -79,13 +90,43 @@ inject:
     inbox_messages: 10
     inbox_chars: 400         # 1 通あたり
     total_chars: 9500        # 全体 (Claude Code の hook 出力は約 1 万文字で切られる)
+    last_report: [30, 1500]  # 前回の日報の 3 節 (inject に last_report を入れた役割だけ)
 
-# owner 宛ての send (`yamato send <ship> owner "..."`) の通知経路。複数可: command / mac (slack / windows は P1)
+# owner 宛ての send (`yamato send <ship> owner "..."`) の通知経路 (design-p1 §2.4)。
+# via に並べた方式すべてに送る (複数可)。どれかが失敗しても他は送り、失敗は events.jsonl (notify_failed) に残る。
+#   slack   incoming webhook に POST。URL は slack.webhook_env の環境変数から読む (艦フォルダには書かない)
+#   mac     macOS の通知 (osascript)
+#   windows Windows の toast (PowerShell)
+#   command 下の command を実行する。件名・本文・重要度 (success / waiting / progress / error / info) は
+#           stdin の JSON {"title", "message", "level"} と YAMATO_TITLE / YAMATO_MESSAGE / YAMATO_LEVEL で渡る。
+#           メールなど上の 3 つ以外はこれで送る
+# 省略 (via: []) なら通知しない (inbox にだけ残る)
 notify:
-  via: []
+  via: []                    # 例: [slack, mac]
+  slack:
+    webhook_env: YAMATO_SLACK_WEBHOOK
   # command: "terminal-notifier -title \"$YAMATO_TITLE\" -message \"$YAMATO_MESSAGE\""
+
+# 日報 (design-p1 §2)。reports/daily/<日付>.md
+#   on_down  yamato down・強制停止のとき、その日の日報がまだ無ければ事実だけの日報 (--facts-only) を作り、
+#            まだ送っていなければ notify.via で要約を送る (captain が落ちていても owner に届く安全網)
+#   off      安全網で作らない (report daily / report send は道具としていつでも使える)
+# captain が終業時に書く流れは roles/pm.md に書く (コードでは強制しない)
+report:
+  daily: on_down
+
+# git の道具 (yamato worktree / pr) の設定 (design-p1 §8.3)。誰がいつ打つかは roles/*.md に書く
+git:
+  base: main                 # worktree add の既定の起点 (origin/main) と PR の base
+  strategy: squash           # pr merge のやり方: squash / merge / rebase
+  merge_requires: [review, ci, decision]   # pr merge の前に確かめること。[] で確かめない
+    # review:   項目に review=approved がある
+    # ci:       gh pr checks が通っている (チェックの無い repo は通ったとみなす)
+    # decision: 項目を links に持つ merge の判断 (kind: decision, category: merge) が閉じている
+  merge_decision: "off"      # auto: reviewer の承認で merge の判断を自動で開く (yamato decide の実装後に使える)
+  conflict: author           # merge のあとに衝突した PR を知らせる先: author (項目の assignee) / 席の名前
 
 board:
   archive_on_done: true      # done になった項目を board/archive/ に移す (false なら `board archive` で手で移す)
   kinds: [task]              # 最初の値が board add の既定。ほかの値も自由に使える
-  fields: [branch]           # 目安 (board は固定項目以外を検証しない)
+  fields: [branch, worktree, pr, reviewer, review, merged_by]   # 目安 (board は固定項目以外を検証しない)

@@ -16,7 +16,7 @@ import time
 import uuid
 from pathlib import Path
 
-from . import claude, deadline, events, inbox, notify, roster, runtime, usage
+from . import claude, deadline, events, inbox, notify, report, roster, runtime, usage
 from .team import load_team, seat_spec
 from .util import (YAMATO_BIN, YamatoError, append_log, fmt_span, fmt_time, read_json,
                    seat_lock, ship_lock, write_json)
@@ -215,7 +215,13 @@ def reconcile(shipdir: Path, team: dict, listing: list[dict]) -> None:
     for seat, rec in roster.load(shipdir)["seats"].items():
         if seat not in team["seats"] or rec.get("state") not in (roster.ON_SHIFT, roster.STOPPING):
             continue
-        if claude.is_alive(by.get(rec.get("sessionId"))) or _headless_running(shipdir, team, seat):
+        if team["seats"][seat]["shift"] == "headless":
+            # the wrapper closes its own shift; the -p may be listed as alive, so the listing is not used
+            if _headless_running(shipdir, team, seat):
+                continue
+            if _stop_headless_orphan(shipdir, seat, "wrapper-lost"):
+                continue
+        elif claude.is_alive(by.get(rec.get("sessionId"))):
             continue
         reason = "seat-stop" if rec["state"] == roster.STOPPING else "exited"
         finish_shift(shipdir, seat, reason=reason)
@@ -230,14 +236,27 @@ def _headless_running(shipdir: Path, team: dict, seat: str) -> bool:
     return headless.running(shipdir, seat)
 
 
+def _stop_headless_orphan(shipdir: Path, seat: str, reason: str) -> bool:
+    """A headless ``claude -p`` whose wrapper is gone: stop it and close the shift here."""
+    from . import headless
+
+    if not headless.stop_orphan(shipdir, seat, reason):
+        return False
+    finish_shift(shipdir, seat, reason=reason, forced=True)
+    return True
+
+
 def force_stop_all(shipdir: Path, team: dict, reason: str) -> list[str]:
     stopped = []
     for seat in team["seats"]:
-        if _headless_running(shipdir, team, seat):
+        if team["seats"][seat]["shift"] == "headless":
             from . import headless
 
-            headless.terminate(shipdir, seat, reason)   # the wrapper records the forced end
-            stopped.append(seat)
+            if _headless_running(shipdir, team, seat):
+                headless.terminate(shipdir, seat, reason)   # the wrapper records the forced end
+                stopped.append(seat)
+            elif _stop_headless_orphan(shipdir, seat, reason):
+                stopped.append(seat)
             continue
         # a launch in flight holds the wake lock: wait for it, then look again
         with seat_lock(shipdir, seat):
@@ -251,6 +270,9 @@ def force_stop_all(shipdir: Path, team: dict, reason: str) -> list[str]:
                         data={"reason": reason, "shiftNo": rec.get("shiftNo"), "sessionId": rec["sessionId"]})
             finish_shift(shipdir, seat, reason=reason, forced=True)
             stopped.append(seat)
+    if stopped:
+        for line in report.safety_net(shipdir, team, f"強制停止 ({reason})"):
+            out(line)
     return stopped
 
 
@@ -306,7 +328,7 @@ def send(shipdir: Path, seat: str, text: str, sender: str) -> int:
         entry = inbox.append(shipdir, OWNER, sender, text)
         _send_event(shipdir, OWNER, sender, entry)
         out(f"owner の inbox に記録した: #{entry['n']} (`{YAMATO_BIN} inbox {shipdir} owner` で読む)")
-        for line in notify.notify(team, f"yamato {team['name']}: {sender} から", text):
+        for line in notify.notify(team, f"yamato {team['name']}: {sender} から", text, shipdir=shipdir):
             out(line)
         return 0
     seat_spec(team, seat)
@@ -436,6 +458,8 @@ def watchdog(shipdir: Path, token: str) -> int:
                 stopped = enforce(shipdir, team)
                 for seat in stopped:
                     append_log(shipdir, seat, "watchdog: 猶予を過ぎたので強制停止")
+                if not stopped:
+                    report.safety_net(shipdir, team, "終業のときに日報がなかった")
                 return 0
             if now >= dl["deadline"]:
                 team = current_team(shipdir)
@@ -443,6 +467,7 @@ def watchdog(shipdir: Path, token: str) -> int:
                 reconcile(shipdir, team, listing)
                 if not any(claude.is_alive(claude.by_session(listing).get(r.get("sessionId")))
                            for r in roster.load(shipdir)["seats"].values()):
+                    report.safety_net(shipdir, team, "終業のときに日報がなかった")
                     return 0
             time.sleep(max(1.0, min(WATCHDOG_POLL, dl["graceUntil"] - now)))
     finally:
@@ -467,9 +492,16 @@ def down(shipdir: Path, force: bool) -> int:
                 deadline.write_raw(shipdir, dl)
         stopped = force_stop_all(shipdir, team, reason="down-force")
         out(f"強制停止した席: {', '.join(stopped) if stopped else '(なし)'}")
+        if dl is not None and not stopped:
+            for line in report.safety_net(shipdir, team, "down --force"):
+                out(line)
         return 0
     by = claude.by_session(listing)
     alive = [s for s in team["seats"] if claude.is_alive(by.get(roster.seat(shipdir, s).get("sessionId")))]
+    if dl is not None and not alive:
+        # nobody is left to write it (design-p1 §2.2 の 2); with seats alive the watchdog does this
+        for line in report.safety_net(shipdir, team, "down のとき captain が動いていなかった"):
+            out(line)
     if dl is not None:
         spawn_watchdog(shipdir, dl["token"])
         out(f"終業を指示した。動いている席 ({', '.join(alive) if alive else 'なし'}) は hook 経由で引き継ぎを書いて止まる。")

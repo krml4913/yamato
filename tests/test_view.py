@@ -1,26 +1,31 @@
+import contextlib
 import io
 import json
 import os
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
-_SRC = Path(__file__).resolve().parents[1] / "src"
-if str(_SRC) not in sys.path:
-    sys.path.insert(0, str(_SRC))
+from yamato import cli, roster, seat, ship
+from yamato.util import YAMATO_BIN, YamatoError, resolve_ship
+from yamato.view import attach, layout
 
-from yamato.view import attach, layout, shipfiles  # noqa: E402
-from yamato.view.shipfiles import ViewError  # noqa: E402
+from .helpers import ShipTestCase
 
 SID_A = "aaaaaaaa-0000-4000-8000-000000000001"
 SID_B = "bbbbbbbb-0000-4000-8000-000000000002"
 LIVE_PID = os.getpid()
 
 
-def write_roster(shipdir: Path, seats: dict) -> None:
-    (shipdir / "roster.json").write_text(json.dumps({"seats": seats, "shifts": []}))
+def start_shift(shipdir: Path, seat_name: str, sid: str) -> None:
+    """Write the roster the way P0 does (the view must read what P0 writes)."""
+    roster.start_shift(shipdir, seat_name, session_id=sid, short_id=sid[:8],
+                       session_name=f"dev.{seat_name}", how="new")
 
 
 class ShipDirTest(unittest.TestCase):
@@ -32,62 +37,47 @@ class ShipDirTest(unittest.TestCase):
         self.tmp.cleanup()
 
 
-class RosterTest(ShipDirTest):
-    def test_no_roster(self):
-        self.assertIsNone(shipfiles.roster_session_id(self.dir, "pm"))
-
-    def test_broken_roster(self):
-        (self.dir / "roster.json").write_text("{not json")
-        self.assertIsNone(shipfiles.roster_session_id(self.dir, "pm"))
-
-    def test_seat_missing_or_without_session(self):
-        write_roster(self.dir, {"impl": {"sessionId": SID_A}, "qa": {"state": "off"}})
-        self.assertIsNone(shipfiles.roster_session_id(self.dir, "pm"))
-        self.assertIsNone(shipfiles.roster_session_id(self.dir, "qa"))
-        self.assertEqual(shipfiles.roster_session_id(self.dir, "impl"), SID_A)
-
-
 class ResolverTest(ShipDirTest):
-    def resolver(self, listing, seat="pm"):
+    def resolver(self, listing, seat_name="pm"):
         calls = []
 
         def agents():
             calls.append(1)
             return listing
-        return attach.roster_resolver(self.dir, seat, agents=agents), calls
+        return attach.roster_resolver(self.dir, seat_name, agents=agents), calls
 
     def test_live_session(self):
-        write_roster(self.dir, {"pm": {"sessionId": SID_A, "state": "on_shift"}})
+        start_shift(self.dir, "pm", SID_A)
         r, _ = self.resolver([{"sessionId": SID_A, "id": SID_A[:8], "pid": LIVE_PID}])
         # attach takes the short id; the full sessionId gives "No job matching"
         self.assertEqual(r(), SID_A[:8])
 
     def test_short_id_falls_back_to_prefix(self):
-        write_roster(self.dir, {"pm": {"sessionId": SID_A}})
+        start_shift(self.dir, "pm", SID_A)
         r, _ = self.resolver([{"sessionId": SID_A, "pid": LIVE_PID}])
         self.assertEqual(r(), SID_A[:8])
 
     def test_stopped_session_is_not_attached(self):
         # pid null = stopped; attaching would resurrect it (spike Q4)
-        write_roster(self.dir, {"pm": {"sessionId": SID_A, "state": "on_shift"}})
+        start_shift(self.dir, "pm", SID_A)
         r, _ = self.resolver([{"sessionId": SID_A, "pid": None}])
         self.assertIsNone(r())
 
     def test_dead_pid_is_not_attached(self):
         dead = subprocess.Popen([sys.executable, "-c", "pass"])
         dead.wait()
-        write_roster(self.dir, {"pm": {"sessionId": SID_A}})
+        start_shift(self.dir, "pm", SID_A)
         r, _ = self.resolver([{"sessionId": SID_A, "pid": dead.pid}])
         self.assertIsNone(r())
 
     def test_session_unknown_to_claude(self):
-        write_roster(self.dir, {"pm": {"sessionId": SID_A}})
+        start_shift(self.dir, "pm", SID_A)
         r, _ = self.resolver([{"sessionId": SID_B, "pid": LIVE_PID}])
         self.assertIsNone(r())
 
     def test_only_roster_decides_not_the_name(self):
         # another live session with the seat's name is not picked (--name is not unique)
-        write_roster(self.dir, {"pm": {"sessionId": SID_A}})
+        start_shift(self.dir, "pm", SID_A)
         r, _ = self.resolver([
             {"sessionId": SID_A, "name": "dev.pm", "pid": None},
             {"sessionId": SID_B, "name": "dev.pm", "pid": LIVE_PID},
@@ -99,14 +89,37 @@ class ResolverTest(ShipDirTest):
         self.assertIsNone(r())
         self.assertEqual(calls, [])
 
+    def test_broken_roster_means_no_shift(self):
+        (self.dir / "roster.json").write_text("{not json")
+        r, calls = self.resolver([{"sessionId": SID_A, "pid": LIVE_PID}])
+        self.assertIsNone(r())
+        self.assertEqual(calls, [])
+
+    def test_other_seats_shift_is_not_picked(self):
+        start_shift(self.dir, "impl", SID_A)
+        r, calls = self.resolver([{"sessionId": SID_A, "pid": LIVE_PID}], "pm")
+        self.assertIsNone(r())
+        self.assertEqual(calls, [])
+
     def test_follows_roster_changes(self):
         listing = [{"sessionId": SID_A, "id": "aaaaaaaa", "pid": LIVE_PID},
                    {"sessionId": SID_B, "id": "bbbbbbbb", "pid": LIVE_PID}]
         r, _ = self.resolver(listing)
-        write_roster(self.dir, {"pm": {"sessionId": SID_A}})
+        start_shift(self.dir, "pm", SID_A)
         self.assertEqual(r(), "aaaaaaaa")
-        write_roster(self.dir, {"pm": {"sessionId": SID_B}})
+        start_shift(self.dir, "pm", SID_B)
         self.assertEqual(r(), "bbbbbbbb")
+
+    def test_ended_shift_is_attached_only_while_its_process_is_gone(self):
+        # persistent seat: the same sessionId comes back on resume. Off + pid null -> wait;
+        # resumed (pid back) -> attach again.
+        start_shift(self.dir, "pm", SID_A)
+        roster.end_shift(self.dir, "pm", reason="seat-stop")
+        listing = [{"sessionId": SID_A, "id": "aaaaaaaa", "pid": None}]
+        r, _ = self.resolver(listing)
+        self.assertIsNone(r())
+        listing[0]["pid"] = LIVE_PID
+        self.assertEqual(r(), "aaaaaaaa")
 
 
 class FakeProc:
@@ -183,67 +196,22 @@ class RunLoopTest(unittest.TestCase):
         self.assertFalse(procs[0].terminated)
 
     def test_error_while_resolving_keeps_waiting(self):
-        code, procs, out = self.run_loop([ViewError("boom"), None], rounds=2)
+        code, procs, out = self.run_loop([YamatoError("boom"), None], rounds=2)
         self.assertEqual(code, 0)
         self.assertEqual(procs, [])
         self.assertIn("boom", out)
 
 
-TEAM_YAML = """\
-# comment
-name: dev
-hub: pm
-workspace: "/tmp/ws"   # trailing comment
-
-roles:
-  pm:
-    model: opus
-    shift: persistent
-    description: captain # count: 9 in a comment is ignored
-  impl:
-    model: sonnet
-    count: 2                 # impl-1, impl-2
-  reviewer: { model: opus, shift: per_task }
-  qa: { model: sonnet, count: 3 }
-
-board:
-  kinds: [task]
-"""
-
-
-class TeamSeatsTest(ShipDirTest):
-    def test_from_team_yaml(self):
-        (self.dir / "team.yaml").write_text(TEAM_YAML)
-        self.assertEqual(shipfiles.team_seats(self.dir),
-                         ["pm", "impl-1", "impl-2", "reviewer", "qa-1", "qa-2", "qa-3"])
-
-    def test_runtime_team_json_wins(self):
-        (self.dir / "team.yaml").write_text(TEAM_YAML)
-        (self.dir / ".runtime").mkdir()
-        (self.dir / ".runtime" / "team.json").write_text(json.dumps(
-            {"seats": {"pm": {"role": "pm"}, "impl": {"role": "impl"}}}))
-        self.assertEqual(shipfiles.team_seats(self.dir), ["pm", "impl"])
-
-    def test_missing_team_yaml(self):
-        with self.assertRaises(ViewError):
-            shipfiles.team_seats(self.dir)
-
-    def test_no_roles(self):
-        (self.dir / "team.yaml").write_text("name: dev\nhub: pm\n")
-        with self.assertRaises(ViewError):
-            shipfiles.team_seats(self.dir)
-
-
-class LayoutTest(unittest.TestCase):
+class LayoutBuildTest(unittest.TestCase):
     def test_tabs_and_panes(self):
-        kdl = layout.build([("dev", "dev", ["pm", "impl-1", "reviewer"]),
-                            ("research", "/x/research", ["editor"])], "/r/bin/yamato-seat-attach")
+        kdl = layout.build([("dev", "/x/dev", ["pm", "impl-1", "reviewer"]),
+                            ("research", "/x/research", ["editor"])], "/r/yamato")
         self.assertEqual(kdl.count("tab name="), 2)
         self.assertIn('tab name="dev" focus=true {', kdl)
         self.assertIn('tab name="research" {', kdl)
-        self.assertEqual(kdl.count('command="/r/bin/yamato-seat-attach"'), 4)
-        self.assertIn('args "dev" "impl-1"', kdl)
-        self.assertIn('args "/x/research" "editor"', kdl)
+        self.assertEqual(kdl.count('command="/r/yamato"'), 4)
+        self.assertIn('args "view" "attach" "/x/dev" "impl-1"', kdl)
+        self.assertIn('args "view" "attach" "/x/research" "editor"', kdl)
         # two seats per row: pm|impl-1 share a vertical split, reviewer is alone
         self.assertEqual(kdl.count('split_direction="vertical"'), 1)
         self.assertEqual(kdl.count("{"), kdl.count("}"))
@@ -251,27 +219,189 @@ class LayoutTest(unittest.TestCase):
     def test_quoting(self):
         self.assertEqual(layout.kdl_str('a"b\\c'), '"a\\"b\\\\c"')
 
-    def test_layout_for_reads_team_yaml(self):
-        with tempfile.TemporaryDirectory() as home:
-            ship = Path(home) / "dev"
-            ship.mkdir()
-            (ship / "team.yaml").write_text(TEAM_YAML)
-            old = os.environ.get("YAMATO_HOME")
-            os.environ["YAMATO_HOME"] = home
-            try:
-                by_name = layout.layout_for(["dev"], "seat-attach")
-                by_path = layout.layout_for([str(ship)], "seat-attach")
-            finally:
-                if old is None:
-                    del os.environ["YAMATO_HOME"]
-                else:
-                    os.environ["YAMATO_HOME"] = old
-        self.assertEqual(by_name.count("pane name="), 7)
-        self.assertIn('args "dev" "qa-3"', by_name)
-        self.assertIn(f'args "{ship.resolve()}" "qa-3"', by_path)
 
-    def test_default_command_is_repo_bin(self):
-        self.assertTrue(layout.SEAT_ATTACH.is_file())
+class LayoutForTest(ShipTestCase):
+    def test_default_command_is_this_repos_yamato(self):
+        self.assertTrue(YAMATO_BIN.is_file())
+        self.assertIn(f'command="{YAMATO_BIN}"', layout.layout_for(["t1"]))
+
+    def test_panes_get_the_absolute_path_and_the_team_name_tabs(self):
+        by_name = layout.layout_for(["t1"], "yamato")
+        by_path = layout.layout_for([str(self.shipdir)], "yamato")
+        self.assertEqual(by_name, by_path)
+        self.assertIn('tab name="t1" focus=true {', by_name)
+        self.assertIn(f'args "view" "attach" "{self.shipdir.resolve()}" "pm"', by_name)
+        self.assertEqual(by_name.count("pane name="), 2)   # dev template: pm + impl
+
+    def test_seats_come_from_team_yaml_before_up(self):
+        ty = self.shipdir / "team.yaml"
+        ty.write_text(ty.read_text().replace("count: 1", "count: 3"))
+        kdl = layout.layout_for(["t1"], "yamato")
+        for name in ("pm", "impl-1", "impl-2", "impl-3"):
+            self.assertIn(f'pane name="{name}"', kdl)
+        self.assertNotIn('pane name="impl"', kdl)
+
+    def test_seats_come_from_runtime_team_json_after_up(self):
+        seat.prepare(self.shipdir)   # what `yamato up` writes
+        team_json = self.shipdir / ".runtime" / "team.json"
+        data = json.loads(team_json.read_text())
+        self.assertEqual(list(data["seats"]), ["pm", "impl"])
+        data["seats"] = {"pm": data["seats"]["pm"], "qa-1": data["seats"]["impl"]}
+        team_json.write_text(json.dumps(data))
+        kdl = layout.layout_for(["t1"], "yamato")
+        self.assertIn('pane name="qa-1"', kdl)
+        self.assertNotIn('pane name="impl"', kdl)
+
+    def test_unknown_ship(self):
+        with self.assertRaises(YamatoError):
+            layout.layout_for(["nope"])
+
+
+class RegistryTest(ShipTestCase):
+    """A ship made with --path is listed in $YAMATO_HOME/ships.json; view finds it there."""
+
+    def setUp(self):
+        super().setUp()
+        self.elsewhere = self.tmp / "elsewhere" / "fleet-a"
+        ship.create("mine", str(self.workspace), str(self.elsewhere), "dev")
+
+    def test_resolve_by_name(self):
+        self.assertEqual(resolve_ship("mine"), self.elsewhere.resolve())
+        self.assertFalse((Path(os.environ["YAMATO_HOME"]) / "mine").exists())
+
+    def test_layout_by_name(self):
+        kdl = layout.layout_for(["mine"], "yamato")
+        self.assertIn('tab name="mine" focus=true {', kdl)      # the team's name, not the directory's
+        self.assertIn(f'args "view" "attach" "{self.elsewhere.resolve()}" "impl"', kdl)
+
+    def test_attach_by_name(self):
+        with mock.patch.object(attach, "run", return_value=0) as run:
+            self.assertEqual(cli.main(["view", "attach", "mine", "pm"]), 0)
+        resolve, label = run.call_args.args
+        self.assertEqual(label, "mine.pm")
+        # the resolver it was given reads the roster of the --path ship (and asks the fake claude)
+        start_shift(self.elsewhere, "pm", SID_A)
+        self.fake_state.write_text(json.dumps(
+            {"sessions": [{"sessionId": SID_A, "id": SID_A[:8], "pid": LIVE_PID}], "calls": []}))
+        self.assertEqual(resolve(), SID_A[:8])
+
+
+class ViewCliTest(ShipTestCase):
+    def call(self, argv):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = cli.main(argv)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_layout_to_stdout_and_file(self):
+        code, out, _ = self.call(["view", "layout", "t1", "--command", "yamato"])
+        self.assertEqual(code, 0)
+        self.assertIn('args "view" "attach"', out)
+        dest = self.tmp / "view.kdl"
+        code, out, _ = self.call(["view", "layout", "t1", "--command", "yamato", "-o", str(dest)])
+        self.assertEqual((code, out), (0, ""))
+        self.assertIn('pane name="pm"', dest.read_text())
+
+    def test_layout_unknown_ship_is_an_error_line_not_a_traceback(self):
+        code, _, err = self.call(["view", "layout", "nope"])
+        self.assertEqual(code, 1)
+        self.assertIn("艦が見つかりません", err)
+
+    def test_attach_unknown_seat_is_refused(self):
+        with mock.patch.object(attach, "run") as run:
+            code, _, err = self.call(["view", "attach", "t1", "typo"])
+        self.assertEqual(code, 1)
+        self.assertIn("席がありません", err)
+        run.assert_not_called()
+
+    def test_attach_label_and_poll(self):
+        with mock.patch.object(attach, "run", return_value=0) as run:
+            self.assertEqual(self.call(["view", "attach", "t1", "impl", "--poll", "0.5"])[0], 0)
+        self.assertEqual(run.call_args.args[1], "t1.impl")
+        self.assertEqual(run.call_args.kwargs["poll"], 0.5)
+        with mock.patch.dict(os.environ, {"YAMATO_VIEW_POLL": "7"}), \
+                mock.patch.object(attach, "run", return_value=0) as run:
+            self.call(["view", "attach", "t1", "pm"])
+        self.assertEqual(run.call_args.kwargs["poll"], 7.0)
+
+    def test_view_needs_a_subcommand(self):
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            cli.main(["view"])
+
+
+# A `claude` that only knows what the view uses: `agents --json --all` reads a JSON file,
+# `attach <id>` logs the id and stays in the foreground until it is killed.
+FAKE_VIEW_CLAUDE = """\
+#!/usr/bin/env python3
+import json, os, sys, time
+if sys.argv[1:2] == ["agents"]:
+    print(open(os.environ["FAKE_VIEW_AGENTS"]).read())
+elif sys.argv[1:2] == ["attach"]:
+    with open(os.environ["FAKE_VIEW_LOG"], "a") as f:
+        f.write(sys.argv[2] + "\\n")
+    time.sleep(60)
+else:
+    sys.exit(2)
+"""
+
+
+class AttachProcessTest(ShipTestCase):
+    """`yamato view attach` as a real process, against a fake claude: only a live seat is attached."""
+
+    def setUp(self):
+        super().setUp()
+        self.fake_bin = self.tmp / "claude-view"
+        self.fake_bin.write_text(FAKE_VIEW_CLAUDE)
+        self.fake_bin.chmod(0o755)
+        self.agents = self.tmp / "agents.json"
+        self.log = self.tmp / "attach.log"
+        self.log.touch()
+        start_shift(self.shipdir, "pm", SID_A)
+
+    def set_agents(self, pid):
+        self.agents.write_text(json.dumps([{"sessionId": SID_A, "id": SID_A[:8], "pid": pid}]))
+
+    def start(self):
+        env = dict(os.environ, YAMATO_CLAUDE=str(self.fake_bin), FAKE_VIEW_AGENTS=str(self.agents),
+                   FAKE_VIEW_LOG=str(self.log))
+        return subprocess.Popen([sys.executable, str(YAMATO_BIN), "view", "attach", "t1", "pm",
+                                 "--poll", "0.2"], env=env, stdout=subprocess.PIPE, text=True)
+
+    def stop(self, proc):
+        proc.send_signal(signal.SIGINT)
+        out, _ = proc.communicate(timeout=15)
+        return proc.returncode, out
+
+    def wait_for(self, cond, timeout=15):
+        end = time.time() + timeout
+        while time.time() < end:
+            if cond():
+                return True
+            time.sleep(0.05)
+        return False
+
+    def test_attaches_to_the_rosters_live_session(self):
+        self.set_agents(LIVE_PID)
+        proc = self.start()
+        try:
+            self.assertTrue(self.wait_for(lambda: self.log.read_text().strip()), "never attached")
+        finally:
+            code, out = self.stop(proc)
+        self.assertEqual(self.log.read_text().split(), [SID_A[:8]])   # the short id
+        self.assertEqual(code, 130)
+        self.assertIn("[t1.pm]", out)
+
+    def test_never_attaches_to_a_stopped_session(self):
+        self.set_agents(None)
+        proc = self.start()
+        try:
+            time.sleep(1.0)   # several polls
+            self.assertIsNone(proc.poll())
+        finally:
+            code, out = self.stop(proc)
+        self.assertEqual(self.log.read_text(), "")
+        self.assertEqual(code, 130)
+        self.assertIn("待機中", out)
 
 
 if __name__ == "__main__":

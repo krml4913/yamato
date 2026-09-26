@@ -42,6 +42,16 @@ def seat(shipdir: Path, name: str) -> dict:
     return load(shipdir)["seats"].get(name, {})
 
 
+def seat_of_session(shipdir: Path, session_id: str | None) -> str | None:
+    """The seat whose current shift is ``session_id`` (who called a command; for the record only)."""
+    if not session_id:
+        return None
+    for name, rec in load(shipdir)["seats"].items():
+        if rec.get("sessionId") == session_id:
+            return name
+    return None
+
+
 def start_shift(shipdir: Path, name: str, *, session_id: str, short_id: str, session_name: str,
                 how: str, now: float | None = None) -> dict:
     now = now or time.time()

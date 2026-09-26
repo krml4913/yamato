@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from .util import YamatoError, resolve_ship
+from .view import cli as view_cli
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -84,6 +85,12 @@ def _parser() -> argparse.ArgumentParser:
     ss.add_argument("--delivered", action="store_true",
                     help="生きている宛先への SendMessage を済ませた (未読の送信が残っていても終業する)")
 
+    from . import pr, report, worktree  # design-p1 §8, §2: the parsers live with the commands
+
+    worktree.register(sub)
+    pr.register(sub)
+    report.register(sub)
+
     rh = sub.add_parser("run-headless", help="(send が切り離して起動する) headless の席の 1 シフトを claude -p で回す")
     rh.add_argument("ship")
     rh.add_argument("seat")
@@ -92,6 +99,8 @@ def _parser() -> argparse.ArgumentParser:
     h.add_argument("event")
     h.add_argument("ship")
     h.add_argument("seat")
+
+    view_cli.add_parser(sub)
 
     w = sub.add_parser("_watchdog")
     w.add_argument("ship")
@@ -199,6 +208,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.cmd == "hook":
             return _hook(args)
+        if args.cmd == "view":
+            return view_cli.run(args)
         if args.cmd == "ship":
             from . import ship
 
@@ -214,6 +225,10 @@ def main(argv: list[str] | None = None) -> int:
             return _inbox(args)
         if args.cmd == "status":
             return _status(args)
+        if args.cmd in ("worktree", "pr", "report"):
+            from . import pr, report, worktree
+
+            return {"worktree": worktree, "pr": pr, "report": report}[args.cmd].run(args)
 
         from . import seat
 
