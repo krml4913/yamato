@@ -330,11 +330,14 @@ class ViewCliTest(ShipTestCase):
 
 
 # A `claude` that only knows what the view uses: `agents --json --all` reads a JSON file,
-# `attach <id>` logs the id and stays in the foreground until it is killed.
+# `attach <id>` logs the id and stays in the foreground until it is killed. Each `agents`
+# adds a line to $FAKE_VIEW_POLLS (the test counts the view's looks).
 FAKE_VIEW_CLAUDE = """\
 #!/usr/bin/env python3
 import json, os, sys, time
 if sys.argv[1:2] == ["agents"]:
+    with open(os.environ["FAKE_VIEW_POLLS"], "a") as f:
+        f.write("agents\\n")
     print(open(os.environ["FAKE_VIEW_AGENTS"]).read())
 elif sys.argv[1:2] == ["attach"]:
     with open(os.environ["FAKE_VIEW_LOG"], "a") as f:
@@ -356,6 +359,8 @@ class AttachProcessTest(ShipTestCase):
         self.agents = self.tmp / "agents.json"
         self.log = self.tmp / "attach.log"
         self.log.touch()
+        self.polls = self.tmp / "polls.log"
+        self.polls.touch()
         start_shift(self.shipdir, "pm", SID_A)
 
     def set_agents(self, pid):
@@ -363,9 +368,9 @@ class AttachProcessTest(ShipTestCase):
 
     def start(self):
         env = dict(os.environ, YAMATO_CLAUDE=str(self.fake_bin), FAKE_VIEW_AGENTS=str(self.agents),
-                   FAKE_VIEW_LOG=str(self.log))
+                   FAKE_VIEW_LOG=str(self.log), FAKE_VIEW_POLLS=str(self.polls))
         return subprocess.Popen([sys.executable, str(YAMATO_BIN), "view", "attach", "t1", "pm",
-                                 "--poll", "0.2"], env=env, stdout=subprocess.PIPE, text=True)
+                                 "--poll", "0.05"], env=env, stdout=subprocess.PIPE, text=True)
 
     def stop(self, proc):
         proc.send_signal(signal.SIGINT)
@@ -377,7 +382,7 @@ class AttachProcessTest(ShipTestCase):
         while time.time() < end:
             if cond():
                 return True
-            time.sleep(0.05)
+            time.sleep(0.02)
         return False
 
     def test_attaches_to_the_rosters_live_session(self):
@@ -395,7 +400,7 @@ class AttachProcessTest(ShipTestCase):
         self.set_agents(None)
         proc = self.start()
         try:
-            time.sleep(1.0)   # several polls
+            self.assertTrue(self.wait_for(lambda: len(self.polls.read_text().split()) >= 3), "never polled")
             self.assertIsNone(proc.poll())
         finally:
             code, out = self.stop(proc)

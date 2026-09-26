@@ -38,6 +38,7 @@ from .util import YAMATO_BIN, YamatoError, append_log
 REPORTER = "yamato"   # the `from` of the end-of-shift report: not a seat, so nobody owes a SendMessage
 POLL = 1.0            # seconds between time-limit checks while claude -p runs
 KILL_WAIT = 30        # SIGTERM -> SIGKILL (a -p ends ~0.4 s after SIGTERM, verify-p1-d V4)
+IDLE_POLL = 0.5       # seconds between looks while waiting for a wrapper to let go of the seat
 NOTE_CHARS = 500      # the last response pasted into the item on a no-handoff end
 
 OK = "正常"
@@ -90,7 +91,7 @@ def wait_idle(shipdir: Path, seat: str, timeout: float) -> bool:
     while time.time() < end:
         if not running(shipdir, seat):
             return True
-        time.sleep(0.5)
+        time.sleep(IDLE_POLL)
     return False
 
 
@@ -352,7 +353,10 @@ def _watch(shipdir: Path, seat: str, proc, role: dict, started: float, no: int, 
                             data={"reason": kill_reason, "shiftNo": no, "sessionId": sid})
         elif now - killed > KILL_WAIT:
             proc.kill()
-        time.sleep(POLL)
+        try:
+            proc.wait(timeout=POLL)   # a POLL-long look, cut short when claude -p ends
+        except subprocess.TimeoutExpired:
+            pass
     return killed, kill_reason
 
 

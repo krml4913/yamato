@@ -304,7 +304,7 @@ class CurateTest(_Curated):
 
     def test_the_time_limit_stops_the_shift(self):
         self.set_fake_mode(p_sleep=30, p_result=PROPOSAL)
-        with mock.patch.dict(self.t["memory"], max_duration=1):
+        with mock.patch.dict(self.t["memory"], max_duration=0.2):
             t0 = time.time()
             res = memory.run_curate(self.shipdir, self.t, "impl")
         self.assertLess(time.time() - t0, 15)

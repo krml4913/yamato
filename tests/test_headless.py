@@ -44,7 +44,7 @@ class _Base(ShipTestCase):
             (self.shipdir / "roles" / f"{role}.md").write_text(f"あなたは {role} です。\n")
         seat.prepare(self.shipdir)
         deadline.write(self.shipdir, limit=600, grace=60, token="t")
-        for target, attr, value in ((headless, "POLL", 0.05), (headless, "KILL_WAIT", 5)):
+        for target, attr, value in ((headless, "POLL", 0.02), (headless, "IDLE_POLL", 0.02), (headless, "KILL_WAIT", 5)):
             p = mock.patch.object(target, attr, value)
             p.start()
             self.addCleanup(p.stop)
@@ -179,8 +179,16 @@ class HeadlessTest(_Base):
         ty = self.shipdir / "team.yaml"
         ty.write_text(ty.read_text().replace("    shift: headless\n", "    shift: headless\n    max_duration: 1s\n"))
         seat.prepare(self.shipdir)
+        load = seat.current_team
+
+        def short_limit(shipdir):   # 1s is the shortest team.yaml can say
+            team = load(shipdir)
+            self.assertEqual(team["roles"]["researcher"]["max_duration"], 1)
+            team["roles"]["researcher"]["max_duration"] = 0.2
+            return team
         t0 = time.time()
-        self.run_wrapper(p_sleep=30)
+        with mock.patch.object(seat, "current_team", short_limit):
+            self.run_wrapper(p_sleep=30)
         self.assertLess(time.time() - t0, 15)
         rec = roster.seat(self.shipdir, "researcher")
         self.assertEqual(rec["endReason"], "max-duration")
@@ -324,7 +332,7 @@ class HeadlessTest(_Base):
         lock = headless._try_lock(headless._lock_path(self.shipdir, "researcher", "lock"))
         th = threading.Thread(target=headless.run, args=(self.shipdir, "researcher"))
         th.start()
-        time.sleep(0.3)
+        time.sleep(0.15)
         # a third one finds the waiter and leaves at once
         self.assertEqual(headless.run(self.shipdir, "researcher"), 0)
         self.assertTrue(th.is_alive())

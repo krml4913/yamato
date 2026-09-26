@@ -12,7 +12,7 @@ from yamato import deadline, events, roster, runtime, seat
 from yamato.util import YamatoError
 
 
-class SeatTest(ShipTestCase):
+class _SeatBase(ShipTestCase):
     def setUp(self):
         super().setUp()
         p = mock.patch.object(seat, "spawn_watchdog")
@@ -45,6 +45,8 @@ class SeatTest(ShipTestCase):
                 s["pid"] = None
         self.fake_state.write_text(json.dumps(st))
 
+
+class SeatTest(_SeatBase):
     # --- up ---
 
     def test_up_launches_hub_with_the_verified_recipe(self):
@@ -158,7 +160,7 @@ class SeatTest(ShipTestCase):
         import threading
 
         self.up()
-        self.set_fake_mode(slow_launch=0.5)
+        self.set_fake_mode(slow_launch=0.2)
         errors = []
 
         def send(text):
@@ -393,6 +395,16 @@ class SeatTest(ShipTestCase):
         self.assertIn("生存=yes", out)
         self.assertIn("!!! pm: 詰まり", out)
         self.assertIn("残り", out)
+
+
+class RealClaudeProcessTest(_SeatBase):
+    """The fake claude as a real process each time, as ``$YAMATO_CLAUDE`` is run in production:
+    the other tests run it in-process (helpers.patch_fast). The recipe (argv, cwd, env) and
+    resume in the workspace."""
+    real_claude_process = True
+
+    test_up_launches_hub_with_the_verified_recipe = SeatTest.test_up_launches_hub_with_the_verified_recipe
+    test_resume_runs_in_the_workspace = SeatTest.test_resume_runs_in_the_workspace
 
 
 if __name__ == "__main__":

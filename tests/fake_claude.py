@@ -5,109 +5,124 @@ State lives in $FAKE_CLAUDE_STATE (JSON). Live sessions get the pid in
 $FAKE_ALIVE_PID (the test runner itself), stopped ones pid None. Every call is
 appended to state["calls"] with its argv and a few env vars. ``-p`` (headless)
 is played by fake_claude_lib/print_mode.py.
+
+Run as a script (``$YAMATO_CLAUDE``), or in-process through ``main()``:
+tests.helpers routes ``yamato.claude._run`` here so a test does not pay a
+python start-up per ``claude agents`` (``-p`` always runs as a real process).
 """
+import fcntl
 import json
 import os
 import sys
 import time
 import uuid
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "fake_claude_lib"))
 
-path = os.environ["FAKE_CLAUDE_STATE"]
-argv = sys.argv[1:]
-if "--bg" in argv and "--resume" not in argv:
-    # slow_launch: a launch that takes a while, outside the lock below, so other
-    # callers (``agents``) see the seat not yet alive meanwhile (the review B1 race)
-    try:
-        time.sleep(float(json.load(open(path)).get("mode", {}).get("slow_launch", 0)))
-    except (FileNotFoundError, ValueError):
-        pass
-# serialise whole invocations so parallel callers in a test do not lose writes
-import fcntl
-_lock = open(path + ".lock", "a")
-fcntl.flock(_lock, fcntl.LOCK_EX)
-try:
-    st = json.load(open(path))
-except (FileNotFoundError, ValueError):
-    st = {"sessions": [], "calls": []}
-st["calls"].append({"argv": argv, "cwd": os.getcwd(),
-                    "GH_TOKEN": os.environ.get("GH_TOKEN"),
-                    "CLAUDE_CODE_SESSION_ID": os.environ.get("CLAUDE_CODE_SESSION_ID"),
-                    "CLAUDE_CODE_CHILD_SESSION": os.environ.get("CLAUDE_CODE_CHILD_SESSION"),
-                    "stdin_is_devnull": os.path.samestat(os.fstat(0), os.stat(os.devnull))})
-alive_pid = int(os.environ["FAKE_ALIVE_PID"])
-mode = st.get("mode", {})
-
-
-if "-p" in argv:
-    json.dump(st, open(path, "w"))
-    fcntl.flock(_lock, fcntl.LOCK_UN)   # a -p runs for a while: let other calls in
-    import print_mode
-    sys.exit(print_mode.run(argv, mode))
-
-
-def save():
-    json.dump(st, open(path, "w"))
+def main(argv, *, cwd=None, env=None, out=None, err=None) -> int:
+    env = os.environ if env is None else env
+    cwd = cwd or os.getcwd()
+    out = out or sys.stdout
+    err = err or sys.stderr
+    path = env["FAKE_CLAUDE_STATE"]
+    if "--bg" in argv and "--resume" not in argv:
+        # slow_launch: a launch that takes a while, outside the lock below, so other
+        # callers (``agents``) see the seat not yet alive meanwhile (the review B1 race)
+        try:
+            with open(path) as f:
+                time.sleep(float(json.load(f).get("mode", {}).get("slow_launch", 0)))
+        except (FileNotFoundError, ValueError):
+            pass
+    # serialise whole invocations so parallel callers in a test do not lose writes
+    with open(path + ".lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            with open(path) as f:
+                st = json.load(f)
+        except (FileNotFoundError, ValueError):
+            st = {"sessions": [], "calls": []}
+        st["calls"].append({"argv": argv, "cwd": cwd,
+                            "GH_TOKEN": env.get("GH_TOKEN"),
+                            "CLAUDE_CODE_SESSION_ID": env.get("CLAUDE_CODE_SESSION_ID"),
+                            "CLAUDE_CODE_CHILD_SESSION": env.get("CLAUDE_CODE_CHILD_SESSION"),
+                            "stdin_is_devnull": os.path.samestat(os.fstat(0), os.stat(os.devnull))})
+        if "-p" in argv:
+            _save(path, st)
+            fcntl.flock(lock, fcntl.LOCK_UN)   # a -p runs for a while: let other calls in
+            sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "fake_claude_lib"))
+            import print_mode
+            return print_mode.run(argv, st.get("mode", {}))
+        return _handle(argv, st, path, cwd, int(env["FAKE_ALIVE_PID"]), out, err)
 
 
-def find(short):
-    for s in st["sessions"]:
-        if s["id"] == short or s["sessionId"].startswith(short):
-            return s
-    return None
+def _save(path, st):
+    with open(path, "w") as f:
+        json.dump(st, f)
 
 
-def new_session(name):
-    sid = str(uuid.uuid4())
-    s = {"pid": alive_pid, "id": sid[:8], "sessionId": sid, "name": name, "kind": "background",
-         "status": "idle", "state": "working", "cwd": os.getcwd(),
-         "startedAt": int(time.time() * 1000)}
-    if mode.get("waitingFor"):
-        s["waitingFor"] = mode["waitingFor"]
-    st["sessions"].append(s)
-    return s
+def _handle(argv, st, path, cwd, alive_pid, out, err) -> int:
+    mode = st.get("mode", {})
 
+    def find(short):
+        for s in st["sessions"]:
+            if s["id"] == short or s["sessionId"].startswith(short):
+                return s
+        return None
 
-if argv[:1] == ["agents"]:
-    print(json.dumps(st["sessions"]))
-elif argv[:1] == ["stop"]:
-    s = find(argv[1])
-    if s:
-        s["pid"] = None
-        s["state"] = "done"
-    save()
-    print(f"stopped {argv[1]}")
-elif argv[:1] == ["rm"]:
-    st["sessions"] = [s for s in st["sessions"] if s["id"] != argv[1]]
-    save()
-    print(f"removed {argv[1]}")
-elif "--resume" in argv:
-    sid = argv[argv.index("--resume") + 1]
-    s = next((x for x in st["sessions"] if x["sessionId"] == sid), None)
-    if s is None or s["pid"] is not None or mode.get("copy"):
-        c = new_session("copy")
-        save()
-        print(f"note: session {sid[:8]} is already running in the background, so this started a copy as {c['id']}.")
-        print(f"backgrounded · {c['id']} · copy")
+    def new_session(name):
+        sid = str(uuid.uuid4())
+        s = {"pid": alive_pid, "id": sid[:8], "sessionId": sid, "name": name, "kind": "background",
+             "status": "idle", "state": "working", "cwd": cwd,
+             "startedAt": int(time.time() * 1000)}
+        if mode.get("waitingFor"):
+            s["waitingFor"] = mode["waitingFor"]
+        st["sessions"].append(s)
+        return s
+
+    if argv[:1] == ["agents"]:
+        print(json.dumps(st["sessions"]), file=out)
+    elif argv[:1] == ["stop"]:
+        s = find(argv[1])
+        if s:
+            s["pid"] = None
+            s["state"] = "done"
+        _save(path, st)
+        print(f"stopped {argv[1]}", file=out)
+    elif argv[:1] == ["rm"]:
+        st["sessions"] = [s for s in st["sessions"] if s["id"] != argv[1]]
+        _save(path, st)
+        print(f"removed {argv[1]}", file=out)
+    elif "--resume" in argv:
+        sid = argv[argv.index("--resume") + 1]
+        s = next((x for x in st["sessions"] if x["sessionId"] == sid), None)
+        if s is None or s["pid"] is not None or mode.get("copy"):
+            c = new_session("copy")
+            _save(path, st)
+            print(f"note: session {sid[:8]} is already running in the background, so this started a copy as {c['id']}.",
+                  file=out)
+            print(f"backgrounded · {c['id']} · copy", file=out)
+        else:
+            s["pid"] = alive_pid
+            _save(path, st)
+            print(f"note: woke session {sid[:8]} with its saved options (--name, --agent, --settings).", file=out)
+            print(f"backgrounded · \x1b[36m{s['id']}\x1b[39m · {s['name']}", file=out)
+    elif "--bg" in argv:
+        if mode.get("untrusted"):
+            print("Workspace not trusted. Run `claude` in x once and accept the trust prompt, then retry.", file=out)
+            return 1
+        s = new_session(argv[argv.index("--name") + 1])
+        _save(path, st)
+        if mode.get("noid"):
+            print("session started", file=out)
+            return 0
+        # real claude colours the id when run from inside a Claude session's Bash (E2E run 1)
+        print(f"backgrounded · \x1b[36m{s['id']}\x1b[39m · {s['name']}", file=out)
+        print(f"warning: no agent named '{argv[argv.index('--agent') + 1]}' — spawning with default template",
+              file=err)
     else:
-        s["pid"] = alive_pid
-        save()
-        print(f"note: woke session {sid[:8]} with its saved options (--name, --agent, --settings).")
-        print(f"backgrounded · \x1b[36m{s['id']}\x1b[39m · {s['name']}")
-elif "--bg" in argv:
-    if mode.get("untrusted"):
-        print("Workspace not trusted. Run `claude` in x once and accept the trust prompt, then retry.")
-        sys.exit(1)
-    s = new_session(argv[argv.index("--name") + 1])
-    save()
-    if mode.get("noid"):
-        print("session started")
-        sys.exit(0)
-    # real claude colours the id when run from inside a Claude session's Bash (E2E run 1)
-    print(f"backgrounded · \x1b[36m{s['id']}\x1b[39m · {s['name']}")
-    print(f"warning: no agent named '{argv[argv.index('--agent') + 1]}' — spawning with default template",
-          file=sys.stderr)
-else:
-    print("fake claude: unsupported " + " ".join(argv), file=sys.stderr)
-    sys.exit(2)
+        print("fake claude: unsupported " + " ".join(argv), file=err)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

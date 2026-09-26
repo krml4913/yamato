@@ -49,6 +49,7 @@ FALLBACK = {"applier": None, "curate_every": 7 * 86400, "curate_at": 30, "max_du
 CURATOR = "memory-curator"                 # the agent name of a curate shift (not a seat)
 CURATOR_PROMPT = "_memory-curator.md"      # under roles/ in the ship; `_` keeps it off role names
 KILL_WAIT = 30
+WATCH_POLL = 0.2   # seconds between time-limit checks while the curate shift runs
 MARK_RE = re.compile(r"^<!--\s*yamato:\s*([a-z]+)(?:\s+([A-Za-z0-9_-]+))?\s*-->\s*$")
 FENCE_RE = re.compile(r"^```[A-Za-z]*\s*$")
 
@@ -653,7 +654,10 @@ def _watch(proc, started: float, max_duration: int) -> str | None:
             killed_at, reason = now, "max-duration"
         elif killed_at is not None and now - killed_at > KILL_WAIT:
             proc.kill()
-        time.sleep(0.2)
+        try:
+            proc.wait(timeout=WATCH_POLL)   # cut short when claude -p ends
+        except subprocess.TimeoutExpired:
+            pass
     return reason
 
 

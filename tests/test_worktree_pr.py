@@ -4,48 +4,95 @@ from __future__ import annotations
 import io
 import json
 import os
+import shutil
 import subprocess
+import tempfile
 import threading
 import time
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
+from tests import fake_gh
 from tests.helpers import HERE, ShipTestCase
 from yamato.util import YamatoError
 
 
-def run(*args, cwd):
-    return subprocess.run(list(args), cwd=str(cwd), check=True, capture_output=True, text=True).stdout.strip()
+def run(*args, cwd, env=None):
+    return subprocess.run(list(args), cwd=str(cwd), check=True, capture_output=True, text=True,
+                          env=env).stdout.strip()
+
+
+def git_env(tmp: Path) -> dict:
+    gitconfig = tmp / "gitconfig"
+    gitconfig.write_text("")
+    return {
+        "GIT_CONFIG_GLOBAL": str(gitconfig), "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com",
+        "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.com",
+    }
+
+
+FAKE_GH = str(HERE / "fake_gh.py")
+
+
+class _InProcessGh:
+    """``yamato.pr``'s ``subprocess``, with the fake gh run in-process (speed only)."""
+
+    def __getattr__(self, name):
+        return getattr(subprocess, name)
+
+    def run(self, args, *, cwd=None, **kw):
+        if args[0] != FAKE_GH:
+            return subprocess.run(args, cwd=cwd, **kw)
+        out, err = io.StringIO(), io.StringIO()
+        rc = fake_gh.main(list(args[1:]), cwd=os.path.realpath(cwd) if cwd else None, out=out, err=err)
+        return subprocess.CompletedProcess(args, rc, out.getvalue(), err.getvalue())
 
 
 class GitShipTestCase(ShipTestCase):
-    """The dev ship with a git workspace (``main``) that has a local bare ``origin``, and a fake gh."""
+    """The dev ship with a git workspace (``main``) that has a local bare ``origin``, and a fake gh.
+
+    The repo pair is made once per class and copied into each test (git start-ups are
+    what makes these tests slow)."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        tmp = Path(tempfile.mkdtemp()).resolve()
+        cls.addClassCleanup(shutil.rmtree, tmp, True)
+        env = {**os.environ, **git_env(tmp)}
+        remote, ws = tmp / "remote.git", tmp / "ws"
+        run("git", "init", "-q", "--bare", "-b", "main", str(remote), cwd=tmp, env=env)
+        ws.mkdir()
+        run("git", "init", "-q", "-b", "main", cwd=ws, env=env)
+        (ws / "README.md").write_text("hello\n")
+        run("git", "add", ".", cwd=ws, env=env)
+        run("git", "commit", "-q", "-m", "init", cwd=ws, env=env)
+        run("git", "remote", "add", "origin", str(remote), cwd=ws, env=env)
+        run("git", "push", "-q", "-u", "origin", "main", cwd=ws, env=env)
+        cls._template = (remote, ws)
 
     def setUp(self):
         super().setUp()
-        gitconfig = self.tmp / "gitconfig"
-        gitconfig.write_text("")
-        env = {
-            "GIT_CONFIG_GLOBAL": str(gitconfig), "GIT_CONFIG_NOSYSTEM": "1",
-            "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com",
-            "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.com",
-            "YAMATO_GH": str(HERE / "fake_gh.py"), "FAKE_GH_STATE": str(self.tmp / "gh.json"),
-        }
+        env = {**git_env(self.tmp),
+               "YAMATO_GH": FAKE_GH, "FAKE_GH_STATE": str(self.tmp / "gh.json")}
         for k, v in env.items():
             self._old.setdefault(k, os.environ.get(k))
         os.environ.update(env)
         os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
         self._old.setdefault("CLAUDE_CODE_SESSION_ID", None)
         self.remote = self.tmp / "remote.git"
-        run("git", "init", "-q", "--bare", "-b", "main", str(self.remote), cwd=self.tmp)
-        ws = self.workspace
-        run("git", "init", "-q", "-b", "main", cwd=ws)
-        (ws / "README.md").write_text("hello\n")
-        run("git", "add", ".", cwd=ws)
-        run("git", "commit", "-q", "-m", "init", cwd=ws)
-        run("git", "remote", "add", "origin", str(self.remote), cwd=ws)
-        run("git", "push", "-q", "-u", "origin", "main", cwd=ws)
+        remote, ws = self._template
+        shutil.copytree(remote, self.remote, symlinks=True)
+        shutil.copytree(ws, self.workspace, symlinks=True, dirs_exist_ok=True)
+        config = self.workspace / ".git" / "config"
+        config.write_text(config.read_text().replace(str(remote), str(self.remote)))
         from yamato import pr
+
+        p = mock.patch.object(pr, "subprocess", _InProcessGh())
+        p.start()
+        self.addCleanup(p.stop)
 
         self._wait = pr.MERGEABLE_WAIT
         pr.MERGEABLE_WAIT = 0
@@ -266,16 +313,18 @@ class WorktreeTest(GitShipTestCase):
 
 
 class PrTest(GitShipTestCase):
-    def ready(self, **fields):
-        """An item with a pushed worktree branch and an open PR."""
-        from yamato import pr, worktree
+    def ready(self, worktree=False, **fields):
+        """An item with a branch and an open PR. yamato pr only talks to gh (the fake), so the
+        branch is set on the item as `board set T branch=...` does, without git (git start-ups
+        are what makes these tests slow); ``worktree=True`` makes it with `worktree add`."""
+        from yamato import pr
+        from yamato import worktree as wt
 
         tid = self.item(**fields)
-        wt, _ = worktree.add(self.shipdir, self.team(), tid)
-        (wt / f"{tid}.txt").write_text("x\n")
-        run("git", "add", ".", cwd=wt)
-        run("git", "commit", "-q", "-m", tid, cwd=wt)
-        run("git", "push", "-q", "-u", "origin", "HEAD", cwd=wt)
+        if worktree:
+            wt.add(self.shipdir, self.team(), tid)
+        else:
+            self.board().set(tid, {"branch": f"yamato/t1/{tid}"}, by="impl")
         self.quiet(pr.open_pr, self.shipdir, self.team(), tid, by="impl")
         return tid
 
@@ -289,7 +338,7 @@ class PrTest(GitShipTestCase):
     def test_open_records_the_pr_and_tells_the_hub(self):
         from yamato import inbox, pr
 
-        tid = self.ready()
+        tid = self.ready(worktree=True)
         meta, body, _ = self.board().read(tid)
         self.assertEqual(meta["pr"], "1")
         self.assertIn("PR #1 を開いた: https://github.com/o/r/pull/1", body)
@@ -539,7 +588,7 @@ class PrTest(GitShipTestCase):
         with merge_lock(self.shipdir):
             t = threading.Thread(target=merge)
             t.start()
-            time.sleep(0.5)
+            time.sleep(0.3)
             self.assertFalse(done.is_set())
             self.assertFalse(any(c["argv"][:2] == ["pr", "merge"] for c in self.gh()["calls"]))
         t.join(10)
