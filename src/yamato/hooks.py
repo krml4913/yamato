@@ -12,10 +12,15 @@ from pathlib import Path
 
 from . import deadline, events, inbox, inject, roster
 from .team import runtime_team
-from .util import YAMATO_BIN, append_log, read_json, ship_lock, write_json
+from .util import YAMATO_BIN, YamatoError, append_log, read_json, ship_lock, write_json
 
 MAX_WRAPUP_NOTICES = 3   # per shift; after that the grace-period force stop takes over
-WAIT_POLL = 5            # seconds between deadline checks in the async watcher
+WAIT_POLL = 5            # seconds between checks (deadline, inbox) in the async watcher
+
+INBOX_WAKE_MESSAGE = (
+    "[yamato] inbox に未読があります ({count} 件、{senders} から)。"
+    "`{yamato} inbox {ship} {seat}` で読んで対応してください。"
+)
 
 
 def _stdin_json() -> dict:
@@ -176,13 +181,41 @@ def _pid_alive(pid: int) -> bool:
     return True
 
 
+def _inbox_wake_path(shipdir: Path, seat: str) -> Path:
+    return Path(shipdir) / ".runtime" / f"inbox-wake-{seat}.json"
+
+
+def take_inbox_wake(shipdir: Path, seat: str, seats) -> list[dict]:
+    """Unread inbox entries from outside the seats (owner, yamato's fixed texts, ...),
+    each returned once. A seat sender delivers by SendMessage itself (§0 B1), so its
+    entries are left alone: waking for them too would wake the seat twice."""
+    path = _inbox_wake_path(shipdir, seat)
+    with ship_lock(shipdir):
+        woken = (read_json(path, {}) or {}).get("n", 0)
+        news = [e for e in inbox.unread(shipdir, seat)
+                if e.get("n", 0) > woken and e.get("from") not in seats]
+        if news:
+            write_json(path, {"n": max(e["n"] for e in news)})
+        return news
+
+
+def _inbox_wake_message(shipdir: Path, seat: str, news: list[dict]) -> str:
+    senders = "・".join(dict.fromkeys(str(e.get("from")) for e in news))
+    return INBOX_WAKE_MESSAGE.format(count=len(news), senders=senders, yamato=YAMATO_BIN, ship=shipdir, seat=seat)
+
+
 def wait_deadline(shipdir: Path, seat: str) -> int:
-    """Async + asyncRewake Stop hook: sleep until the deadline, then wake the idle seat.
+    """Async + asyncRewake Stop hook: wake the idle seat at the deadline, or when its
+    inbox gets an entry nobody will SendMessage (the owner's, yamato's; e2e-p1 C).
 
     Exit 2 with the message on stderr wakes the seat (verify-p0-a Q4). A
     pidfile keeps one watcher per seat, since every turn end spawns another.
     """
     _stdin_json()
+    try:
+        seats = set(runtime_team(shipdir)["seats"])
+    except (OSError, YamatoError, KeyError, TypeError):
+        seats = set()   # every sender then counts as outside: a wake too many, never one too few
     pidfile = Path(shipdir) / ".runtime" / f"wait-{seat}.pid"
     try:
         other = int(pidfile.read_text().strip())
@@ -205,6 +238,11 @@ def wait_deadline(shipdir: Path, seat: str) -> int:
                     return 0
                 append_log(shipdir, seat, "deadline watcher: 稼働時間の上限 → 終業を指示")
                 sys.stderr.write(_wrapup_message(shipdir, seat) + "\n")
+                return 2
+            news = take_inbox_wake(shipdir, seat, seats) if deadline.phase(dl) == deadline.RUNNING else []
+            if news:
+                append_log(shipdir, seat, f"inbox watcher: 席の外からの未読 {len(news)} 件 (#{news[-1]['n']} まで) → 起こす")
+                sys.stderr.write(_inbox_wake_message(shipdir, seat, news) + "\n")
                 return 2
             time.sleep(max(1.0, min(WAIT_POLL, dl["deadline"] - time.time())))
     finally:

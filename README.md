@@ -47,7 +47,7 @@ zellij --session yamato-view --new-session-with-layout ~/yamato/view.kdl
 | `extend <ship> <期間>` | (admiral) deadline を延ばす (データの書き換えだけ。過ぎていれば今から数える) |
 | `halt <ship>` | (admiral) 緊急停止。猶予なしで全席を強制停止し、日報の安全網を通す |
 | `talk <ship> [<seat>]` | (admiral) 席に `claude attach` する (既定は team.yaml の `talk_default`、省略時 hub)。止まっている席は send と同じ規則で起こしてから。headless の席は attach できないので断る (send で頼む)。使い方は [docs/admiral.md](docs/admiral.md) |
-| `send <ship> <seat\|owner> "<msg>" [--from <seat>] [--cwd <path>]` | inbox に記録 → 宛先が生きていれば何もしない (送り手が SendMessage で届ける) / 止まった persistent は resume。ただし役割の `rotate:` の条件 (入れ替えの印・前のシフトの文脈量・止まってからの時間・日付の変わり目) に当たれば resume せず新しいシフト (design-p1 §5.3) / per_task と未起動は新しいシフト。`--cwd` は次のシフトをその dir (項目の worktree など) で `bgIsolation: none` で起動する (per_task / headless。main repo が trust 済みなら worktree は trust 不要)。同じ送り手→宛先の送りすぎ・同じ本文の連続は events に残して警告するだけ (`watch.spin`)。最終受付のあとの captain の send は本文の先頭に「(終了まで X 分。片付く範囲で)」が付く。`--from` の席か呼び出した席の trust のプロファイルが `send: false` なら断る |
+| `send <ship> <seat\|owner> "<msg>" [--from <seat>] [--cwd <path>]` | inbox に記録 → 宛先が生きていれば何もしない (送り手が席なら SendMessage で届ける。送り手が席でない (owner・yamato の定型文など) ときは、宛先の席の Stop hook の watcher が数秒で idle の席を起こす) / 止まった persistent は resume。ただし役割の `rotate:` の条件 (入れ替えの印・前のシフトの文脈量・止まってからの時間・日付の変わり目) に当たれば resume せず新しいシフト (design-p1 §5.3) / per_task と未起動は新しいシフト。`--cwd` は次のシフトをその dir (項目の worktree など) で `bgIsolation: none` で起動する (per_task / headless。main repo が trust 済みなら worktree は trust 不要)。同じ送り手→宛先の送りすぎ・同じ本文の連続は events に残して警告するだけ (`watch.spin`)。最終受付のあとの captain の send は本文の先頭に「(終了まで X 分。片付く範囲で)」が付く。`--from` の席か呼び出した席の trust のプロファイルが `send: false` なら断る |
 | `inbox <ship> <seat> [--all]` | 未読を全文で表示して既読にする |
 | `board add\|set\|show\|list\|mine` | board の操作。frontmatter はコマンド経由でのみ変わり、値を検証する。done は `board/archive/` へ |
 | `board note <ship> <item> "<text>" [--by <seat>]` | 項目の本文 (`## 経緯` の上) に追記し、経緯に 1 行残す。frontmatter (state・assignee など) は変えない。外を読む役割 (調査艦の researcher・fact-checker) が使う |
@@ -57,8 +57,8 @@ zellij --session yamato-view --new-session-with-layout ~/yamato/view.kdl
 | `worktree rm <ship> <item> [--force]` | 片付ける。未 commit の変更か、どのリモートにもない commit があれば断る (`--force` で外す) |
 | `pr open <ship> <item> [--title] [--body] [--draft]` | 項目の `branch` から `gh pr create` (base は `git.base`)。項目に `pr` を書き、列に `review` があれば動かし、項目の `reviewer` (無ければ hub) に send する |
 | `pr merge <ship> <item>` | `git.merge_requires` を確かめて `gh pr merge --<git.strategy>`。艦ごとに 1 本ずつ (ロック)。呼び出し元を `merged_by` に残す (誰が打てるかは検査しない)。そのあと他の開いた PR の衝突を `gh pr view` で確かめ、衝突したものは列 `rebase` (あれば) に動かし、`git.conflict` の宛先に send する |
-| `report daily <ship> [--date] [--facts-only] [--force]` | 日報の下書き `reports/daily/<日付>.md` を作る (LLM を使わない)。事実の節 (判断待ち・終わったもの・動いている/止まっているもの・異常・使用量) を board・events.jsonl・usage.jsonl から埋め、「一言」「明日」は captain が書く欄として空ける。60 行まで。`--facts-only` はその 2 欄を「captain が書けなかった」にしてすぐ通知する |
-| `report send <ship> [--date]` | 日報の要約 (一言・判断待ち・異常、20 行まで) を `notify.via` で送る |
+| `report daily <ship> [--date] [--facts-only] [--force]` | 日報の下書き `reports/daily/<日付>.md` を作る (LLM を使わない)。事実の節 (判断待ち・終わったもの・動いている/止まっているもの・異常・使用量) を board・events.jsonl・usage.jsonl から埋め、「一言」「明日」は captain が書く欄として空ける。60 行まで。`--facts-only` はその 2 欄を「captain が書けなかった」にしてすぐ通知する。その日の日報がすでにあれば、「一言」「明日」を残して事実の節だけを作り直す (最後に送ったあと日報に載る出来事が無ければ何もしない。一から作り直すのは `--force`) |
+| `report send <ship> [--date]` | 日報の要約 (一言・判断待ち・異常、20 行まで) を `notify.via` で送る。同じ日に送るのが 2 回目以降なら件名に「(更新)」を付ける |
 | `decide open <ship> --category <c> --title "<t>" [--blocks T-1,T-2] [--links T-3] [--due YYYY-MM-DD] [--body-file <f>] [--urgent] [--supersedes D-n]` | 判断の項目 `D-NNN` (`kind: decision`) を開く。decider は team.yaml の `decisions` から開いた時点で決めて固定する (表にない category は `default`、それも無ければ hub)。`--blocks` のタスクは `state: blocked` にして `blocked_on` に足す (`--links` は止めずに結ぶだけ)。decider が席なら send、owner なら owner の inbox に記録し、`notify.decisions: each` か `--urgent` のときだけ通知する (既定の `digest` は日報にまとめる)。開いた本人が decider なら送らない |
 | `decide close <ship> <D> --choice "<決定>" --reason "<理由>" [--by <決めた人>]` | 項目の「## 決定」を書いて閉じ (`closed_by` = 呼び出し元、`on_behalf_of` = `--by` か呼び出し元)、`decisions/log.md` に追記する。decider 以外が閉じても断らず、events と項目に記録する。`blocked_on` が空になったタスクは元の state に戻し、担当 (無ければ hub) に send する。判断を開いた席にも (閉じた本人でなければ) 決定を send する (`--links` だけの merge の判断を owner が閉じたとき、待っている captain に届く)。閉じた判断は書き換えない (覆すなら `--supersedes`) |
 | `decide list <ship> [--decider <d>] [--stale 2d] [--all]` / `decide categories <ship>` | 待ちの判断の一覧 (待ち時間・期限・止めているタスクつき) / team.yaml の decisions の表 |
@@ -111,7 +111,7 @@ notify:
 | `command` | `notify.command` をシェルで実行。件名・本文・重要度は stdin の JSON `{"title", "message", "level"}` と環境変数 `YAMATO_TITLE` / `YAMATO_MESSAGE` / `YAMATO_LEVEL`。メールなど上の 3 つ以外はこれで送る (方式は増やさない) |
 
 - best-effort: どれかが失敗しても他は送り、`send` は失敗にならない。失敗は `send` の出力に `通知 <方式>: 失敗 (...)` と出て、`events.jsonl` に `notify_failed` として残る ([docs/events.md](docs/events.md))。webhook の URL は出力にも events にも書かない
-- 日報 (design-p1 §2): `report.daily: on_down` (ひな形の既定) の艦では、`down`・強制停止のときにその日の日報が無ければ事実だけで作り、まだ送っていなければ要約を送る (captain が落ちていても owner に届く安全網)。captain が終業時に「一言」「明日」を書いて `report send` する流れは `roles/pm.md` に書いてある。captain の注入には `inject` の `last_report` で前回の日報の「一言」「owner の判断待ち」「明日」だけが入る
+- 日報 (design-p1 §2): `report.daily: on_down` (ひな形の既定) の艦では、`down`・強制停止のときにその日の日報が無ければ事実だけで作り、日報を作った・送ったあとに日報に載る出来事 (board・判断・PR・異常の events) があれば「一言」「明日」を残して事実の節を作り直し、まだ送っていないか、最後に送ったあとに変化があれば要約を送る (2 回目は件名に「(更新)」。captain が落ちていても owner に届く安全網。同じ日の 2 回目の終業にも効く)。captain が終業時に「一言」「明日」を書いて `report send` する流れは `roles/pm.md` に書いてある。captain の注入には `inject` の `last_report` で前回の日報の「一言」「owner の判断待ち」「明日」だけが入る
 - `PushNotification` は方式にしない (席の外から出せない。[verify-p1-d](docs/verify-p1-d.md) V11)
 
 ## テストの実行

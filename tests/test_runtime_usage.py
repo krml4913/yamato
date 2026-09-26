@@ -29,6 +29,14 @@ class RuntimeTest(ShipTestCase):
         self.assertIn("wait-deadline", waiter["command"])
         self.assertTrue(set(s["hooks"]) >= {"SessionStart", "UserPromptSubmit", "Stop", "PermissionRequest", "PermissionDenied"})
 
+    def test_env_unset_blanked_in_settings_env(self):
+        # e2e-p1 D: a bg seat inherits the daemon's environment; `env -u` at launch misses it
+        team = self.team()
+        team["settings"] = {"env": {"GH_TOKEN": "leak", "YAMATO_GH": "/x/gh"}}
+        runtime.generate(self.shipdir, team)
+        env = json.loads(runtime.settings_path(self.shipdir, "impl").read_text())["env"]
+        self.assertEqual(env, {"GH_TOKEN": "", "GITHUB_TOKEN": "", "YAMATO_GH": "/x/gh"})
+
     def test_policy_is_whatever_team_yaml_says(self):
         import subprocess
 
