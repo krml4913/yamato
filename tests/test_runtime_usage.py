@@ -17,7 +17,7 @@ class RuntimeTest(ShipTestCase):
         self.assertNotIn("ask", s["permissions"])
         deny = s["permissions"]["deny"]
         # the deny list comes from the template's team.yaml ({{ship}} expanded), not from code
-        for rule in ("Bash(git push*)", "Bash(git reset --hard*)", "Bash(claude stop*)", "Edit(.claude/**)",
+        for rule in ("Bash(git push --force*)", "Bash(git reset --hard*)", "Bash(claude stop*)", "Edit(.claude/**)",
                      "Bash(gh pr create*)", f"Edit(/{self.shipdir}/roster.json)"):
             self.assertIn(rule, deny)
         self.assertEqual(s["worktree"], {"bgIsolation": "none"})  # template `settings:`
@@ -27,7 +27,7 @@ class RuntimeTest(ShipTestCase):
         waiter = s["hooks"]["Stop"][0]["hooks"][1]
         self.assertTrue(waiter["async"] and waiter["asyncRewake"])
         self.assertIn("wait-deadline", waiter["command"])
-        self.assertTrue(set(s["hooks"]) >= {"SessionStart", "Stop", "PermissionRequest", "PermissionDenied"})
+        self.assertTrue(set(s["hooks"]) >= {"SessionStart", "UserPromptSubmit", "Stop", "PermissionRequest", "PermissionDenied"})
 
     def test_policy_is_whatever_team_yaml_says(self):
         import subprocess

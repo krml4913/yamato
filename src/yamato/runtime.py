@@ -86,6 +86,7 @@ def build_settings(shipdir: Path, team: dict, seat: str) -> dict:
         },
         "hooks": {
             "SessionStart": [{"hooks": [hook("session-start")]}],
+            "UserPromptSubmit": [{"hooks": [hook("user-prompt-submit")]}],
             "Stop": [{"hooks": [
                 hook("stop"),
                 {**hook("wait-deadline"), "async": True, "asyncRewake": True, "timeout": HOOK_TIMEOUT_WAIT},

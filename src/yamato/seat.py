@@ -16,7 +16,7 @@ import time
 import uuid
 from pathlib import Path
 
-from . import claude, deadline, inbox, notify, roster, runtime, usage
+from . import claude, deadline, events, inbox, notify, roster, runtime, usage
 from .team import load_team, seat_spec
 from .util import (YAMATO_BIN, YamatoError, append_log, fmt_span, fmt_time, read_json,
                    seat_lock, ship_lock, write_json)
@@ -217,7 +217,7 @@ def reconcile(shipdir: Path, team: dict, listing: list[dict]) -> None:
         finish_shift(shipdir, seat, reason=reason)
 
 
-def force_stop_all(shipdir: Path, team: dict, listing: list[dict], reason: str) -> list[str]:
+def force_stop_all(shipdir: Path, team: dict, reason: str) -> list[str]:
     stopped = []
     for seat in team["seats"]:
         # a launch in flight holds the wake lock: wait for it, then look again
@@ -228,17 +228,18 @@ def force_stop_all(shipdir: Path, team: dict, listing: list[dict], reason: str) 
                 continue
             claude.stop(rec.get("shortId") or rec["sessionId"][:8])
             claude.wait_gone(rec["sessionId"], timeout=30)
+            events.emit(shipdir, events.FORCE_STOP, seat=seat, summary=f"強制停止 ({reason})",
+                        data={"reason": reason, "shiftNo": rec.get("shiftNo"), "sessionId": rec["sessionId"]})
             finish_shift(shipdir, seat, reason=reason, forced=True)
             stopped.append(seat)
     return stopped
 
 
-def enforce(shipdir: Path, team: dict, listing: list[dict] | None = None) -> list[str]:
+def enforce(shipdir: Path, team: dict) -> list[str]:
     """Past deadline + grace: stop every seat still alive (like ``down --force``)."""
     if deadline.phase(deadline.read(shipdir)) != deadline.FORCE:
         return []
-    listing = claude.agents() if listing is None else listing
-    return force_stop_all(shipdir, team, listing, reason="grace-exceeded")
+    return force_stop_all(shipdir, team, reason="grace-exceeded")
 
 
 def _spawn_detached(args: list[str]) -> None:
@@ -283,12 +284,14 @@ def send(shipdir: Path, seat: str, text: str, sender: str) -> int:
         raise YamatoError("本文が空です")
     if seat == OWNER:
         entry = inbox.append(shipdir, OWNER, sender, text)
+        _send_event(shipdir, OWNER, sender, entry)
         out(f"owner の inbox に記録した: #{entry['n']} (`{YAMATO_BIN} inbox {shipdir} owner` で読む)")
         for line in notify.notify(team, f"yamato {team['name']}: {sender} から", text):
             out(line)
         return 0
     seat_spec(team, seat)
     entry = inbox.append(shipdir, seat, sender, text)
+    _send_event(shipdir, seat, sender, entry)
     out(f"inbox に記録した: {seat} #{entry['n']}")
     y = YAMATO_BIN
     dl = deadline.read(shipdir)
@@ -322,6 +325,11 @@ def send(shipdir: Path, seat: str, text: str, sender: str) -> int:
     else:
         out(f"席 {seat} の新しいシフトを起動した (session {rec['sessionId']})。SendMessage は不要。")
     return 0
+
+
+def _send_event(shipdir: Path, to: str, sender: str, entry: dict) -> None:
+    events.emit(shipdir, events.SEND, seat=to, by=sender, summary=entry["text"],
+                data={"n": entry["n"], "chars": len(entry["text"])})
 
 
 def seat_stop(shipdir: Path, seat: str, after: int, delivered: bool = False) -> int:
@@ -423,7 +431,7 @@ def down(shipdir: Path, force: bool) -> int:
             with ship_lock(shipdir):
                 dl["graceUntil"] = min(dl["graceUntil"], time.time())
                 deadline.write_raw(shipdir, dl)
-        stopped = force_stop_all(shipdir, team, listing, reason="down-force")
+        stopped = force_stop_all(shipdir, team, reason="down-force")
         out(f"強制停止した席: {', '.join(stopped) if stopped else '(なし)'}")
         return 0
     by = claude.by_session(listing)
@@ -439,7 +447,7 @@ def status(shipdir: Path) -> int:
     team = current_team(shipdir)
     listing = claude.agents()
     reconcile(shipdir, team, listing)
-    stopped = enforce(shipdir, team, listing)
+    stopped = enforce(shipdir, team)
     if stopped:
         listing = claude.agents()
     by = claude.by_session(listing)
@@ -477,8 +485,10 @@ def status(shipdir: Path) -> int:
 
 
 def _last_active(rec: dict) -> float | None:
+    """The hooks' ``lastActive`` (design-p1 §5.1), or anything later the transcript shows
+    (a seat started before the UserPromptSubmit hook existed has no ``lastActive``)."""
     sid = rec.get("sessionId")
-    times = []
+    times = [rec["lastActive"]] if rec.get("lastActive") else []
     if sid:
         for p in claude.transcript_paths(sid):
             try:

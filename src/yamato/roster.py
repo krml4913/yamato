@@ -1,4 +1,5 @@
-"""roster.json: which session is each seat's current shift, and how shifts ended.
+"""roster.json: which session is each seat's current shift, how shifts ended, and
+when each seat last moved (``lastActive``, design-p1 §5.1).
 
 The source of truth for "the seat's current session" (``--name`` is not
 unique, spike-zellij-attach). Always stores the full sessionId: a short id
@@ -9,6 +10,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+from . import events
 from .util import read_json, ship_lock, write_json
 
 MAX_SHIFTS = 200
@@ -40,6 +42,16 @@ def seat(shipdir: Path, name: str) -> dict:
     return load(shipdir)["seats"].get(name, {})
 
 
+def seat_of_session(shipdir: Path, session_id: str | None) -> str | None:
+    """The seat whose current shift is ``session_id`` (who called a command; for the record only)."""
+    if not session_id:
+        return None
+    for name, rec in load(shipdir)["seats"].items():
+        if rec.get("sessionId") == session_id:
+            return name
+    return None
+
+
 def start_shift(shipdir: Path, name: str, *, session_id: str, short_id: str, session_name: str,
                 how: str, now: float | None = None) -> dict:
     now = now or time.time()
@@ -57,6 +69,7 @@ def start_shift(shipdir: Path, name: str, *, session_id: str, short_id: str, ses
             "state": ON_SHIFT,
             "shiftNo": rec.get("shiftNo", 0) + 1,
             "shiftStartedAt": now,
+            "lastActive": now,
             "how": how,
             "endedAt": None,
             "endReason": None,
@@ -68,7 +81,18 @@ def start_shift(shipdir: Path, name: str, *, session_id: str, short_id: str, ses
             "how": how, "startedAt": now, "endedAt": None, "endReason": None,
         })
         save(shipdir, data)
+        events.emit(shipdir, events.SHIFT_START, seat=name, now=now,
+                    summary=f"シフト開始 #{rec['shiftNo']} ({how})",
+                    data={"shiftNo": rec["shiftNo"], "how": how, "sessionId": session_id})
         return dict(rec)
+
+
+def touch(shipdir: Path, name: str, now: float | None = None) -> None:
+    """The seat just moved (SessionStart / UserPromptSubmit / Stop hooks, design-p1 §5.1)."""
+    with ship_lock(shipdir):
+        data = load(shipdir)
+        data["seats"].setdefault(name, {})["lastActive"] = now or time.time()
+        save(shipdir, data)
 
 
 def mark_stopping(shipdir: Path, name: str, *, handoff_written: bool, now: float | None = None) -> dict:
@@ -96,4 +120,8 @@ def end_shift(shipdir: Path, name: str, *, reason: str, handoff_written: bool | 
                     sh["note"] = note
                 break
         save(shipdir, data)
+        events.emit(shipdir, events.SHIFT_END, seat=name, now=now,
+                    summary=f"シフト終了 #{rec.get('shiftNo')} ({reason})" + (f" {note}" if note else ""),
+                    data={"shiftNo": rec.get("shiftNo"), "reason": reason,
+                          "handoffWritten": rec.get("handoffWritten"), "note": note})
         return dict(rec)
