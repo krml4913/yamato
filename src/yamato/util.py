@@ -6,7 +6,6 @@ modules only.
 from __future__ import annotations
 
 import contextlib
-import fcntl
 import json
 import os
 import re
@@ -68,13 +67,35 @@ def resolve_ship(ref: str) -> Path:
 
 # --- files -----------------------------------------------------------------
 
+_REPLACE_RETRIES = 20   # Windows only: os.replace onto a file someone else has open
+_REPLACE_DELAY = 0.05   # (a virus scanner, or a reader with no lock of its own)
+
+
+def _replace(src, dst) -> None:
+    """``os.replace`` (POSIX rename semantics on both OSes). On Windows, replacing a
+    file that another process still has open raises ``PermissionError`` (WinError 5
+    / 32, not a POSIX-style rename race); retry briefly instead of failing the write
+    outright (windows-research §2.5)."""
+    if os.name != "nt":
+        os.replace(src, dst)
+        return
+    for attempt in range(_REPLACE_RETRIES):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if attempt == _REPLACE_RETRIES - 1:
+                raise
+            time.sleep(_REPLACE_DELAY)
+
+
 def atomic_write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(text)
-        os.replace(tmp, path)
+        _replace(tmp, path)
     except BaseException:
         with contextlib.suppress(FileNotFoundError):
             os.unlink(tmp)
@@ -134,15 +155,50 @@ def merge_lock(shipdir: Path):
         yield
 
 
+_LOCK_POLL = 0.05   # Windows only: msvcrt.locking has no blocking mode, so lock_file loops
+
+
+def lock_file(f) -> None:
+    """Take an exclusive, whole-file lock on the already-open ``f`` (POSIX: ``fcntl.flock``;
+    Windows: ``msvcrt.locking``, which only offers a non-blocking mode (``LK_NBLCK``), so
+    this loops until it succeeds -- windows-research §2.1). ``fcntl`` / ``msvcrt`` are
+    imported here, not at module level, so importing this module does not fail on the
+    other OS (a bare ``import fcntl`` at the top used to make every command fail to start
+    on Windows)."""
+    if os.name == "nt":
+        import msvcrt
+        f.seek(0)
+        while True:
+            try:
+                msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+                return
+            except OSError:
+                time.sleep(_LOCK_POLL)
+    else:
+        import fcntl
+        fcntl.flock(f, fcntl.LOCK_EX)
+
+
+def unlock_file(f) -> None:
+    """Release a lock taken with ``lock_file``."""
+    if os.name == "nt":
+        import msvcrt
+        f.seek(0)
+        msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl
+        fcntl.flock(f, fcntl.LOCK_UN)
+
+
 @contextlib.contextmanager
 def _flock(path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
     f = open(path, "a")
     try:
-        fcntl.flock(f, fcntl.LOCK_EX)
+        lock_file(f)
         yield
     finally:
-        fcntl.flock(f, fcntl.LOCK_UN)
+        unlock_file(f)
         f.close()
 
 

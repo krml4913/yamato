@@ -8,11 +8,14 @@ State lives in $FAKE_GH_STATE (JSON): ``prs`` maps a PR number to
 Run as a script (``$YAMATO_GH``), or in-process through ``main()`` (the pr tests
 route ``yamato.pr``'s gh call here to skip a python start-up per call).
 """
-import fcntl
 import json
 import os
 import sys
 import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from yamato.util import lock_file, unlock_file   # noqa: E402 (path set up above)
 
 
 def main(argv, *, cwd=None, env=None, out=None, err=None) -> int:
@@ -24,18 +27,21 @@ def main(argv, *, cwd=None, env=None, out=None, err=None) -> int:
 
     def locked(fn):
         with open(path + ".lock", "a") as lk:
-            fcntl.flock(lk, fcntl.LOCK_EX)
+            lock_file(lk)
             try:
-                with open(path) as f:
-                    st = json.load(f)
-            except (FileNotFoundError, ValueError):
-                st = {}
-            st.setdefault("prs", {})
-            st.setdefault("calls", [])
-            result = fn(st)
-            with open(path, "w") as f:
-                json.dump(st, f)
-            return result
+                try:
+                    with open(path) as f:
+                        st = json.load(f)
+                except (FileNotFoundError, ValueError):
+                    st = {}
+                st.setdefault("prs", {})
+                st.setdefault("calls", [])
+                result = fn(st)
+                with open(path, "w") as f:
+                    json.dump(st, f)
+                return result
+            finally:
+                unlock_file(lk)
 
     def record(st):
         st["calls"].append({"argv": argv, "cwd": cwd, "t": time.time()})
