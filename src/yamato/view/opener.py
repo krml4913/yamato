@@ -26,6 +26,7 @@ sessions" instead of failing.
 """
 from __future__ import annotations
 
+import contextlib
 import os
 import subprocess
 import tempfile
@@ -107,7 +108,13 @@ def open_ships(refs: list[str] | None = None, *, command: str | None = None,
             fd, tmp = tempfile.mkstemp(prefix="yamato-view-", suffix=".kdl")
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write(text)
-            _zellij(run, ["action", "new-tab", "--layout", tmp])
+            try:
+                _zellij(run, ["action", "new-tab", "--layout", tmp])
+            finally:
+                # zellij has read the layout by the time new-tab returns (T-015); a
+                # failure to remove it must not fail the view open itself.
+                with contextlib.suppress(OSError):
+                    os.remove(tmp)
         return
 
     text = layout.layout_for(refs, command)
