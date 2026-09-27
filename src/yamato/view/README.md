@@ -5,7 +5,11 @@
 ## 使い方
 
 ```sh
-# 艦ごとに 1 タブ、席ごとに 1 ペインの layout を作って開く
+# 艦ごとに 1 タブ、席ごとに 1 ペインの layout を作って開く (zellij を実際に呼ぶ)
+./yamato view open dev research        # 艦名を省略すると登録されている全艦
+./yamato view open                     # zellij の中なら、今のセッションに艦ごとタブを足す
+
+# layout (KDL) だけ組み立てる。zellij は呼ばない
 ./yamato view layout dev research -o ~/yamato/view.kdl
 zellij --session yamato-view --new-session-with-layout ~/yamato/view.kdl
 
@@ -13,9 +17,16 @@ zellij --session yamato-view --new-session-with-layout ~/yamato/view.kdl
 ./yamato view attach dev pm            # --poll 3 (秒) / 環境変数 YAMATO_VIEW_POLL
 ```
 
-艦は名前か艦フォルダのパスで指定する。名前は `$YAMATO_HOME/ships.json` (`ship create --path` で作った艦の登録簿)、なければ `$YAMATO_HOME/<name>` (既定 `~/yamato/<name>`) の順に探す。
+艦は名前か艦フォルダのパスで指定する。名前は `$YAMATO_HOME/ships.json` (`ship create --path` で作った艦の登録簿)、なければ `$YAMATO_HOME/<name>` (既定 `~/yamato/<name>`) の順に探す。`view open` で艦名を省略すると `ships.json` と `$YAMATO_HOME` 直下の全艦が対象になる。
 
 layout の各ペインは `<yamato> view attach <艦フォルダの絶対パス> <席>` を動かす。ペインは zellij のサーバの環境で動くため、この shell の `YAMATO_HOME` に頼らないようパスで渡している。タブの名前は team.yaml の `name`。
+
+### `view open` の動き (§13)
+
+- layout は毎回組み立て直す (キャッシュしない)。席の顔ぶれが変わっていれば次の `view open` からすぐ反映される
+- zellij の外 (環境変数 `ZELLIJ` なし): layout を 1 ファイル (既定 `$YAMATO_HOME/view.kdl`、`-o` で変更可) に書き、`zellij list-sessions --short` でセッション (既定 `yamato-view`、`--session` で変更可) の有無を見る。あれば `zellij attach`、無ければ `zellij --session <name> --new-session-with-layout <file>`
+- zellij の中: 艦ごとに 1 タブ分の layout を作って一時ファイルに書き、艦ごとに `zellij action new-tab --layout <file>` を呼ぶ (今のセッションにタブを足すだけで、attach し直さない)
+- zellij バイナリは `YAMATO_ZELLIJ` 環境変数で差し替えられる (既定 `zellij`。`claude.py` の `YAMATO_CLAUDE` に倣う)
 
 ## 動き
 
