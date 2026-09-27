@@ -107,12 +107,13 @@ def _parser(hook_only: bool = False) -> argparse.ArgumentParser:
     ss.add_argument("--rotate", action="store_true",
                     help="入れ替えの印を立てて終業する (次の send で resume せず新しいシフトになる)")
 
-    from . import admiral, pr, report, worktree  # design-p1 §8, §2, §6: the parsers live with the commands
+    from . import admiral, feed, pr, report, worktree  # design-p1 §8, §2, §6: the parsers live with the commands
 
     admiral.register(sub)
     worktree.register(sub)
     pr.register(sub)
     report.register(sub)
+    feed.register(sub)
     from . import decide  # design-p1 §1
 
     decide.add_parser(sub)
@@ -276,10 +277,10 @@ def main(argv: list[str] | None = None) -> int:
             from . import admiral
 
             return admiral.run(args)
-        if args.cmd in ("worktree", "pr", "report"):
-            from . import pr, report, worktree
+        if args.cmd in ("worktree", "pr", "report", "feed"):
+            from . import feed, pr, report, worktree
 
-            return {"worktree": worktree, "pr": pr, "report": report}[args.cmd].run(args)
+            return {"worktree": worktree, "pr": pr, "report": report, "feed": feed}[args.cmd].run(args)
         if args.cmd in ("memo", "memory", "_memory-curate"):
             from . import memory
 
