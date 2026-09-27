@@ -376,6 +376,19 @@ class OpenerTest(ShipTestCase):
         self.assertTrue(run.kwargs[1].get("capture_output"))
         self.assertIn('args "view" "attach"', dest.read_text())
 
+    def test_list_sessions_failure_means_no_sessions(self):
+        # zellij list-sessions exits 1 with "No active zellij sessions found."
+        # on stderr when there are none yet -- the ordinary first-run case --
+        # so it must not raise; open_ships should fall through to starting one.
+        run = FakeZellijRun(sessions="", rc_for=lambda argv: 1 if "list-sessions" in argv else 0)
+        dest = self.tmp / "view.kdl"
+        opener.open_ships(["t1"], command="yamato", output=str(dest), run=run, in_zellij=False,
+                          session="my-view")
+        self.assertEqual(run.calls, [
+            ["zellij", "list-sessions", "--short"],
+            ["zellij", "--session", "my-view", "--new-session-with-layout", str(dest)],
+        ])
+
     def test_zellij_failure_raises(self):
         run = FakeZellijRun(sessions="yamato-view\n",
                             rc_for=lambda argv: 1 if "attach" in argv else 0)

@@ -19,7 +19,10 @@ time someone runs ``view open``.
 ``attach`` and ``--new-session-with-layout`` are interactive TUIs that take
 over the terminal, so those two calls are made without capturing
 stdout/stderr (capturing would blank the screen). Every zellij call raises
-``YamatoError`` on a non-zero exit.
+``YamatoError`` on a non-zero exit, except ``list-sessions``: zellij exits 1
+with "No active zellij sessions found." on stderr when there are none yet
+(the ordinary first-run case), so that one treats a non-zero exit as "no
+sessions" instead of failing.
 """
 from __future__ import annotations
 
@@ -66,7 +69,17 @@ def _zellij_interactive(run, args: list[str]):
 
 
 def _session_exists(run, session: str) -> bool:
-    cp = _zellij(run, ["list-sessions", "--short"])
+    """``list-sessions`` exits non-zero (stderr: ``No active zellij sessions
+    found.``) when there are none yet -- the ordinary first-run case, not a
+    failure -- so treat any non-zero exit here as "no sessions" instead of
+    raising (``FileNotFoundError`` still becomes ``YamatoError``, same as
+    every other zellij call)."""
+    try:
+        cp = run([zellij_bin(), "list-sessions", "--short"], capture_output=True, text=True)
+    except FileNotFoundError:
+        raise YamatoError(f"zellij コマンドが見つかりません ({zellij_bin()})") from None
+    if cp.returncode != 0:
+        return False
     names = {line.split()[0] for line in (cp.stdout or "").splitlines() if line.strip()}
     return session in names
 
