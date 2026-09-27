@@ -36,11 +36,14 @@ PROFILE_KEYS = {"mode", "tools", "allow", "deny", "send"}
 DEFAULT_MODE = "auto"   # what a seat without a profile mode runs in (P0)
 # `git:` (design-p1 §8.3). The values a ship runs with live in the template's
 # team.yaml; these are only what a ship without a `git:` section gets.
-GIT_KEYS = {"base", "strategy", "merge_requires", "merge_decision", "conflict"}
+# merge_decision was removed (D-021 案 b, #5): nothing read it, and whether to open a merge
+# decision at all is now the reviewer/pm role prompt's call (mechanism-not-policy). An old
+# team.yaml that still sets it is not rejected, only warned and ignored.
+GIT_KEYS = {"base", "strategy", "merge_requires", "conflict"}
 GIT_STRATEGIES = ("squash", "merge", "rebase")
 GIT_REQUIRES = ("review", "ci", "decision")
-GIT_FALLBACK = {"base": "main", "strategy": "squash", "merge_requires": [], "merge_decision": "off",
-                "conflict": "author"}
+GIT_FALLBACK = {"base": "main", "strategy": "squash", "merge_requires": [], "conflict": "author"}
+GIT_REMOVED_KEYS = {"merge_decision"}
 # auto mode is unavailable on Haiku (verify-p0-b §総括 1): the seat would fall
 # back to manual and block on the first dialog. dontAsk works on Haiku (verify-p1-d V7),
 # so only seats that run in auto are warned.
@@ -236,7 +239,7 @@ def validate(data: dict, shipdir: Path) -> dict:
         raise YamatoError(f"team.yaml: notify.decisions は {' / '.join(NOTIFY_DECISIONS)} のどれか (今: {notify_decisions})")
     seats = expand_seats(roles)
 
-    git = _git(data.get("git"))
+    git = _git(data.get("git"), warnings)
 
     report = data.get("report") or {}
     daily = report.get("daily", "on_down") if isinstance(report, dict) else None
@@ -301,20 +304,22 @@ def validate(data: dict, shipdir: Path) -> dict:
     }
 
 
-def _git(git) -> dict:
+def _git(git, warnings: list[str]) -> dict:
     git = git or {}
-    if not isinstance(git, dict) or set(git) - GIT_KEYS:
+    if not isinstance(git, dict):
         raise YamatoError(f"team.yaml: git の項目は {', '.join(sorted(GIT_KEYS))}")
-    out = {**GIT_FALLBACK, **{k: v for k, v in git.items() if v is not None}}
-    if out["merge_decision"] is False:   # an unquoted `off` is false in YAML 1.1
-        out["merge_decision"] = "off"
+    removed = set(git) & GIT_REMOVED_KEYS
+    for k in sorted(removed):
+        warnings.append(f"team.yaml: git.{k} は外れた (D-021)。無視する")
+    unknown = set(git) - GIT_KEYS - GIT_REMOVED_KEYS
+    if unknown:
+        raise YamatoError(f"team.yaml: git の項目は {', '.join(sorted(GIT_KEYS))}")
+    out = {**GIT_FALLBACK, **{k: v for k, v in git.items() if k not in GIT_REMOVED_KEYS and v is not None}}
     if out["strategy"] not in GIT_STRATEGIES:
         raise YamatoError(f"team.yaml: git.strategy は {' / '.join(GIT_STRATEGIES)} のどれか (今: {out['strategy']})")
     req = out["merge_requires"]
     if not isinstance(req, list) or set(req) - set(GIT_REQUIRES):
         raise YamatoError(f"team.yaml: git.merge_requires は {', '.join(GIT_REQUIRES)} から選んだリスト")
-    if out["merge_decision"] not in ("auto", "off"):
-        raise YamatoError("team.yaml: git.merge_decision は auto / off")
     for k in ("base", "conflict"):
         if not out[k] or not isinstance(out[k], str):
             raise YamatoError(f"team.yaml: git.{k} は文字列")

@@ -241,7 +241,7 @@ board:                           # チーム固有の board 設定 (§6.2)
 - **owner は予約名**で、役割には書かない (人間の受信箱 `<ship>/owner/` を指す)。v1 の `owner: { agent: human }` と `agent: claude:opus` の書き方はやめた (`model:` を使う)
 - 人間の関与度は、P0 では owner に何を通知するか (`notify`) で決まる。P1 で `decisions` (判断の種類ごとに誰が決めるか) が入り、「全部任せる」なら decider を AI の役割に書き換える (§9)
 
-P1 で足す項目 (詳細は design-p1 §0.4。値を書かなければひな形の既定値が入る): `decisions` (判断の種類 → decider)、`notify.via` の `slack` / `windows` と `notify.decisions`、`report.daily`、`talk_default`、`memory` (`curate_every` / `curate_at` / `applier` / `limits`)、`profiles` (`trust:` のプロファイル)、`git` (`base` / `merge_requires` / `merge_decision` / `conflict`)、役割ごとの `isolation` / `rotate` / `report_to` / `handoff_guard` / `trust` / `remote_control` / `max_duration` / `max_budget_usd`。
+P1 で足す項目 (詳細は design-p1 §0.4。値を書かなければひな形の既定値が入る): `decisions` (判断の種類 → decider)、`notify.via` の `slack` / `windows` と `notify.decisions`、`report.daily`、`talk_default`、`memory` (`curate_every` / `curate_at` / `applier` / `limits`)、`profiles` (`trust:` のプロファイル)、`git` (`base` / `merge_requires` / `conflict`)、役割ごとの `isolation` / `rotate` / `report_to` / `handoff_guard` / `trust` / `remote_control` / `max_duration` / `max_budget_usd`。
 
 ### 5.1 席の権限と隔離、git の規律 (§0 B2、I2、I3)
 
