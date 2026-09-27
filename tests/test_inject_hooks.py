@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import subprocess
 import sys
 import time
@@ -321,6 +322,92 @@ class HookTest(ShipTestCase):
         with mock.patch.object(hooks.time, "sleep", side_effect=stop_seat) as sleep:
             self.assertEqual(self.run_hook(hooks.wait_deadline, {})[0], 0)
         sleep.assert_called_once_with(hooks.WAIT_POLL)
+
+    # --- T-038: a watcher with no deadline leaves when it is stale ---
+
+    def _stop_after(self, n, fn=None):
+        """A ``time.sleep`` stand-in: runs ``fn`` on the n-th call, and ends the shift on the one after
+        (so a watcher that wrongly stays cannot loop forever)."""
+        calls = []
+
+        def sleep(_):
+            calls.append(1)
+            if fn and len(calls) == n:
+                fn()
+            elif len(calls) > n + 1:
+                roster.mark_stopping(self.shipdir, "impl", handoff_written=True)
+        return sleep, calls
+
+    def test_wait_deadline_leaves_when_the_shift_moved_on(self):
+        self._make_no_time_limit()
+
+        def next_shift():
+            roster.start_shift(self.shipdir, "impl", session_id="n" * 36, short_id="nnnnnnnn",
+                               session_name="t2.impl", how="new")
+
+        sleep, calls = self._stop_after(1, next_shift)
+        with mock.patch.object(hooks.time, "sleep", side_effect=sleep):
+            self.assertEqual(self.run_hook(hooks.wait_deadline, {})[0], 0)
+        self.assertEqual(len(calls), 1)   # left at the poll right after the shift changed
+
+    def test_wait_deadline_leaves_when_the_pidfile_names_another_watcher(self):
+        self._make_no_time_limit()
+        pidfile = self.shipdir / ".runtime" / "wait-impl.pid"
+        sleep, calls = self._stop_after(1, lambda: pidfile.write_text("1 1\n"))
+        with mock.patch.object(hooks.time, "sleep", side_effect=sleep):
+            self.assertEqual(self.run_hook(hooks.wait_deadline, {})[0], 0)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(pidfile.read_text(), "1 1\n")   # the other watcher's file is not ours to remove
+
+    def test_wait_deadline_takes_over_from_a_live_watcher_of_an_older_shift(self):
+        self._make_no_time_limit()
+        pidfile = self.shipdir / ".runtime" / "wait-impl.pid"
+        pidfile.write_text("1 0\n")   # launchd: always alive, but for shift 0
+        inbox.append(self.shipdir, "impl", "owner", "hello")
+        self.assertEqual(self.run_hook(hooks.wait_deadline, {})[0], 2)
+
+    def test_wait_deadline_leaves_when_its_session_is_gone(self):
+        self._make_no_time_limit()
+        sleep, calls = self._stop_after(99)
+        with mock.patch.object(hooks, "LIVENESS_EVERY", 3), \
+                mock.patch.object(hooks.time, "sleep", side_effect=sleep), \
+                mock.patch("yamato.claude.find", return_value=None) as find:
+            code, _, _ = self.run_hook(hooks.wait_deadline, {"session_id": "z" * 36})
+        self.assertEqual(code, 0)
+        self.assertEqual(len(calls), 2)   # polls 1, 2 quiet; the 3rd asked and left
+        find.assert_called_once_with("z" * 36)
+
+    def test_wait_deadline_stays_while_its_session_lives_or_the_answer_is_unknown(self):
+        self._make_no_time_limit()
+        for find in (mock.Mock(return_value={"pid": os.getpid()}), mock.Mock(side_effect=hooks.YamatoError("boom"))):
+            roster.start_shift(self.shipdir, "impl", session_id="s" * 36, short_id="ssssssss",
+                               session_name="t1.impl", how="resume")
+            sleep, calls = self._stop_after(7)
+            with mock.patch.object(hooks, "LIVENESS_EVERY", 3), \
+                    mock.patch.object(hooks.time, "sleep", side_effect=sleep), \
+                    mock.patch("yamato.claude.find", find):
+                self.assertEqual(self.run_hook(hooks.wait_deadline, {})[0], 0)
+            self.assertGreater(len(calls), 7)   # only the shift ending made it leave
+            self.assertGreaterEqual(find.call_count, 2)
+
+    def test_wait_deadline_never_asks_claude_when_there_is_a_deadline(self):
+        deadline.write(self.shipdir, limit=600, grace=60, token="t")
+        sleep, calls = self._stop_after(5)
+        with mock.patch.object(hooks, "LIVENESS_EVERY", 1), \
+                mock.patch.object(hooks.time, "sleep", side_effect=sleep), \
+                mock.patch("yamato.claude.find") as find:
+            self.run_hook(hooks.wait_deadline, {})
+        find.assert_not_called()
+
+    def test_wait_deadline_takes_a_team_json_without_time_limit_as_a_normal_ship(self):
+        # not "none": an older / hand-edited runtime team.json has no key at all
+        path = self.shipdir / ".runtime" / "team.json"
+        team = json.loads(path.read_text())
+        team.pop("time_limit", None)
+        path.write_text(json.dumps(team))
+        self.assertIsNone(deadline.read(self.shipdir))
+        inbox.append(self.shipdir, "impl", "owner", "hello")
+        self.assertEqual(self.run_hook(hooks.wait_deadline, {})[0], 0)   # no deadline yet → returns, as before ``up``
 
     def test_wait_deadline_wakes_for_inbox_from_outside_the_seats(self):
         # e2e-p1 C: the owner's / yamato's entries have no sender to SendMessage them

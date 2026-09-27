@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -16,6 +17,7 @@ from .util import YAMATO_BIN, YamatoError, append_log, read_json, ship_lock, wri
 
 MAX_WRAPUP_NOTICES = 3   # per shift, Stop and PreToolUse together; then the grace-period force stop takes over
 WAIT_POLL = 5            # seconds between checks (deadline, inbox) in the async watcher
+LIVENESS_EVERY = 12      # a watcher with no deadline asks ``claude agents`` whether its session lives every this many polls
 FORCE_STOP_AFTER = 5     # seconds from the hook to ``claude stop``: the denied call and the turn end first
 FORCE_STOP_RETRY = 60    # a seat still calling hooks this long after its forced stop gets another one
 
@@ -365,6 +367,28 @@ def _inbox_wake_message(shipdir: Path, seat: str, news: list[dict]) -> str:
     return INBOX_WAKE_MESSAGE.format(count=len(news), senders=senders, yamato=YAMATO_BIN, ship=shipdir, seat=seat)
 
 
+def _pidfile_text(pidfile: Path) -> str | None:
+    try:
+        return pidfile.read_text().strip()
+    except FileNotFoundError:
+        return None
+
+
+def _session_gone(session_id: str | None) -> bool:
+    """True only when ``claude agents`` answers and shows no live pid for the session.
+
+    An answer we cannot get (claude missing, the listing failing) is "unknown", never
+    "gone": a watcher that quit on a hiccup would leave the idle seat deaf."""
+    if not session_id:
+        return False
+    from . import claude
+
+    try:
+        return not claude.is_alive(claude.find(session_id))
+    except (OSError, YamatoError, subprocess.SubprocessError):
+        return False
+
+
 def wait_deadline(shipdir: Path, seat: str) -> int:
     """Async + asyncRewake Stop hook: wake the idle seat at the deadline, or when its
     inbox gets an entry nobody will SendMessage (the owner's, yamato's; e2e-p1 C).
@@ -377,23 +401,41 @@ def wait_deadline(shipdir: Path, seat: str) -> int:
     the inbox either, so an idle admiral could not be woken by ``yamato send`` /
     ``yamato admiral --stop`` (T-021). It now keeps polling for an outside sender's
     unread message forever when there is no deadline at all (nothing here ever force-stops
-    such a ship: only a normal deadline does that)."""
+    such a ship: only a normal deadline does that).
+
+    A watcher also leaves when it is stale (T-038): the seat's ``shiftNo`` moved on
+    (the next shift has its own watcher) or the pidfile now names another watcher.
+    With no deadline nothing else ends it, so it also checks every
+    ``LIVENESS_EVERY`` polls that its own session is still in ``claude agents`` (a
+    ``claude stop`` by hand, a crash: neither passes ``seat-stop`` nor
+    ``force_stop_all``, so the roster still says on_shift). Without this a dead
+    session's watcher kept polling and, pidfile held, made the next shift's watcher
+    return at once, then woke the dead session and used up the wake."""
     data = _stdin_json()
     try:
         team = runtime_team(shipdir)
         seats = set(team["seats"])
-        no_limit = team.get("time_limit") is None
+        # a runtime team.json without the key is a normal ship (older json, hand-edited): only an explicit null is "none"
+        no_limit = "time_limit" in team and team["time_limit"] is None
+        headless = team["seats"].get(seat, {}).get("shift") == "headless"
     except (OSError, YamatoError, KeyError, TypeError):
-        seats, no_limit = set(), False   # every sender then counts as outside: a wake too many, never one too few
+        seats, no_limit, headless = set(), False, False   # every sender then counts as outside: a wake too many, never one too few
+    rec0 = roster.seat(shipdir, seat)
+    shift0 = rec0.get("shiftNo")
+    sid0 = data.get("session_id") or rec0.get("sessionId")
     pidfile = Path(shipdir) / ".runtime" / f"wait-{seat}.pid"
+    mine = f"{os.getpid()} {shift0}"
     try:
-        other = int(pidfile.read_text().strip())
-        if other != os.getpid() and _pid_alive(other):
+        other, _, other_shift = pidfile.read_text().strip().partition(" ")
+        # a live watcher of an older shift does not count: it leaves by itself at its next poll
+        # (a pidfile without a shift, from before T-038, still counts)
+        if int(other) != os.getpid() and _pid_alive(int(other)) and other_shift in ("", str(shift0)):
             return 0
     except (FileNotFoundError, ValueError):
         pass
     pidfile.parent.mkdir(parents=True, exist_ok=True)
-    pidfile.write_text(f"{os.getpid()}\n")
+    pidfile.write_text(mine + "\n")
+    polls = 0
     try:
         while True:
             dl = deadline.read(shipdir)
@@ -402,6 +444,13 @@ def wait_deadline(shipdir: Path, seat: str) -> int:
             need, rec = _needs_wrapup(shipdir, seat)
             if rec.get("state") in (roster.STOPPING, roster.OFF):
                 return 0
+            if rec.get("shiftNo") != shift0 or _pidfile_text(pidfile) != mine:
+                return 0   # a newer shift / watcher owns this seat now: not ours to wake
+            if dl is None:
+                polls += 1
+                if not headless and polls % LIVENESS_EVERY == 0 and _session_gone(sid0):
+                    append_log(shipdir, seat, "inbox watcher: セッションが消えている → 見張りをやめる")
+                    return 0
             phase = deadline.phase(dl)
             if dl is not None:
                 if phase == deadline.FORCE:
@@ -425,7 +474,7 @@ def wait_deadline(shipdir: Path, seat: str) -> int:
                 time.sleep(max(1.0, min(WAIT_POLL, until - time.time())))
     finally:
         try:
-            if pidfile.read_text().strip() == str(os.getpid()):
+            if _pidfile_text(pidfile) == mine:
                 pidfile.unlink()
         except FileNotFoundError:
             pass
