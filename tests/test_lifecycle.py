@@ -271,6 +271,25 @@ class RotateCommandTest(_Base):
         self.assertIn("impl: 立てなかった (shift: per_task", out)
         self.assertIsNone(roster.seat(self.shipdir, "impl").get("rotateRequested"))
 
+    def test_refuses_a_headless_seat_with_a_reason(self):
+        # reviewer's finding on T-024/PR #43: only per_task was exercised, and headless
+        # takes the same "shift != persistent" branch -- a dedicated test for it.
+        ty = self.shipdir / "team.yaml"
+        ty.write_text(ty.read_text().replace(
+            "roles:\n", "roles:\n  researcher:\n    shift: headless\n    description: 調査担当\n", 1))
+        (self.shipdir / "roles" / "researcher.md").write_text("あなたは researcher です。\n")
+        seat.prepare(self.shipdir)
+        rc, out, _ = self.cli("rotate", str(self.shipdir), "researcher")
+        self.assertEqual(rc, 0)
+        self.assertIn("researcher: 立てなかった (shift: headless", out)
+        self.assertIsNone(roster.seat(self.shipdir, "researcher").get("rotateRequested"))
+        self.assertEqual(self.kinds(events.ROTATE_REQUESTED), [])
+        # --all never picks it up either (only persistent_seats())
+        rc, out, _ = self.cli("rotate", str(self.shipdir), "--all")
+        self.assertEqual(rc, 0)
+        self.assertNotIn("researcher", out)
+        self.assertIsNone(roster.seat(self.shipdir, "researcher").get("rotateRequested"))
+
     def test_unknown_seat_is_a_clean_error(self):
         rc, _, err = self.cli("rotate", str(self.shipdir), "nope")
         self.assertEqual(rc, 1)
