@@ -207,7 +207,7 @@ git:
     # review:   項目に review=approved がある
     # ci:       gh pr checks が通っている (チェックの無い repo は通ったとみなす)
     # decision: 項目を links に持つ merge の判断 (kind: decision, category: merge) が閉じている
-  merge_decision: "off"      # auto: reviewer の承認で merge の判断を自動で開く
+  merge_decision: "off"      # auto: reviewer の承認で merge の判断を自動で開く (値は受け付けるが、自動で開く処理はまだ無い。今は captain が decide open で開く)
   conflict: author           # merge のあとに衝突した PR を知らせる先: author (項目の assignee) / 席の名前
 
 board:
