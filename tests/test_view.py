@@ -295,6 +295,8 @@ class FakeZellijRun:
     def __init__(self, sessions: str = "", rc: int = 0, rc_for=None):
         self.calls: list[list[str]] = []
         self.kwargs: list[dict] = []
+        self.layouts: list[str] = []   # new-tab --layout <file>: that file's content, read
+                                        # at call time (T-015 removes the file once zellij returns)
         self.sessions = sessions
         self.rc = rc
         self.rc_for = rc_for or (lambda argv: self.rc)
@@ -302,6 +304,8 @@ class FakeZellijRun:
     def __call__(self, argv, **kwargs):
         self.calls.append(argv)
         self.kwargs.append(kwargs)
+        if len(argv) > 4 and argv[3] == "--layout":
+            self.layouts.append(Path(argv[4]).read_text())
         out = self.sessions if argv[1:3] == ["list-sessions", "--short"] else ""
         return subprocess.CompletedProcess(argv, self.rc_for(argv), stdout=out, stderr="")
 
@@ -411,12 +415,38 @@ class OpenerTest(ShipTestCase):
         for call in new_tabs:
             self.assertEqual(call[0], "zellij")
             self.assertEqual(call[3], "--layout")
-            text = Path(call[4]).read_text()
-            self.assertEqual(text.count("tab name="), 1)   # one ship, one tab, per file
-        # each ship's own tab landed in its own file
-        texts = [Path(c[4]).read_text() for c in new_tabs]
-        self.assertTrue(any('tab name="t1"' in t for t in texts))
-        self.assertTrue(any('tab name="other"' in t for t in texts))
+        # each ship's own tab landed in its own file (content read at call time -- T-015
+        # removes the file once new-tab returns, so it is gone by the time we get here)
+        self.assertEqual([t.count("tab name=") for t in run.layouts], [1, 1])
+        self.assertTrue(any('tab name="t1"' in t for t in run.layouts))
+        self.assertTrue(any('tab name="other"' in t for t in run.layouts))
+
+    def test_in_zellij_removes_the_temp_layout_file_after_new_tab(self):
+        # T-015: the mkstemp file for each ship's tab must not be left behind once
+        # zellij has read it (new-tab returned).
+        ship.create("other", str(self.workspace), None, "dev")
+        run = FakeZellijRun()
+        opener.open_ships(["t1", "other"], command="yamato", run=run, in_zellij=True)
+        new_tabs = [c for c in run.calls if c[1:3] == ["action", "new-tab"]]
+        self.assertEqual(len(new_tabs), 2)
+        for call in new_tabs:
+            self.assertFalse(Path(call[4]).exists(), call[4])
+
+    def test_in_zellij_still_removes_the_temp_file_when_new_tab_fails(self):
+        run = FakeZellijRun(rc_for=lambda argv: 1 if "new-tab" in argv else 0)
+        with self.assertRaises(YamatoError):
+            opener.open_ships(["t1"], command="yamato", run=run, in_zellij=True)
+        [call] = [c for c in run.calls if c[1:3] == ["action", "new-tab"]]
+        self.assertFalse(Path(call[4]).exists())
+
+    def test_in_zellij_open_still_succeeds_when_the_temp_file_cannot_be_removed(self):
+        # cleanup is best-effort: a failure to remove the temp file must not fail the
+        # view open itself (the layout was already read by zellij by then).
+        run = FakeZellijRun()
+        with mock.patch("os.remove", side_effect=OSError("boom")):
+            opener.open_ships(["t1"], command="yamato", run=run, in_zellij=True)
+        new_tabs = [c for c in run.calls if c[1:3] == ["action", "new-tab"]]
+        self.assertEqual(len(new_tabs), 1)
 
     def test_in_zellij_is_read_from_the_environment_by_default(self):
         run = FakeZellijRun()
