@@ -14,7 +14,7 @@
 ## mechanism-not-policy (owner の方針)
 - コードが持つのは道具・記録の整合性・安全網だけ。誰が何をいつどう進めるかは team.yaml・ひな形・役割プロンプトに置く
 - 判定の問い: 「別の PJ でこれが邪魔にならないか」。邪魔になりうるならコードで強制せず、ひな形の既定値か役割プロンプトに書く
-- コードに残す強制の一覧は `docs/policy-audit.md` §4。増やすときは PR の本文に理由を書く
+- コードに残す強制の一覧は `docs/design.md` §2.1 (出典 `docs/_archive/policy-audit.md` §4)。増やすときは PR の本文に理由を書く
 
 ## テスト (速く保つ)
 - `python3 -m unittest discover` が正 (全体で 10 秒程度)。`--durations 10` で自分の足したテストが上位に来ていないか見る

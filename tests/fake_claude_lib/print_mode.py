@@ -1,4 +1,4 @@
-"""The fake ``claude -p --output-format stream-json --verbose`` (docs/verify-p1-d.md V1-V5).
+"""The fake ``claude -p --output-format stream-json --verbose`` (docs/verify/verify-p1-d.md V1-V5).
 
 Plays the lines run-headless reads: SessionStart hook_started / hook_response
 (it really runs the SessionStart hooks of ``--settings``, so the inbox cursor

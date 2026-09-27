@@ -27,12 +27,12 @@
 | 2 | [README](../README.md) | 使い方・コマンドの表・team.yaml の項目・テストの流し方 |
 | 3 | [design.md](design.md) の §0 と §2.1 | **§0 が最新の決定** (本文と食い違えば §0)。§2.1 が仕組みと方針の分け方 |
 | 4 | [design-p1.md](design-p1.md) | P1 (判断・日報・memory・headless・入れ替え・admiral・worktree/pr・調査艦) の詳細。§11 が要検証の判定の一覧。**design.md §0 が前提で、食い違えば §0** |
-| 5 | [policy-audit.md](policy-audit.md) | 何を仕組みに残し何を方針に移したか。§4 がコードに残る強制の一覧 |
-| 6 | [verify-p0-a](verify-p0-a.md) / [b](verify-p0-b.md) / [c](verify-p0-c.md)、[verify-p1-d](verify-p1-d.md) | Claude Code の挙動の実機検証 (起動レシピの根拠)。§5 の要点の出典 |
-| 7 | [e2e-p0](e2e-p0.md) / [e2e-p1](e2e-p1.md) / [e2e-headless](e2e-headless.md) | 本物の claude で通した記録と、観測したが直していないこと。E2E の手順もここ |
+| 5 | [_archive/policy-audit.md](_archive/policy-audit.md) | 何を仕組みに残し何を方針に移したか。§4 がコードに残る強制の一覧 (結論は design.md §2.1 とこの文書 §4 に反映済み) |
+| 6 | [verify-p0-a](verify/verify-p0-a.md) / [b](verify/verify-p0-b.md) / [c](verify/verify-p0-c.md)、[verify-p1-d](verify/verify-p1-d.md) | Claude Code の挙動の実機検証 (起動レシピの根拠)。§5 の要点の出典 |
+| 7 | [e2e-p0](e2e/e2e-p0.md) / [e2e-p1](e2e/e2e-p1.md) / [e2e-headless](e2e/e2e-headless.md) | 本物の claude で通した記録と、観測したが直していないこと。E2E の手順もここ |
 | 8 | [events.md](events.md) | `events.jsonl` の行の形式 (日報・監視が読む) |
 | 9 | [admiral.md](admiral.md) | admiral を務めるときの約束とコマンド |
-| - | [research-claude-primitives.md](research-claude-primitives.md)、[review-da-v0.md](review-da-v0.md)、[spike-zellij-attach.md](spike-zellij-attach.md) | 背景 (Claude Code の仕組みの調査、v0 への DA レビュー、zellij の検証)。必要なときだけ |
+| - | [_archive/](_archive/README.md) | 初期の検討の記録 (research-claude-primitives.md、review-da-v0.md、spike-zellij-attach.md)。背景 (Claude Code の仕組みの調査、v0 への DA レビュー、zellij の検証)。必要なときだけ |
 
 実装の地図: Claude Code とのやり取りは `src/yamato/claude.py` 1 か所に閉じ込めてある (design.md §14)。CLI の入口は `src/yamato/cli.py`。ひな形は `src/yamato/templates/{dev,research}/`。
 
@@ -102,20 +102,20 @@ Claude Code 2.1.283 での観測。research preview なので変わりうる (de
 
 | 事実 | 出典 |
 |---|---|
-| 起動レシピ: `claude --bg --name <ship>.<seat> --agent <role> --agents '<json>' --model … --setting-sources project,local --settings <席の settings> --add-dir <ship> -- "<prompt>"`。`--add-dir` は後ろを食うので `--` が要る。settings は 1 本にまとめる | [verify-p0-b](verify-p0-b.md) の起動レシピ、design.md §4.1 |
+| 起動レシピ: `claude --bg --name <ship>.<seat> --agent <role> --agents '<json>' --model … --setting-sources project,local --settings <席の settings> --add-dir <ship> -- "<prompt>"`。`--add-dir` は後ろを食うので `--` が要る。settings は 1 本にまとめる | [verify-p0-b](verify/verify-p0-b.md) の起動レシピ、design.md §4.1 |
 | `--setting-sources project,local` でユーザー設定 (plugin hooks・CLAUDE.md など) を席に持ち込まない。作業 repo の設定は効く | verify-p0-b Q3 |
 | resume は **pid が消えるのを待ってから、フルの sessionId で** `--resume <id> --bg`。短い id や stop 直後だとフラグ抜きのコピーになる (`started a copy`) | verify-p0-a Q2、verify-p0-b Q2 |
-| 生死は pid で見る。`state` は席の発言の意味づけのラベルで、詰まりは `status: waiting` + `waitingFor` と idle の `blocked` | [verify-p0-c](verify-p0-c.md) Q5 |
+| 生死は pid で見る。`state` は席の発言の意味づけのラベルで、詰まりは `status: waiting` + `waitingFor` と idle の `blocked` | [verify-p0-c](verify/verify-p0-c.md) Q5 |
 | `claude --bg` は worker が起動前に落ちても exit 0。起動のあと `claude agents --json` で確かめる | verify-p0-c Q5 |
 | 無人の席: auto + deny リスト。`ask` ルールは auto でも止まる。`--permission-prompts none` は `--bg` に効かないので PermissionRequest hook で全 deny。Haiku は auto を使えない | verify-p0-b Q1 |
-| auto では `Bash(...)` の allow で絞っても他の Bash が止まらない。外を読む役割は **dontAsk** + allow + `tools` で組む | [verify-p1-d](verify-p1-d.md) V7 |
+| auto では `Bash(...)` の allow で絞っても他の Bash が止まらない。外を読む役割は **dontAsk** + allow + `tools` で組む | [verify-p1-d](verify/verify-p1-d.md) V7 |
 | idle の席への SendMessage は `crossSessionInbound: "accept"` が要る。席が自分を止めるのは遅延 stop (`seat-stop`) | verify-p0-a Q1・Q3 |
 | SessionStart hook の注入は **hook 1 本あたり 10,000 文字** (文字数、合算ではない)。超えると約 2KB のプレビューに化ける | verify-p0-c Q1 |
-| bg の席は daemon の環境で動き、起動側の `env -u` は効かない。席の Bash に効かせるのは settings の `env`。ただし席のプロセスの環境には daemon の値が残る | verify-p0-c Q2、[e2e-p1](e2e-p1.md) の D と追記 |
+| bg の席は daemon の環境で動き、起動側の `env -u` は効かない。席の Bash に効かせるのは settings の `env`。ただし席のプロセスの環境には daemon の値が残る | verify-p0-c Q2、[e2e-p1](e2e/e2e-p1.md) の D と追記 |
 | idle の席は最後のターンから約 60 分で止められる。attach 中と **Remote Control に繋がった席は止まらない** (4 時間 48 分生存) | verify-p0-c Q3 |
 | 席ごとの Remote Control は settings の `remoteControlAtStartup: false` で外し `--remote-control` で足せる | verify-p1-d V10 |
 | `-p` は `--bare` を付けない (サブスクで未ログイン)、`< /dev/null` を付ける。SIGTERM では結果 JSON が出ない (使用量は transcript から)。SessionEnd hook の待ちは 1.5 秒 | verify-p1-d V1・V4 |
-| `-p` に呼び出し元のセッションの環境変数を渡すと transcript が保存されない (`claude.PRINT_CALLER_ENV` を外す) | [e2e-headless](e2e-headless.md) の見つかったこと 1 |
+| `-p` に呼び出し元のセッションの環境変数を渡すと transcript が保存されない (`claude.PRINT_CALLER_ENV` を外す) | [e2e-headless](e2e/e2e-headless.md) の見つかったこと 1 |
 | linked worktree の trust は main repo から引き継がれる。trust は git root ごとで、bg の席は対話で trust できない | verify-p1-d V6、verify-p0-b |
 | 艦フォルダが repo の中にあると、自動 worktree に記録が書かれて元に残らない (`bgIsolation: none` で直る) | verify-p0-b Q4 |
 | `PushNotification` は `-p` からは送られない | verify-p1-d V11 |
@@ -145,7 +145,7 @@ P0 の実装の名前に寄せた (leader の決定、2026-09-26)。例外は me
 
 - 言語は Python 3.11+、pip install は不要 (PyYAML は `vendor/`)。docs は日本語。repo (krml4913/yamato) は private
 - テスト: `python3 -m unittest discover` が正 (約 450 件、目安 10 秒)。`--durations 10` で遅い上位を見る。`python3 -m tests.parallel` はモジュールごとに並列。**速く保つ**: 実時間で待たず、定数を `mock.patch.object` で縮める。偽の claude (`tests/fake_claude.py`) は `tests/helpers.py` の `patch_fast` で同じプロセスで動く。git のテストは一時 repo を setUpClass で 1 回作ってコピーする (README「テストの実行」)
-- E2E: 本物の claude で確かめることは unit test ではなく E2E でやる。手順は [e2e-p0](e2e-p0.md) の「手順」(使い捨ての repo を trust → `ship create --path` → `send` → `up --for 20m` → 見るだけ)。`YAMATO_HOME` を scratchpad に向ける、gh は `$YAMATO_GH` で偽物に差し替える ([e2e-p1](e2e-p1.md) の手順)。終わったら作ったセッションを stop + rm し、`claude agents --json --all` で 0 件を確かめる
+- E2E: 本物の claude で確かめることは unit test ではなく E2E でやる。手順は [e2e-p0](e2e/e2e-p0.md) の「手順」(使い捨ての repo を trust → `ship create --path` → `send` → `up --for 20m` → 見るだけ)。`YAMATO_HOME` を scratchpad に向ける、gh は `$YAMATO_GH` で偽物に差し替える ([e2e-p1](e2e/e2e-p1.md) の手順)。終わったら作ったセッションを stop + rm し、`claude agents --json --all` で 0 件を確かめる
 - PR の流れ (今): fleet の driver が worktree で作業して PR を出す → fleet の leader がレビューして merge。設計の根幹に触る変更は事前に相談する。CI は無い (`.github/` なし) ので、テストは手元で流す
 
 ## 9. dogfooding の始め方

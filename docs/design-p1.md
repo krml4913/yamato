@@ -1,17 +1,17 @@
 # yamato P1 設計 (v4)
 
 - 作成: 2026-09-26 / driver (task-p1-design)
-- 改訂: 2026-09-26 v1 / driver (task-policy-audit)。owner の方針「仕組みは道具・記録・安全網だけ、運用の方針は強制しない」(project memory `mechanism-not-policy`) に合わせて、強制を外した。§12 の Q1〜Q6 は owner の決定に書き換えた。洗い出しの全体は `docs/policy-audit.md`
-- 改訂: 2026-09-26 v2 / driver (task-p1-design-verify-d)。検証 D (`docs/verify-p1-d.md`) の V1〜V7・V9〜V11 の結果を反映した。§11 を判定の一覧に書き換え、本文の【要検証】は判定に置き換えた (V5 の枠切れ・V8・V11 の bg + Remote Control は【要検証】のまま)。V7 の結果 (外を読む役割は dontAsk で組む) は、`mechanism-not-policy` に沿って**ひな形の既定値**として書き、コードでは強制しない
+- 改訂: 2026-09-26 v1 / driver (task-policy-audit)。owner の方針「仕組みは道具・記録・安全網だけ、運用の方針は強制しない」(project memory `mechanism-not-policy`) に合わせて、強制を外した。§12 の Q1〜Q6 は owner の決定に書き換えた。洗い出しの全体は `docs/_archive/policy-audit.md`
+- 改訂: 2026-09-26 v2 / driver (task-p1-design-verify-d)。検証 D (`docs/verify/verify-p1-d.md`) の V1〜V7・V9〜V11 の結果を反映した。§11 を判定の一覧に書き換え、本文の【要検証】は判定に置き換えた (V5 の枠切れ・V8・V11 の bg + Remote Control は【要検証】のまま)。V7 の結果 (外を読む役割は dontAsk で組む) は、`mechanism-not-policy` に沿って**ひな形の既定値**として書き、コードでは強制しない
 - 改訂: 2026-09-26 v3 / driver (task-p1-doc-names)。design.md v2 §15 の表への leader の決定に沿って、名前を P0 の実装に揃えた (下の「改訂の要約 (v3)」)
-- 改訂: 2026-09-26 v4 / driver (task-verify-c-apply)。検証 C (`docs/verify-p0-c.md`) の結果と leader の決定を反映した (下の「改訂の要約 (v4)」)
+- 改訂: 2026-09-26 v4 / driver (task-verify-c-apply)。検証 C (`docs/verify/verify-p0-c.md`) の結果と leader の決定を反映した (下の「改訂の要約 (v4)」)
 - 位置づけ: `docs/design.md` の P0 の範囲から外した論点について、実装に入れる粒度の設計を出す。**design.md §0 の決定が前提**。design.md 本文のうち方針に移すものは §0.3 に一覧にした (P0 の実装中なので design.md は書き換えない)
-- 根拠: `design.md` (§0 と本文) / `verify-p0-a.md` (配送・席のライフサイクル) / `verify-p0-b.md` (権限・起動フラグ・worktree・起動レシピ) / `review-da-v0.md` / `research-claude-primitives.md` (docs 調査) / `policy-audit.md` / `verify-p1-d.md` (P1 の要検証 V1〜V7・V9〜V11 の結果)
+- 根拠: `design.md` (§0 と本文) / `verify/verify-p0-a.md` (配送・席のライフサイクル) / `verify/verify-p0-b.md` (権限・起動フラグ・worktree・起動レシピ) / `_archive/review-da-v0.md` / `_archive/research-claude-primitives.md` (docs 調査) / `_archive/policy-audit.md` / `verify/verify-p1-d.md` (P1 の要検証 V1〜V7・V9〜V11 の結果)
 - Claude Code の挙動について: 検証レポートで確かめたものは「(検証 A Q2)」「(検証 D V7)」のように出典を付ける。docs の記述だけのものは「(docs)」、まだ確かめていないものは **【要検証】** と書く。要検証と判定の一覧は §11 にまとめた
 
 ## 改訂の要約 (v4, 2026-09-26)
 
-検証 C (`docs/verify-p0-c.md`) の結果を、leader の決定 (2026-09-26) に沿って反映した。
+検証 C (`docs/verify/verify-p0-c.md`) の結果を、leader の決定 (2026-09-26) に沿って反映した。
 
 - **V8 を判定した** (§11): SessionStart hook の注入は **hook 1 本あたり 10,000 文字**まで (合算ではない。数え方はバイトではなく文字数)。超えると本文の代わりに約 2KB のプレビューが届く (検証 C Q1)
 - **注入を hook 2 本に分けた** (§3.5): 記録 (handoff・作業ログ・担当・日報・inbox・注記) の hook と、知見 (役割の memory・knowledge.md) の hook。それぞれ `inject.limits.total_chars` (既定 9,500 文字) まで。切ったところには「全文は `<path>` を Read せよ」を付ける
@@ -77,7 +77,7 @@ P1 で新しく足す記録は 1 つだけ: **`events.jsonl` (艦の出来事の
 
 ### 0.3 仕組みと方針の分け方 (v1 で追加)
 
-yamato のコードが持つのは次の 3 つだけ。詳しい洗い出しは `docs/policy-audit.md`。
+yamato のコードが持つのは次の 3 つだけ。詳しい洗い出しは `docs/_archive/policy-audit.md`。
 
 | 分類 | コードで強制するか | 例 |
 |---|---|---|
@@ -87,7 +87,7 @@ yamato のコードが持つのは次の 3 つだけ。詳しい洗い出しは 
 
 それ以外 (誰が何をいつどう進めるか) は方針で、**設定** (team.yaml、既定値はひな形) か**役割プロンプト**に置く。呼び出し元の特定 (§0.1) は記録のために使い、許可の判定には使わない。例外は「自分の席の記録を書く」ときの席の取り違えの検査だけ。
 
-**design.md から方針に移すもの** (design.md は P0 の実装中なので書き換えない。P0 のあとで design.md を改訂するときの一覧。番号は `policy-audit.md` の表と対応)
+**design.md から方針に移すもの** (design.md は P0 の実装中なので書き換えない。P0 のあとで design.md を改訂するときの一覧。番号は `_archive/policy-audit.md` の表と対応)
 
 | design.md の節 | 今の書き方 | 移し先 |
 |---|---|---|
@@ -757,9 +757,9 @@ P0 は「終業 + 強制」の 2 段 (§0)。**最終受付を軽い形で戻す
 
 ## 11. 要検証の一覧と判定
 
-検証 D (`docs/verify-p1-d.md`、2026-09-26、Claude Code 2.1.283) で V1〜V7・V9〜V11 を確かめた。**V8 は検証 C (`docs/verify-p0-c.md` Q1) で判定した** (v4)。判定の印は ✅ 動く / 🟡 部分的 (条件つきで使える) / ❌ できない / ❓ 未確認。出典は `verify-p1-d.md` の同じ番号の節 (「V7」なら「V7. `tools` の制限と `Bash(...)` を絞った allow」)。判定のあと、本文の該当の節を書き換えた。
+検証 D (`docs/verify/verify-p1-d.md`、2026-09-26、Claude Code 2.1.283) で V1〜V7・V9〜V11 を確かめた。**V8 は検証 C (`docs/verify/verify-p0-c.md` Q1) で判定した** (v4)。判定の印は ✅ 動く / 🟡 部分的 (条件つきで使える) / ❌ できない / ❓ 未確認。出典は `verify-p1-d.md` の同じ番号の節 (「V7」なら「V7. `tools` の制限と `Bash(...)` を絞った allow」)。判定のあと、本文の該当の節を書き換えた。
 
-| # | 確かめたこと | 判定 | 結果と設計への反映 | 反映した節 | 出典 (`verify-p1-d.md`) |
+| # | 確かめたこと | 判定 | 結果と設計への反映 | 反映した節 | 出典 (`verify/verify-p1-d.md`) |
 |---|---|---|---|---|---|
 | V1 | `claude -p` で `--agent` + `--agents` JSON、`--setting-sources project,local`、`--add-dir ... --` が bg と同じく効くか。SessionStart hook が走るか | ✅ | 動く。**`--bare` は付けない** (サブスクで `Not logged in`。将来 `-p` の既定になるときの打ち消すフラグは今は無く、hook が走った印の確認が拾う)。`< /dev/null` を付ける (無いと stdin を 3 秒待つ)。`env -u` は `-p` で効く (bg は未確認)。hook の実行は stream-json (`--verbose`) で確認できる | §4.2 | V1 |
 | V2 | `-p` で `--permission-prompts none` と auto + deny が一緒に効くか | ✅ | 動く。ask 由来のダイアログは即 deny で、席は先へ進む。host が無い `-p` ではフラグ無しでも同じ (付けると Claude に再試行させない)。**auto の classifier は揺れる** ので、無人の権限の安全は deny リストと dontAsk が本命 | §4.1、§7.2 | V2 |
@@ -768,7 +768,7 @@ P0 は「終業 + 強制」の 2 段 (§0)。**最終受付を軽い形で戻す
 | V5 | サブスクの枠に当たったとき、bg と `-p` がどうなるか | ❓ | **実際の枠切れは未確認** (当てていない)。代用の観察 (存在しない model 名の 404): `subtype` は `success` のまま `is_error: true`、終了コード 1。bg の席は `state == "failed"` (pid は生きたまま)。反映: 失敗の判定は `is_error` / `api_error_status` / `terminal_reason` で、終了コードと `subtype` に頼らない。stream-json の `rate_limit_event` (使用率と回復時刻) をシフトの記録に残す。分類できなければ「異常終了 (API エラー)」で自動の再実行はしない。**枠切れ時に `-p` が待つのか失敗で返るのか、`result` の文言、429 になるか、bg の状態は【要検証】のまま** | §4.2 の 2、§4.4、§5.1 | V5 |
 | V6 | (a) workspace で起きた席が、艦フォルダの `worktrees/<item>/` (add-dir 側) に `cd` して auto で git 操作と編集をできるか (b) worktree を cwd にした bg の席が trust を求めずに起動するか (c) `bgIsolation: none` の席が頼まれずに commit / push するか | ✅ | (a)(b)(c) とも動く。(b) は main repo が trust 済みなら (worktree の trust は main repo から引き継がれる)。(c) は commit も push もしなかった (n=2)。**§8.2 の 2 つの移り方はどちらも使え、V6 の NG のときの代替は要らない**。git の規律の注入 (§8.1) は (c) が n=2 なので残す | §6.2、§8.2、§10 | V6 |
 | V7 | `tools` の制限と、`Bash(...)` に絞った allow が、bg と `-p` で効くか (それ以外の Bash が止まるか) | 🟡 | `tools` の制限は bg でも `-p` でも効く。**auto では Bash を allow で絞っても他の Bash が止まらない** (`curl` の外部通信も通った)。dontAsk なら allow に無いものは全部 deny。反映: 外を読む役割は **`dontAsk` + allow + `tools`** で組む。**ひな形の既定値 (`profiles.external.mode`) で、コードでは強制しない**。dontAsk の席は haiku でもよく、「haiku の無人の席に警告」は auto の席だけにする | §7.1、§7.2、§0.4 | V7 |
-| V8 | SessionStart hook の `additionalContext` の長さの上限 | ✅ | **hook 1 本 10,000 文字** (検証 C Q1、`verify-p0-c.md`)。合算ではなく hook ごと、バイトではなく文字数。超えると約 2KB のプレビューに化ける (hook のエラーにはならない)。反映: 注入を記録と知見の hook 2 本に分け、それぞれ 9,500 文字で切る。memory の上限を注入と `memory apply` で 1 つにした (v4) | §3.5 | (検証 C Q1) |
+| V8 | SessionStart hook の `additionalContext` の長さの上限 | ✅ | **hook 1 本 10,000 文字** (検証 C Q1、`verify/verify-p0-c.md`)。合算ではなく hook ごと、バイトではなく文字数。超えると約 2KB のプレビューに化ける (hook のエラーにはならない)。反映: 注入を記録と知見の hook 2 本に分け、それぞれ 9,500 文字で切る。memory の上限を注入と `memory apply` で 1 つにした (v4) | §3.5 | (検証 C Q1) |
 | V9 | Stop hook の `transcript_path` から今のコンテキストの量を読めるか | 🟡 | 読める (最後の assistant の `usage` の input + cache_creation + cache_read)。ただし**最大 1 API 呼び出し分遅れる** (観測 0.5k〜1.8k トークン)。窓はモデルで違う (haiku が 200k、sonnet が 1M) ので、**閾値はモデルの窓に対する割合** (既定 30%) にする | §0.4、§5.3、§5.4 | V9 |
 | V10 | 席ごとに Remote Control につなぐかどうかを制御できるか | ✅ | 動く。`--settings` の `remoteControlAtStartup: false` で外し、`--remote-control` で足す (フラグが勝つ)。**ひな形の既定値**は、全席 `remoteControlAtStartup: false`、captain だけ `--remote-control`。外した席にも SendMessage は届く | §0.4、§1.5 | V10 |
 | V11 | `PushNotification` を席の外から出せるか | ❌ | `-p` からは送られない (`Not sent — this terminal is active`)。送るかは tool の内部の判定で、呼ぶ側が強制できない。**`notify.command` の候補にしない**。bg の席 + Remote Control からの送信は**【要検証】(未確認)** | §2.4 | V11 |
@@ -799,7 +799,7 @@ P0 は「終業 + 強制」の 2 段 (§0)。**最終受付を軽い形で戻す
 
 ## 12. owner の決定 (2026-09-26)
 
-v0 で owner に聞いた Q1〜Q6 の答え。前提として、owner の方針「仕組みは道具・記録・安全網だけ、運用の方針は強制しない」(§0.3、`docs/policy-audit.md`) がある。
+v0 で owner に聞いた Q1〜Q6 の答え。前提として、owner の方針「仕組みは道具・記録・安全網だけ、運用の方針は強制しない」(§0.3、`docs/_archive/policy-audit.md`) がある。
 
 - **Q1. owner への通知経路** (§2.4、design §15 の未決) → **team.yaml の `notify.via` で方式を選ぶ。`slack` / `mac` / `windows` (複数可)**。実装は agent-fleet の `src/fleet/notify.py` などから持ってくる。判断を 1 件ずつ送るか日報にまとめるかは `notify.decisions` (既定 digest)
 - **Q2. memory の棚卸しの書き手** (§3.6、design §6.6 の変更) → **案は各役割の headless シフト、反映は captain** (v0 の推しどおり)。「反映は captain」は `memory.applier` の既定値と役割プロンプトで表し、コードは呼び出し元を検査しない

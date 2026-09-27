@@ -1,6 +1,6 @@
 """seat-attach: keep a pane attached to a seat's current shift (design §10).
 
-Rules from docs/spike-zellij-attach.md:
+Rules from docs/_archive/spike-zellij-attach.md:
 - attach only to a live session (``pid != null``). Attaching to a stopped one
   wakes it up again (Q4), which would resurrect an old shift.
 - ``--name`` is not unique (Q5), so "the current shift" comes from roster.json.

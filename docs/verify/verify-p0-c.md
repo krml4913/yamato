@@ -246,5 +246,5 @@ A/B の起動レシピと settings.json ひな形に対する変更の候補:
 - zellij の使い捨てセッション `spike-c-view` は `kill-session` + `delete-session` した。`zellij list-sessions` に残っているのは `fleet-main` だけ
 - attach プロセス、pty クライアント、状態ポーラー、待機スクリプト、Monitor の `tail -F` は、残っていない(`ps` で確認)
 - 既存のセッション(fleet-leader、main-leader、他の driver の席)、`fleet-main`、`~/.claude/settings.json` には触れていない。`claude daemon stop` は実行していない
-- リポジトリの変更はこのファイル(`docs/verify-p0-c.md`)だけ。副作用: `~/.claude.json` に workspace trust を 1 件追加した(scratchpad の使い捨て cwd)
+- リポジトリの変更はこのファイル(`docs/verify/verify-p0-c.md`)だけ。副作用: `~/.claude.json` に workspace trust を 1 件追加した(scratchpad の使い捨て cwd)
 
