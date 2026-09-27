@@ -235,7 +235,7 @@ decisions:
 - owner の入口は **`yamato talk <ship> [<seat>]`**。席を省くと team.yaml の `talk_default` (省略時は hub) と話す。処理: 相手の席が生きていれば `claude attach`。止まっていれば、§5.3 の規則で再開か新しいシフトを起こしてから attach する
 - 人間が captain 以外の席と話したとき、その席が decision をどう扱うか (自分で閉じるか、captain に回すか) は役割プロンプトで決める
   - design §10 の「生きている席にしか attach しない」は zellij の窓 (自動で付け直すスクリプト) の規則。`talk` は人間が意図して起こすので、先に yamato が起こしてから attach する。止まっている席に直接 attach して古いシフトを蘇らせることはしない (spike の注意)
-- captain は owner の言葉を受けて `decide close --by owner` で代筆する。項目には「代筆: pm」と残るので、後から「owner が本当にそう言ったか」は captain の transcript で追える (SessionEnd hook で艦フォルダに保存済み、design §8.3)
+- captain は owner の言葉を受けて `decide close --by owner` で代筆する。項目には「代筆: pm」と残る。「owner が本当にそう言ったか」の根拠は `--reason` (owner の言葉をそのまま書いたもの) を正とする。transcript は退避しない (D-022、design §8.3・§15)
 - スマホからは Remote Control で captain の席と話せる (検証 A の前提に「全席が Remote Control にもつながる」とある)。**席ごとに Remote Control につなぐかどうかは制御できる** (検証 D V10): `--settings` の `remoteControlAtStartup: false` で席ごとに外せ、`--remote-control` フラグを足すとつながる (フラグが settings の `false` に勝つ)。`--setting-sources project,local` で user 設定を外しても接続した席があったので、切るなら `false` を明示する
   - **ひな形の既定値**は、team.yaml の `settings:` に `remoteControlAtStartup: false` (全席)、captain の役割に `remote_control: true` (この席だけ `--remote-control` を付けて起こす) の組み合わせ (§0.4)。艦ごとに変えてよく、コードは強制しない
   - つながっているかは `~/.claude/sessions/<pid>.json` の `bridgeSessionId` で分かる。外した席にも SendMessage は届く (ローカルの配送は Remote Control と独立)。スマホ側の一覧の表示そのものと、`--settings` の `true` が効くか (既定が接続だったため判別できなかった) は見ていない
@@ -438,7 +438,7 @@ design §6.6 は「memory に書き込むのは PM の週次の棚卸しだけ�
    - settings の権限ルールの書き方 (検証 D V1): 絶対パスの allow / deny は `//` 始まり (`Write(//private/tmp/...)`)。`/` 始まりは project root 相対。allow に書く Bash は `$VAR` の展開を避ける (展開を含む Bash は allow に書いても dontAsk で拒否された)
 3. 時間切れ: ラッパーは `min(役割の max_duration, deadline + grace)` を過ぎたら SIGTERM を送る。`-p` は exit 143 で終わり、SessionEnd hook が走る (検証 D V4。実行中の tool の子プロセスも止まる)。ただし次の 2 点に注意する
    - **結果 JSON (`result` 行) は出ない**。使用量は transcript から数える (`message.id` で重複を除いた各 API 応答の `usage` を合算。同じ応答が複数行に出るため、検証 D V9)。`total_cost_usd` は取れないので、その欄は null にする
-   - **SessionEnd hook の既定の待ちは 1.5 秒**。超えると打ち切られる。艦フォルダへの transcript の保存 (design §8.3) などは 1.5 秒以内に終えるか、hook に `timeout` (秒。最大 60) を付ける (環境変数 `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS` でも延ばせる)
+   - **SessionEnd hook の既定の待ちは 1.5 秒**。超えると打ち切られる。何かをそこでやるなら 1.5 秒以内に終えるか、hook に `timeout` (秒。最大 60) を付ける (環境変数 `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS` でも延ばせる)
 4. 終わったら:
    - 最後の `result` 行から `usage.jsonl` に 1 行書く (シフト id、役割、所要時間、ターン数、トークン、`total_cost_usd`)。時間切れのときは上の 3 のとおり transcript から数える。最後の `rate_limit_event` (`resetsAt`、`utilization`) もシフトの記録に残す (§4.4)
    - **SessionStart hook が走った印が無ければ**失敗として扱う (bare 化などで hook が効いていない。記録を読まずに働いた可能性がある。印は stream-json の `system/hook_response [SessionStart]`)
@@ -520,6 +520,8 @@ captain の Stop hook (応答のたびに走る) が、次の条件を見る。�
 - 待機中の captain はターンが無いので Stop hook が走らない。そのまま 1h で止められても、次の send で §5.3 の規則が働くので問題ない
 - メンバーの persistent の席にも同じ規則を使う (閾値は役割ごとに変えられる)
 - 「入れ替われ」は Stop hook が返す**促し**で、席が従わなくてもコードは止めない。止めるのは時間の上限 (§0 B4) だけ
+
+**止まっている persistent の席への印 (T-024)**: `--rotate` は生きている席の中からしか打てない。止まっている席 (チーム構成を変えたあとなど、次の shift だけ `--agents` を新しくしたいとき) には誰も中から打てないので、`yamato rotate <ship> <seat>... | --all` が同じ `rotateRequested` の印を外から立てる。`--all` は persistent の席すべて。生きている席 (Stop hook の促しに任せる)・per_task / headless の席 (resume が無く、印を読むところが無い) には立てず、理由を返す。events に `rotate_requested` を残す (`by` は `--by` か呼び出し元、既定 owner)。印を立てたあとの扱いは §5.3 の 1 と同じ (次の send で新しいシフト、その場では起動しない)。
 
 ### 5.5 空回りの検知
 

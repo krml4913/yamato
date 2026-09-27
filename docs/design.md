@@ -433,7 +433,7 @@ SessionStart hook が、次を注入する。**何を読ませるかは設定** 
 - **`seat-stop`** (席が使う道具): 自分の席のセッションかを確かめ (`CLAUDE_CODE_SESSION_ID` を roster と照合。席の取り違えを防ぐ整合性の検査で、権限の判定には使わない)、`handoff.md` が今回のシフトで更新されているか (`seat_stop.require_handoff`)、送り手として届けるはずの送信が読まれているか (`seat_stop.require_delivery`) を確かめる。通れば roster を `stopping` にし、遅延 stop (10 秒後に `claude stop`) を仕掛ける。直接 stop すると最後のターンが transcript に残らず、resume した席が自分を止め直そうとするため (検証 A Q3)
 - 席が止まると、roster のシフトを閉じて、使用量を `usage.jsonl` に 1 行書く (transcript から数える。シフトの間の assistant のトークン数)。transcript の場所 (`~/.claude/projects/**/<sessionId>.jsonl`) は Claude Code の内部の形なので、見つからない・読めないときは 0 ではなく「分からない」(`"unknown": true`) と記録し、日報にもそう出す。`status` の「最終」も同じ場所の mtime を足しに見るだけで、読めなければ hook の `lastActive` とシフトの時刻で出す
 - **Stop hook は応答のたびに動くため、引き継ぎの強制には使わない**。P0 の Stop hook は、時間の上限を過ぎたときに終業を指示するだけ (§12.1)。日雇いの席が引き継ぎを書かずに終わろうとしたときの安全網 (Stop hook) は、P1 で設定 `handoff_guard:` (既定 on) として足す。短い headless の仕事には重いので、外せるようにする (design-p1 §0.4)
-- 会話ログ (transcript) をチームフォルダに保存する SessionEnd hook は、未実装 (Claude Code 側では 30 日で消える)。design-p1 §1.5 の代筆の追跡がこれを前提にしているので、P1 で決める (§15)
+- 会話ログ (transcript) は艦フォルダに退避しない (D-022)。Claude Code 側では 30 日で消えるが、コピーする hook は作らない。design-p1 §1.5 の代筆の追跡は、これを前提にせず `--reason` (owner の言葉をそのまま書いたもの) を根拠にする
 
 ## 9. 判断とエスカレーション (P1)
 
@@ -566,7 +566,7 @@ grace: 20m            # 終了時刻のあと、キリのいいところまで�
 | `seat-stop <ship> <seat> [--delivered]` | 席が使う。終業処理 (引き継ぎの確認と遅延 stop。§8.3) |
 | `hook <event> <ship> <seat>` | Claude Code の hook から呼ばれる (session-start / session-start-knowledge / stop / wait-deadline / deny-dialog / log-denied) |
 
-P1 で足すもの (design-p1): `decide open / close / list`、`report daily`、`memo`、`memory curate / apply / status`、`ship extend / halt`、`ships` (全艦の一覧)、`talk`、`worktree add / path / list / rm`、`pr open / merge`。ほか、headless の席を起こすラッパー `run-headless` (内部用)。P2: `view` (実体は `bin/yamato-seat-attach`。`yamato` への組み込みは未)。
+P1 で足すもの (design-p1): `decide open / close / list`、`report daily`、`memo`、`memory curate / apply / status`、`ship extend / halt`、`ships` (全艦の一覧)、`talk`、`worktree add / path / list / rm`、`pr open / merge`、`seat-stop --rotate` と `rotate <ship> <seat>... | --all` (止まっている persistent の席に外から同じ入れ替えの印を立てる、design-p1 §5.4 の T-024)、`feed` (艦の出来事 events.jsonl を流し見する)。ほか、headless の席を起こすラッパー `run-headless` (内部用)。P2: `view` (実体は `bin/yamato-seat-attach`。`yamato` への組み込みは未)。
 
 design-p1 には、別の名前で書かれている箇所がある (`ship up / down / status`、`shift end`)。実装済みの名前は上の表 (`up` / `down` / `status` / `seat-stop`)。揃え方は P1 の実装で決める (§15)。
 
@@ -587,11 +587,11 @@ design-p1 には、別の名前で書かれている箇所がある (`ship up / 
 - `persistent` の席を入れ替える条件: 設定 `rotate:` (コンテキストの量、compaction、時間、日付。どれも off にできる。design-p1 §5.3〜5.4)
 - 人間宛て通知の経路: `notify.via` に `slack` / `mac` / `windows` (複数可) と、任意の `command` (§7、design-p1 §2.4)
 - leader の扱い: 移行期間は fleet の leader が admiral を兼ねる (§11)
+- 会話ログ (transcript) の艦フォルダへの退避: しない (D-022)。代筆 (design-p1 §1.5) の根拠は `--reason` (owner の言葉をそのまま書いたもの) を正とする。transcript をコピーする hook は作らない
 
 **まだ決まっていないこと**
 - zellij で窓を開いている席は常駐する (attach で 1h 停止を免れる)。全席を開くか、見たい席だけ開くか
 - fleet からの移行手順 (fleet を引退させる時期と手順)
-- 会話ログ (transcript) を艦フォルダに保存する SessionEnd hook (§8.3)。未実装だが、design-p1 §1.5 の代筆の追跡が前提にしている。headless の席では SessionEnd hook の待ちが 1.5 秒なので、保存はそれに収めるか `timeout` を付ける (design-p1 §4.2)
 - **【要検証】** design-p1 §11 の未確認のうち: サブスクの枠切れのとき、bg の席と `-p` がどうなるか (V5)。bg の席 + Remote Control からの `PushNotification` (V11)
 
 **P0 の実装と design-p1 で、名前や置き場が食い違っていたもの: 決定済み (leader, 2026-09-26)**
