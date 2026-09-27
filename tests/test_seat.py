@@ -148,6 +148,52 @@ class SeatTest(_SeatBase):
         cfg.write_text(json.dumps({"projects": {str(self.workspace): "odd"}}))
         self.assertFalse(claude.is_trusted(self.workspace))
 
+    def test_trust_key_missing_from_an_existing_entry_is_unknown(self):
+        """nit A: the entry for this workspace is there, but Claude Code's own key
+        (``hasTrustDialogAccepted``) is not on it (a rename, say) -- "cannot tell", not
+        an outright refusal, so ``up`` still launches (unlike a real ``False``, verify-p1-d)."""
+        from yamato import claude
+
+        cfg = self.config / ".claude.json"
+        cfg.write_text(json.dumps({"projects": {str(self.workspace): {}}}))
+        self.assertIsNone(claude.is_trusted(self.workspace))
+        out = self.up()
+        self.assertIn("確かめられなかった", out)
+        self.assertEqual(len(self.bg_calls()), 1)
+
+    def test_trust_key_missing_but_known_elsewhere_is_a_clear_refusal(self):
+        """The key is still in current use (some other project has it), so this
+        workspace's own keyless entry is not a rename -- it just was never accepted."""
+        from yamato import claude
+
+        (self.config / ".claude.json").write_text(json.dumps({"projects": {
+            str(self.tmp / "other"): {"hasTrustDialogAccepted": True},
+            str(self.workspace): {},
+        }}))
+        self.assertFalse(claude.is_trusted(self.workspace))
+        with self.assertRaises(YamatoError) as cm:
+            self.up()
+        self.assertIn("trust", str(cm.exception))
+        self.assertEqual(self.bg_calls(), [])
+
+    def test_trust_key_present_true_is_trusted(self):
+        from yamato import claude
+
+        (self.config / ".claude.json").write_text(json.dumps(
+            {"projects": {str(self.workspace): {"hasTrustDialogAccepted": True}}}))
+        self.assertTrue(claude.is_trusted(self.workspace))
+
+    def test_trust_key_present_false_is_still_a_clear_refusal(self):
+        from yamato import claude
+
+        (self.config / ".claude.json").write_text(json.dumps(
+            {"projects": {str(self.workspace): {"hasTrustDialogAccepted": False}}}))
+        self.assertFalse(claude.is_trusted(self.workspace))
+        with self.assertRaises(YamatoError) as cm:
+            self.up()
+        self.assertIn("trust", str(cm.exception))
+        self.assertEqual(self.bg_calls(), [])
+
     def test_up_with_unknown_trust_warns_and_launches(self):
         (self.config / ".claude.json").unlink()
         out = self.up()

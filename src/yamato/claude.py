@@ -195,15 +195,41 @@ def is_trusted(workspace: Path) -> bool | None:
     if not isinstance(projects, dict):
         return None
 
-    def ok(p: Path) -> bool:
+    # nit A: a keyless *dict* entry is ambiguous only while nothing in the whole file still
+    # uses the key -- i.e. Claude Code itself may have renamed it. If some other project's
+    # entry does have the key, the key is alive and well; this entry's own omission just
+    # means "not accepted", the ordinary, clear refusal.
+    key_known = any(isinstance(e, dict) and "hasTrustDialogAccepted" in e for e in projects.values())
+
+    def ok(p: Path) -> bool | None:
+        """True/False when the entry has the key; None when the entry is a dict without the
+        key AND no project anywhere in the file has it either (a rename, say) -- "cannot
+        tell" (nit A), not a clear refusal. No entry at all, a malformed (non-dict) entry,
+        or a keyless entry while the key is still in current use elsewhere, all stay False
+        as before: only a file-wide key rename is ambiguous."""
         entry = projects.get(str(p))
-        return isinstance(entry, dict) and bool(entry.get("hasTrustDialogAccepted"))
+        if isinstance(entry, dict):
+            if "hasTrustDialogAccepted" in entry:
+                return bool(entry["hasTrustDialogAccepted"])
+            return None if not key_known else False
+        return False
+
+    def combine(results) -> bool | None:
+        """True wins outright; otherwise a "cannot tell" (a keyless entry) wins over the
+        plain False default of an absent entry, so one ambiguous entry does not get
+        drowned out by all the other (merely absent) candidates."""
+        results = list(results)
+        if any(r is True for r in results):
+            return True
+        if any(r is None for r in results):
+            return None
+        return False
 
     ws = Path(workspace).resolve()
     root = git_root(ws)
     if root is not None:
-        return ok(root) or ok(main_repo_root(ws) or root)
-    return any(ok(p) for p in (ws, *ws.parents))
+        return combine(ok(p) for p in (root, main_repo_root(ws) or root))
+    return combine(ok(p) for p in (ws, *ws.parents))
 
 
 def check_trust(workspace: Path) -> str | None:
