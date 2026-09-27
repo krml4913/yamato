@@ -447,6 +447,11 @@ class OpenerTest(ShipTestCase):
             opener.open_ships(["t1"], command="yamato", run=run, in_zellij=True)
         new_tabs = [c for c in run.calls if c[1:3] == ["action", "new-tab"]]
         self.assertEqual(len(new_tabs), 1)
+        # os.remove was mocked out above, so the real mkstemp file (under the system
+        # temp dir, not self.tmp) is still there -- remove it for real now that the
+        # mock is gone, or it piles up in /tmp across test runs (T-027)
+        with contextlib.suppress(FileNotFoundError):
+            os.remove(new_tabs[0][4])
 
     def test_in_zellij_is_read_from_the_environment_by_default(self):
         run = FakeZellijRun()
