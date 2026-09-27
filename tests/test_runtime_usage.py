@@ -85,9 +85,9 @@ class RuntimeTest(ShipTestCase):
         team = self.team()
         runtime.generate(self.shipdir, team)
         agents = json.loads(runtime.agents_path(self.shipdir).read_text())
-        self.assertEqual(set(agents), {"pm", "impl"})
+        self.assertEqual(set(agents), {"pm", "impl", "reviewer", "planner"})
         self.assertEqual(agents["impl"]["model"], "sonnet")
-        for p in (agents["pm"]["prompt"], agents["impl"]["prompt"]):
+        for p in (a["prompt"] for a in agents.values()):
             self.assertNotIn("{{", p)
             self.assertIn(str(YAMATO_BIN), p)
             self.assertIn(str(self.shipdir), p)
@@ -95,7 +95,7 @@ class RuntimeTest(ShipTestCase):
             self.assertIn("seat-stop", p)
             self.assertIn("push", p)
         team_json = json.loads((self.shipdir / ".runtime" / "team.json").read_text())
-        self.assertEqual(list(team_json["seats"]), ["pm", "impl"])
+        self.assertEqual(list(team_json["seats"]), ["pm", "impl", "reviewer", "planner"])
 
 
 def _line(ts, mid, **u):

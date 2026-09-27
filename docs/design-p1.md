@@ -130,6 +130,12 @@ settings:                   # 全席の settings に重ねる中身 (P0)。Remot
 profiles:                   # trust のプロファイル (§7.2)。mode は permissions.defaultMode に書き出す (省略時は auto)
   external: { mode: dontAsk, tools: [...], allow: [...], deny: [...], send: false }   # V7: auto にしない
   clean:    { deny: [...] }
+  merger:   { deny: [...], allow: ["Bash({{yamato}} pr merge*)"] }   # clean + pr merge を分類器なしで通す (開発艦の reviewer。§8.3、D-026)
+decisions:                  # 開発艦のひな形の既定 (D-010)。merge を打つのは reviewer
+  merge:        { decider: reviewer, when: "..." }
+  design:       { decider: planner,  when: "..." }
+  scope_change: { decider: owner }
+  default:      { decider: pm }
 git:                        # 開発艦だけ (§8)
   base: main
   merge_requires: [review, ci, decision]
@@ -137,7 +143,13 @@ git:                        # 開発艦だけ (§8)
   conflict: author
 roles:
   pm:
-    remote_control: true    # この席だけ --remote-control を付けて起こす (§1.5、V10)
+    remote_control: true    # --remote-control を付けて起こす (§1.5、V10)。開発艦のひな形は planner (owner が直接話す席) も
+  reviewer:                 # 開発艦のひな形 (D-010): レビューと merge。per_task
+    shift: per_task
+    trust: merger
+  planner:                  # 開発艦のひな形 (D-010): owner と要件を詰める。persistent
+    shift: persistent
+    remote_control: true
   impl:
     shift: per_task
     isolation: none         # worktree (bg の自動 worktree) / none (§8.2)
@@ -659,7 +671,7 @@ background session は頼まなくても commit と push をする (検証 B Q4)
 - **タスク = ブランチ**: captain が impl に割り当てるとき、項目の `branch` を決める (既定の名前 `yamato/<ship>/T-042`)。impl はそのブランチでだけ commit する。`branch` / `pr` / `worktree` は任意の項目で、board の固定の項目にしない
 - impl は着手時に `yamato worktree add T-042` で作業場所を作り、そこで作業する (§8.2)
 - push はしてよい (自分のブランチだけ)。PR は `yamato pr open T-042` で作る
-- merge は `yamato pr merge T-042` で、merge の判断 (decisions の `merge`) が閉じてから captain が打つ
+- merge は `yamato pr merge T-042` で、merge の判断 (decisions の `merge`) が閉じてから **reviewer** が打つ (D-010。captain はレビューも merge もしない)
 - シフトの終わりにはブランチを push する (未 push の commit があると、あとで席の後片付けの `claude rm` が拒否する、検証 B Q4)
 
 ひな形の deny の既定値 (艦ごとに変えられる):
@@ -709,7 +721,7 @@ git:
   conflict: author      # 衝突の知らせを送る先: そのタスクの実装担当 (author) / 役割名
 ```
 
-誰が merge を決めるかは decisions 表の `merge` (ひな形の既定は owner)。誰が `pr merge` を打つかは役割プロンプト (ひな形の既定は captain)。v0 の `git.merge` / `git.merger` は持たない (decisions 表と重複し、merger は呼び出し元の検査にしか使っていなかったため)。
+誰が merge を決めるかは decisions 表の `merge` (ひな形の既定は reviewer。設計の根幹に触る PR だけ reviewer が owner に上げる)。誰が `pr merge` を打つかは役割プロンプト (ひな形の既定は reviewer)。v0 の `git.merge` / `git.merger` は持たない (decisions 表と重複し、merger は呼び出し元の検査にしか使っていなかったため)。
 
 `yamato pr merge T-042` の処理:
 1. 呼び出し元を記録する (`merged_by`)。**誰が打てるかは検査しない** (v1)
@@ -719,9 +731,12 @@ git:
 
 `yamato pr open T-042`: `gh pr create` を呼び、項目の `pr` に番号を書き、`column` を review に進め (艦の列に review があれば)、項目の reviewer (無ければ hub) に `send` する。使うかどうかは役割プロンプト次第で、生の `gh pr create` を使う艦では項目の `pr` を `board set` で書く。
 
-owner が merge を決める艦 (ひな形の既定) の流れ:
-- reviewer が承認すると、`merge_decision: auto` なら yamato が merge の D 項目を開く (`category: merge`)。owner は日報か `talk` で「入れてよい」と言い、captain が `decide close --by owner` → `pr merge`
-- owner の判断を待つ間に後続のタスクが古い main から切られて衝突が増える (DA I2)。ひな形の captain の役割プロンプトに「同じファイルを触る後続のタスクは、前のタスクの merge まで割り当てない」を入れる。判断材料として項目に任意の `touches:` (触る予定のパス) を書けるようにし、board が重なりを警告する
+reviewer が merge を決める艦 (開発艦のひな形の既定。owner の決定 D-010) の流れ:
+- reviewer が承認して (`review=approved`)、merge の D 項目を開いて (`category: merge`、`--links <item>`) 自分で閉じ、`pr merge` を打つ。`merge_decision: auto` (yamato が D 項目を自動で開く) はまだ無い。設計の根幹に触る PR は merge せず、`scope_change` の判断で owner に上げる。captain (pm) は割り振りと回収だけで、レビューも merge もしない
+- owner が merge を決める艦にしたいときは decisions の `merge` を `owner` にし、役割プロンプトを「reviewer が承認 → captain が merge の判断を開く → owner が `talk` で「入れてよい」→ captain が `decide close --by owner` → `pr merge`」の流れに書き換える (v1 のひな形の既定だった流れ)
+- 後続のタスクが古い main から切られて衝突が増える (DA I2)。ひな形の captain の役割プロンプトに「同じファイルを触る後続のタスクは、前のタスクの merge まで割り当てない」を入れる。判断材料として項目に任意の `touches:` (触る予定のパス) を書けるようにし、board が重なりを警告する
+
+**merge を打つ役の allow (owner の決定 D-026 案 B)**: auto モードの分類器は `yamato pr merge` を「レビューなしの merge」として揺れて止める (2026-09-27 に yamato-dev で観測。同じ席で通る日と止まる日があった)。回り道をせず、merge を打つ役の settings の `permissions.allow` に `Bash(<yamato> pr merge*)` を足して通す。ひな形では `profiles.merger` (clean と同じ Web の deny + この allow) を作り、reviewer だけが `trust: merger` を使う (pm・impl・planner には入らない)。生の `gh pr merge` は全席 deny のまま。Claude Code の Bash の allow は文字列の一致なので、役割プロンプトに書く `{{yamato}} pr merge` と allow の文字列は同じでなければならない (`tests/test_dev_template.py` で確かめる)
 
 ### 8.4 実装担当同士の衝突を減らす
 

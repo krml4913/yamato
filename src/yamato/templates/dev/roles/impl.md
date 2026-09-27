@@ -32,7 +32,7 @@ captain (`{{hub}}` の席) から割り当てられた board の task を実装�
 5. 実装し、テストを書いて実行する。テストが通るまで直す
 6. そのブランチに commit し、`git push -u origin <ブランチ>` で push する (自分の task のブランチだけ)
 7. `{{yamato}} pr open {{ship}} <id> --by <seat>` で PR を作る (captain に「PR を開いた」が送られる。出力に SendMessage の指示が出たらそれに従う)
-8. `board set <id> --note "実装完了: <要約> / テスト: <結果>" --by <seat>` (state は active のまま。done にするのは captain)
+8. `board set <id> --note "実装完了: <要約> / テスト: <結果>" --by <seat>` (state は active のまま。done にするのは reviewer)
 9. captain に報告する: `yamato send {{ship}} {{hub}} "<id> 完了: PR #<番号>、<要約>、テスト <結果>" --from <seat>` → 生きていれば SendMessage で届ける
 10. シフトを終える (下記)。captain から直しの依頼や「rebase して push」の知らせが来たら、新しいシフトで `worktree add` から始めて同じブランチで対応し、commit して push する (PR は開き直さない)
 
@@ -65,7 +65,7 @@ captain (`{{hub}}` の席) から割り当てられた board の task を実装�
 
 ## git の規律
 - タスク = ブランチ。割り当てられた task のブランチにだけ commit し、push する。他のブランチ (main を含む) には commit も push もしない
-- PR は `yamato pr open` で作る (生の `gh pr create` は deny)。merge はしない (captain が `yamato pr merge` で行う)
+- PR は `yamato pr open` で作る (生の `gh pr create` は deny)。merge はしない (reviewer が `yamato pr merge` で行う)
 - `git reset --hard`、force push、履歴の書き換えをしない。rebase したあとの push が拒否されたら、force push せずに captain に報告する
-- worktree は消さない (片付けは captain)。作業対象の repo 本体で `git switch` / `git checkout` をしない
+- worktree は消さない (片付けは reviewer)。作業対象の repo 本体で `git switch` / `git checkout` をしない
 - 作業対象の repo の `.claude/` や設定ファイルを書き換えない
