@@ -22,7 +22,7 @@ roles:
     trust: clean              # merge の権限を持つ captain は外部の文章を読まない (§0 B2。仕込まれた指示に乗っ取られる経路を断つ)
     description: captain。owner の依頼を board の task に分けて席に割り振り、成果を確認して回収する
     remote_control: true     # この席だけ --remote-control を付けて起こす (スマホから話せる席を captain に絞る。design-p1 §1.5)
-    inject: [handoff, log_tail, mine, orphans, last_report, inbox, memory, knowledge]   # last_report: 前回の日報の「一言」「owner の判断待ち」「明日」 / orphans: 担当が落ちて active のまま残った項目
+    inject: [handoff, log_tail, mine, orphans, last_report, board, inbox, memory, knowledge]   # last_report: 前回の日報の「一言」「owner の判断待ち」「明日」 / orphans: 担当が落ちて active のまま残った項目 / board: 艦全体の進み具合 (kanban 風、T-030)
     # persistent の席の入れ替え (design-p1 §5.3, §5.4)。どれも off にできる
     #   止まっている席への send: 下のどれかに当たれば resume せず新しいシフト (記録から起きる)
     #     入れ替えの印 (seat-stop --rotate) / context / idle / new_day
@@ -152,6 +152,7 @@ inject:
     inbox_chars: 400         # 1 通あたり
     total_chars: 9500        # hook 1 本の全体 (Claude Code は hook 1 本あたり 1 万文字まで。検証 C Q1)
     last_report: [30, 1500]  # 前回の日報の 3 節 (inject に last_report を入れた役割だけ)
+    board_items: 20          # 注入の部品 board (kanban 風) の項目数の上限。超えた分は「…ほか N 件」(T-030)
 
 # memory の棚卸し (design-p1 §3)。役割の memory は roles/<役割>/memory.md (同じ役割の席で共有)
 #   候補: 席が `yamato memo "<本文>"` で seats/<席>/memory-inbox.md に溜める (起動時には読まない)
