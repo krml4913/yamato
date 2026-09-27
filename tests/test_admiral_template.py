@@ -3,7 +3,7 @@
 Only the static template is under test here (T-023, completion 1-2; T-036 adds the
 ``fleet`` inject part, T-023 completion 3). The ``yamato admiral`` command that builds
 ``_admiral/`` from it (T-020 laid the ``register=False`` / ``time_limit: none``
-groundwork; the CLI verb itself is a later task) is out of scope."""
+groundwork; the CLI verb landed in T-021) is out of scope."""
 import json
 import unittest
 from unittest import mock
