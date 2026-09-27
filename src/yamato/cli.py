@@ -7,14 +7,22 @@ import os
 import sys
 from pathlib import Path
 
-from . import banner
 from .util import YamatoError, resolve_ship
-from .view import cli as view_cli
 
 
-def _parser() -> argparse.ArgumentParser:
+def _parser(hook_only: bool = False) -> argparse.ArgumentParser:
+    if not hook_only:
+        from . import banner
+        from .view import cli as view_cli
     p = argparse.ArgumentParser(prog="yamato", description="Claude Code の background session で常設の AI チーム (艦) を動かす")
     sub = p.add_subparsers(dest="cmd", required=True)
+
+    h = sub.add_parser("hook", help="(Claude Code の hook から呼ばれる)")
+    h.add_argument("event")
+    h.add_argument("ship")
+    h.add_argument("seat")
+    if hook_only:
+        return p
 
     ship = sub.add_parser("ship", help="艦を作る")
     ship_sub = ship.add_subparsers(dest="ship_cmd", required=True)
@@ -115,11 +123,6 @@ def _parser() -> argparse.ArgumentParser:
     rh = sub.add_parser("run-headless", help="(send が切り離して起動する) headless の席の 1 シフトを claude -p で回す")
     rh.add_argument("ship")
     rh.add_argument("seat")
-
-    h = sub.add_parser("hook", help="(Claude Code の hook から呼ばれる)")
-    h.add_argument("event")
-    h.add_argument("ship")
-    h.add_argument("seat")
 
     view_cli.add_parser(sub)
 
@@ -226,14 +229,21 @@ def _status(args) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _parser().parse_args(argv)
+    if argv is None:
+        argv = sys.argv[1:]
+    # 毎ターンの hook の経路は banner / view を import しない (引数の解析も hook だけの parser で行う)
+    args = _parser(hook_only=bool(argv) and argv[0] == "hook").parse_args(argv)
     try:
         if args.cmd == "hook":
             return _hook(args)
         if args.cmd == "view":
+            from .view import cli as view_cli
+
             return view_cli.run(args)
         if args.cmd == "ship":
             from . import ship
+
+            from . import banner
 
             path, warnings = ship.create(args.name, args.workspace, args.path, args.template)
             banner.show("create", path, template=args.template, quiet=args.quiet)
@@ -277,6 +287,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.cmd == "up":
             from . import admiral
+
+            from . import banner
 
             shipdir = resolve_ship(args.ship)
             banner.show("up", shipdir, span=args.for_, quiet=args.quiet)
