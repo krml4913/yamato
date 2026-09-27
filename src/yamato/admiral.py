@@ -50,12 +50,18 @@ def stale_after(team: dict) -> int:
     return (team.get("watch") or {}).get("stale_after") or parse_duration(WATCH_FALLBACK["stale_after"])
 
 
-def red_flags(team: dict, rec: dict, live: dict | None, now: float) -> list[str]:
+def red_flags(team: dict, seat_name: str, rec: dict, live: dict | None, now: float, *,
+              has_active: bool = True) -> list[str]:
     """Why a seat shows red: a live seat idle for longer than ``watch.stale_after``, one
     waiting on an open prompt (``status: waiting``), one whose last words ask something of
     a human (``state: blocked`` while idle), or one whose API call failed (``state: failed``,
     verify-p1-d V5). A stopped seat is not red: liveness is the pid, never ``state``
-    (verify-p0-c Q5). ``blocked`` while ``busy`` is a seat waiting on its Monitor: normal."""
+    (verify-p0-c Q5). ``blocked`` while ``busy`` is a seat waiting on its Monitor: normal.
+
+    ``has_active``: whether the seat has an ``active`` board item (design-drift #11, D-019).
+    A live ``per_task`` seat with none is flagged -- it should have been ``seat-stop``'d when
+    its task ended; a caller that does not track the board (or has none to check) can leave
+    the default and this check is skipped."""
     if not claude.is_alive(live):
         return []
     flags = []
@@ -71,6 +77,8 @@ def red_flags(team: dict, rec: dict, live: dict | None, now: float) -> list[str]
     limit = stale_after(team)
     if last and now - last > limit:
         flags.append(f"{fmt_span(now - last)} 動いていない (生きているのに最終が {fmt_span(limit)} より古い)")
+    if team["seats"].get(seat_name, {}).get("shift") == "per_task" and not has_active:
+        flags.append("per_task の席が生きているのに担当 (active) の項目が無い (前の task の会話が持ち込まれる疑い。#11)")
     return flags
 
 
@@ -189,10 +197,14 @@ def ship_line(name: str, shipdir: Path, by: dict, now: float) -> str:
     last = seat._last_active(hub_rec) if hub_rec else None
     hub_col = f"captain {hub}: {'生' if hub in alive else '止'} 最終 {fmt_time(last)}" + (
         f" ({fmt_span(now - last)}前)" if last else "")
+    from . import board as board_mod
+
+    active_assignees = {m.get("assignee") for m in board_mod.Board(shipdir, team).items()
+                        if m.get("state") == "active"}
     red = []
     for s in team["seats"]:
         rec = roster.seat(shipdir, s)
-        if red_flags(team, rec, by.get(rec.get("sessionId")), now):
+        if red_flags(team, s, rec, by.get(rec.get("sessionId")), now, has_active=s in active_assignees):
             red.append(s)
     decisions = len(report.pending_decisions(shipdir, team, lambda d: report.is_human(team, d)))
     latest = report.latest(shipdir)
