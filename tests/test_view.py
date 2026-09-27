@@ -13,7 +13,7 @@ from unittest import mock
 
 from yamato import cli, roster, seat, ship
 from yamato.util import YAMATO_BIN, YamatoError, resolve_ship
-from yamato.view import attach, layout
+from yamato.view import attach, layout, opener
 
 from .helpers import ShipTestCase
 
@@ -286,6 +286,158 @@ class RegistryTest(ShipTestCase):
         self.assertEqual(resolve(), SID_A[:8])
 
 
+class FakeZellijRun:
+    """Stands in for ``subprocess.run`` in opener tests: records every zellij
+    invocation (argv and kwargs) and answers ``list-sessions --short`` from
+    ``sessions``. ``rc`` (or ``rc_for``, a ``argv -> int`` override) controls the
+    exit code returned, to exercise the non-zero -> ``YamatoError`` path."""
+
+    def __init__(self, sessions: str = "", rc: int = 0, rc_for=None):
+        self.calls: list[list[str]] = []
+        self.kwargs: list[dict] = []
+        self.sessions = sessions
+        self.rc = rc
+        self.rc_for = rc_for or (lambda argv: self.rc)
+
+    def __call__(self, argv, **kwargs):
+        self.calls.append(argv)
+        self.kwargs.append(kwargs)
+        out = self.sessions if argv[1:3] == ["list-sessions", "--short"] else ""
+        return subprocess.CompletedProcess(argv, self.rc_for(argv), stdout=out, stderr="")
+
+
+class OpenerTest(ShipTestCase):
+    """t1 (dev template) lands directly under $YAMATO_HOME, so ``all_ships()`` finds it."""
+
+    def test_no_refs_and_no_ships_is_an_error(self):
+        with mock.patch.dict(os.environ, {"YAMATO_HOME": str(self.tmp / "empty-home")}):
+            with self.assertRaises(YamatoError):
+                opener.open_ships(run=FakeZellijRun())
+
+    def test_default_refs_are_every_registered_ship(self):
+        ship.create("other", str(self.workspace), None, "dev")
+        run = FakeZellijRun()
+        dest = self.tmp / "view.kdl"
+        opener.open_ships(command="yamato", output=str(dest), run=run, in_zellij=False)
+        text = dest.read_text()
+        self.assertIn('tab name="t1"', text)
+        self.assertIn('tab name="other"', text)
+
+    def test_outside_zellij_attaches_an_existing_session(self):
+        # same layout as last time (dest already holds it) -> attach, no rebuild
+        run = FakeZellijRun(sessions="yamato-view [Created ...]\n")
+        dest = self.tmp / "view.kdl"
+        dest.write_text(layout.layout_for(["t1"], "yamato"))
+        opener.open_ships(["t1"], command="yamato", output=str(dest), run=run, in_zellij=False)
+        self.assertIn('args "view" "attach"', dest.read_text())
+        self.assertEqual(run.calls, [
+            ["zellij", "list-sessions", "--short"],
+            ["zellij", "attach", "yamato-view"],
+        ])
+
+    def test_outside_zellij_starts_a_new_session_when_none_is_up(self):
+        run = FakeZellijRun(sessions="")
+        dest = self.tmp / "view.kdl"
+        opener.open_ships(["t1"], command="yamato", output=str(dest), run=run, in_zellij=False,
+                          session="my-view")
+        self.assertEqual(run.calls, [
+            ["zellij", "list-sessions", "--short"],
+            ["zellij", "--session", "my-view", "--new-session-with-layout", str(dest)],
+        ])
+
+    def test_attach_and_new_session_are_not_captured(self):
+        # attach / --new-session-with-layout are interactive TUIs: capturing their
+        # stdout/stderr would blank the screen, so they must be called without it.
+        # list-sessions is non-interactive and keeps capture_output=True.
+        run = FakeZellijRun(sessions="yamato-view\n")
+        dest = self.tmp / "view.kdl"
+        dest.write_text(layout.layout_for(["t1"], "yamato"))
+        opener.open_ships(["t1"], command="yamato", output=str(dest), run=run, in_zellij=False)
+        self.assertEqual(run.calls[0][1:3], ["list-sessions", "--short"])
+        self.assertTrue(run.kwargs[0].get("capture_output"))
+        self.assertEqual(run.calls[1][1], "attach")
+        self.assertNotIn("capture_output", run.kwargs[1])
+
+        run2 = FakeZellijRun(sessions="")
+        opener.open_ships(["t1"], command="yamato", output=str(dest), run=run2, in_zellij=False)
+        self.assertEqual(run2.calls[1][1], "--session")
+        self.assertNotIn("capture_output", run2.kwargs[1])
+
+    def test_outside_zellij_recreates_a_session_when_the_layout_changed(self):
+        # the crew grew since the session was created: dest holds the *old* layout,
+        # the freshly built one differs -> delete-session --force, then rebuild
+        run = FakeZellijRun(sessions="yamato-view\n")
+        dest = self.tmp / "view.kdl"
+        dest.write_text("stale layout")
+        opener.open_ships(["t1"], command="yamato", output=str(dest), run=run, in_zellij=False)
+        self.assertEqual([c[1] for c in run.calls],
+                         ["list-sessions", "delete-session", "--session"])
+        self.assertEqual(run.calls[1], ["zellij", "delete-session", "--force", "yamato-view"])
+        self.assertTrue(run.kwargs[1].get("capture_output"))
+        self.assertIn('args "view" "attach"', dest.read_text())
+
+    def test_list_sessions_failure_means_no_sessions(self):
+        # zellij list-sessions exits 1 with "No active zellij sessions found."
+        # on stderr when there are none yet -- the ordinary first-run case --
+        # so it must not raise; open_ships should fall through to starting one.
+        run = FakeZellijRun(sessions="", rc_for=lambda argv: 1 if "list-sessions" in argv else 0)
+        dest = self.tmp / "view.kdl"
+        opener.open_ships(["t1"], command="yamato", output=str(dest), run=run, in_zellij=False,
+                          session="my-view")
+        self.assertEqual(run.calls, [
+            ["zellij", "list-sessions", "--short"],
+            ["zellij", "--session", "my-view", "--new-session-with-layout", str(dest)],
+        ])
+
+    def test_zellij_failure_raises(self):
+        run = FakeZellijRun(sessions="yamato-view\n",
+                            rc_for=lambda argv: 1 if "attach" in argv else 0)
+        dest = self.tmp / "view.kdl"
+        dest.write_text(layout.layout_for(["t1"], "yamato"))
+        with self.assertRaises(YamatoError):
+            opener.open_ships(["t1"], command="yamato", output=str(dest), run=run, in_zellij=False)
+
+    def test_default_output_is_under_yamato_home(self):
+        run = FakeZellijRun(sessions="yamato-view\n")
+        opener.open_ships(["t1"], command="yamato", run=run, in_zellij=False)
+        self.assertTrue((Path(os.environ["YAMATO_HOME"]) / "view.kdl").is_file())
+
+    def test_in_zellij_adds_one_tab_per_ship(self):
+        ship.create("other", str(self.workspace), None, "dev")
+        run = FakeZellijRun()
+        opener.open_ships(["t1", "other"], command="yamato", run=run, in_zellij=True)
+        new_tabs = [c for c in run.calls if c[1:3] == ["action", "new-tab"]]
+        self.assertEqual(len(new_tabs), 2)
+        for call in new_tabs:
+            self.assertEqual(call[0], "zellij")
+            self.assertEqual(call[3], "--layout")
+            text = Path(call[4]).read_text()
+            self.assertEqual(text.count("tab name="), 1)   # one ship, one tab, per file
+        # each ship's own tab landed in its own file
+        texts = [Path(c[4]).read_text() for c in new_tabs]
+        self.assertTrue(any('tab name="t1"' in t for t in texts))
+        self.assertTrue(any('tab name="other"' in t for t in texts))
+
+    def test_in_zellij_is_read_from_the_environment_by_default(self):
+        run = FakeZellijRun()
+        with mock.patch.dict(os.environ, {"ZELLIJ": "0"}):
+            opener.open_ships(["t1"], command="yamato", run=run)
+        self.assertEqual(run.calls[0][1:3], ["action", "new-tab"])
+
+    def test_custom_zellij_binary(self):
+        run = FakeZellijRun()
+        with mock.patch.dict(os.environ, {"YAMATO_ZELLIJ": "/opt/zellij"}):
+            opener.open_ships(["t1"], command="yamato", run=run, in_zellij=True)
+        self.assertEqual(run.calls[0][0], "/opt/zellij")
+
+    def test_missing_zellij_binary_is_a_clean_error(self):
+        def boom(argv, **kwargs):
+            raise FileNotFoundError()
+        with self.assertRaises(YamatoError):
+            opener.open_ships(["t1"], command="yamato", run=boom, in_zellij=False,
+                              output=str(self.tmp / "view.kdl"))
+
+
 class ViewCliTest(ShipTestCase):
     def call(self, argv):
         out, err = io.StringIO(), io.StringIO()
@@ -327,6 +479,18 @@ class ViewCliTest(ShipTestCase):
     def test_view_needs_a_subcommand(self):
         with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
             cli.main(["view"])
+
+    def test_open_cli_wires_ships_and_flags(self):
+        with mock.patch.object(opener, "open_ships") as open_ships:
+            code, _, _ = self.call(["view", "open", "t1", "--command", "yamato",
+                                    "-o", "/tmp/x.kdl", "--session", "sess"])
+        self.assertEqual(code, 0)
+        open_ships.assert_called_once_with(["t1"], command="yamato", output="/tmp/x.kdl", session="sess")
+
+    def test_open_cli_no_ships_and_no_session_uses_opener_defaults(self):
+        with mock.patch.object(opener, "open_ships") as open_ships:
+            self.call(["view", "open"])
+        open_ships.assert_called_once_with(None, command=None, output=None)
 
 
 # A `claude` that only knows what the view uses: `agents --json --all` reads a JSON file,
