@@ -46,6 +46,7 @@ zellij --session yamato-view --new-session-with-layout ~/yamato/view.kdl
 | `up <ship> [--for 3h] [--seats <seat,...>]` | `.runtime/` を作り直し、deadline を書き、captain の席を起動 (persistent なら resume)。`--seats` の席も一緒に起こす |
 | `down <ship> [--force]` | 終業 / 強制停止 |
 | `status [<ship>]` | 席ごとの状態。赤い席は `!!! <席>: ...` と出る (権限の確認待ち・API エラー (`state: failed`)・生きているのに `watch.stale_after` (既定 20m) より長く動いていない)。`stopping` のまま 5 分を超えた席は止め直す (T-012) |
+| `admiral [--stop [--force]]` | 常駐の admiral セッション (`_admiral/`、D-011) に `claude attach` する。止まっていれば talk と同じ規則 (send → 起こす) で起こしてから。`_admiral/` が無ければ `admiral` ひな形から初回に作る (登録はしない。`ships` には出ない)。`--stop` は引き継ぎを書いて `seat-stop` するよう admiral に伝えるだけで、それ自体はブロックしない。`--force` は自分で止まらなければ (最大 `ADMIRAL_STOP_WAIT` 秒待って) 強制停止する (`down --force` と同じ扱い) |
 | `ships` | (admiral) 全艦を 1 行ずつ: 稼働中か・残り時間・captain の最終・赤い席の数・owner の判断待ちの数・今日の使用量・最新の日報の日付 |
 | `extend <ship> <期間>` | (admiral) deadline を延ばす (データの書き換えだけ。過ぎていれば今から数える) |
 | `halt <ship>` | (admiral) 緊急停止。猶予なしで全席を強制停止し、日報の安全網を通す |

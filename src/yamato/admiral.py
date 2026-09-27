@@ -22,6 +22,20 @@ from .util import (YamatoError, fmt_span, fmt_time, load_registry, parse_duratio
 
 TALK_NOTE = "[yamato talk] owner がこれから `claude attach` でこの席に来て直接話します。起きたら待っていてください。"
 
+# --- yamato admiral (D-011, T-021) ---------------------------------------------------
+# _admiral/ (T-020) is a ship folder like any other -- unregistered (all_ships() leaves it
+# out) and with no deadline (time_limit: none, D-013) -- built once from the `admiral`
+# template (T-023) the first time `yamato admiral` is used, then driven by the existing
+# seat / talk / send / seat-stop / rotate machinery (Q5 of work/requirements/admiral.md).
+ADMIRAL_DIRNAME = "_admiral"
+ADMIRAL_TEMPLATE = "admiral"
+# passed as ship.create's `name` (fills a template `{{name}}`), so `session_name()` (team["name"]
+# + "." + seat) reads "yamato.admiral" for the (single, hub) seat "admiral" the template defines
+ADMIRAL_SHIP_NAME = "yamato"
+ADMIRAL_STOP_NOTE = ("[yamato admiral --stop] 引き継ぎ (handoff.md) を書いて `yamato seat-stop` で"
+                     "終業してください。")
+ADMIRAL_STOP_WAIT = 20   # --force が「待っても止まらなければ」で待つ秒数 (モジュール定数。テストで縮める)
+
 
 def out(msg: str = "") -> None:
     print(msg, flush=True)
@@ -242,8 +256,10 @@ def talk(shipdir: Path, name: str | None, *, execvp=os.execvp) -> int:
                           f"`yamato send {team['name']} {name} \"...\"` で頼む")
     short = _live_short(shipdir, name)
     if short is None:
-        if deadline.phase(deadline.read(shipdir)) != deadline.RUNNING:
-            # send would only record the note and not wake the seat: say so without the note
+        if team["time_limit"] is not None and deadline.phase(deadline.read(shipdir)) != deadline.RUNNING:
+            # send would only record the note and not wake the seat: say so without the note.
+            # A ship with no time limit at all (time_limit: none, D-013, the admiral) has no
+            # "up" to wait for: it is always in bounds, so this gate does not apply to it.
             raise YamatoError(f"席 {name} は止まっていて、艦は稼働時間の外 ({deadline.describe(deadline.read(shipdir))})。"
                               f"`yamato up` か `yamato extend` のあとで talk する")
         out(f"席 {name} は止まっているので、send と同じ規則で起こしてから attach する。")
@@ -254,6 +270,70 @@ def talk(shipdir: Path, name: str | None, *, execvp=os.execvp) -> int:
     out(f"claude attach {short} ({team['name']}.{name})")
     execvp(claude.claude_bin(), [claude.claude_bin(), "attach", short])
     return 0   # only reached when execvp is replaced (tests)
+
+
+# --- yamato admiral: bootstrap, attach, stop (D-011, T-021) ---------------------------
+
+def admiral_dir() -> Path:
+    return yamato_home() / ADMIRAL_DIRNAME
+
+
+def ensure_admiral() -> Path:
+    """``_admiral/`` built once, from the ``admiral`` template, the first time it is used
+    (T-020's ``ship.create(..., register=False)``). Already there: left untouched (owner
+    edits to team.yaml / charter.md / roles/admiral.md are never overwritten)."""
+    from . import ship
+
+    shipdir = admiral_dir()
+    if (shipdir / "team.yaml").is_file():
+        return shipdir
+    created, warnings = ship.create(ADMIRAL_SHIP_NAME, None, str(shipdir), ADMIRAL_TEMPLATE, register=False)
+    for w in warnings:
+        out(f"注意: {w}")
+    return created
+
+
+def admiral_talk(*, execvp=os.execvp) -> int:
+    """``yamato admiral``: 生きていれば attach、止まっていれば talk と同じ規則で起こしてから attach
+    する (D-011)。``_admiral/`` は無ければここで初めて作る。settings / agents は毎回 ``prepare`` で
+    作り直す (team.yaml を直したときに次の attach から効くのは他のどの艦とも同じ)。"""
+    shipdir = ensure_admiral()
+    seat.prepare(shipdir)
+    return talk(shipdir, None, execvp=execvp)
+
+
+def admiral_stop(force: bool = False) -> int:
+    """``yamato admiral --stop`` (``--force`` つき): admiral は締切を持たない (D-013) ので、
+    ``down`` のような一時的な締切は書かない。代わりに、既存の send の経路で「引き継ぎを書いて
+    seat-stop しろ」を admiral の inbox に置く (自分で読んで自分を止める)。それでも
+    ``ADMIRAL_STOP_WAIT`` 秒 (モジュール定数) 止まらなければ、``--force`` で ``down --force`` /
+    ``halt`` と同じ強制停止に落ちる (黙って止めない: events と作業ログに残る、``force_stop_all`` 任せ)。"""
+    shipdir = admiral_dir()
+    if not (shipdir / "team.yaml").is_file():
+        raise YamatoError("admiral はまだ一度も起こしていない (`yamato admiral` で起こす)")
+    team = seat.current_team(shipdir)
+    name = team["hub"]
+    rec = roster.seat(shipdir, name)
+    live = claude.find(rec["sessionId"]) if rec.get("sessionId") else None
+    if not claude.is_alive(live):
+        out("admiral はすでに止まっている。")
+        return 0
+    if rec.get("state") == roster.STOPPING:
+        out("admiral はすでに終業を受け付けている (seat-stop 済み)。止まるのを待つ。")
+    else:
+        seat.send(shipdir, name, ADMIRAL_STOP_NOTE, inbox.OWNER)
+        out(f"admiral (session {rec.get('shortId')}) に、引き継ぎを書いて seat-stop するよう伝えた。")
+    if not force:
+        out("自分で止まらなければ `yamato admiral --stop --force` で強制停止する。")
+        return 0
+    out(f"最大 {ADMIRAL_STOP_WAIT} 秒待って、それでも生きていれば強制停止する。")
+    if claude.wait_gone(rec["sessionId"], timeout=ADMIRAL_STOP_WAIT):
+        out("admiral は自分で終業した。")
+        return 0
+    out(f"{ADMIRAL_STOP_WAIT} 秒待っても止まらなかったので強制停止する (down --force と同じ扱い)。")
+    stopped = seat.force_stop_all(shipdir, team, reason="admiral-stop-force")
+    out(f"強制停止した: {', '.join(stopped) if stopped else '(なし)'}")
+    return 0
 
 
 # --- CLI ----------------------------------------------------------------------------
@@ -268,6 +348,11 @@ def register(sub) -> None:
     t = sub.add_parser("talk", help="(admiral) 席に attach して直接話す。止まっていれば起こしてから")
     t.add_argument("ship")
     t.add_argument("seat", nargs="?", help="既定は team.yaml の talk_default (省略時 hub)")
+    a = sub.add_parser("admiral", help="(owner) 常駐の admiral セッションに attach する。"
+                                        "止まっていれば talk と同じ規則で起こしてから (D-011)")
+    a.add_argument("--stop", action="store_true", help="引き継ぎを促して止める (seat-stop は艦の席と同じに使える)")
+    a.add_argument("--force", action="store_true",
+                   help="--stop と一緒に使う。待っても自分で止まらなければ強制停止する (down --force と同じ扱い)")
 
 
 def run(args) -> int:

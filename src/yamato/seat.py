@@ -499,7 +499,11 @@ def send(shipdir: Path, seat: str, text: str, sender: str | None, cwd: str | Non
         out(f"次のシフトは {cwd} を cwd にして起動する (bgIsolation: none)")
     y = YAMATO_BIN
     ph = deadline.phase(dl)
-    if ph == deadline.NOT_UP:
+    # a ship with no time limit at all (time_limit: none, D-013, the admiral only, T-020)
+    # never has a deadline to read, so `phase` always reads NOT_UP -- but unlike a normal
+    # ship that simply has not been `up`'d yet, it has no "up" step to wait for at all
+    # (T-021): the gate below does not apply to it.
+    if team["time_limit"] is not None and ph == deadline.NOT_UP:
         out(f"艦は起動していないので宛先は起こさない。`{y} up {shipdir}` で起動すると、宛先の席が起きたときに読まれる。")
         return 0
     if ph in (deadline.OVER, deadline.FORCE):
