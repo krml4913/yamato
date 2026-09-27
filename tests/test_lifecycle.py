@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 from tests.helpers import ShipTestCase
-from yamato import board, deadline, events, headless, hooks, inbox, inject, report, roster, rotate, runtime, seat
+from yamato import board, cli, deadline, events, headless, hooks, inbox, inject, report, roster, rotate, runtime, seat
 from yamato.team import context_window, rotate_conf, validate
 from yamato.util import YamatoError
 
@@ -218,6 +218,80 @@ class SeatStopRotateTest(_Base):
         self.run_cmd(seat.send, self.shipdir, "pm", "x", "impl")
         self.assertEqual(self.resume_calls(), [])
         self.assertEqual(len(self.bg_calls()), 2)
+
+
+class RotateCommandTest(_Base):
+    """``yamato rotate <ship> <seat>...`` (T-024): the same mark as ``seat-stop --rotate``,
+    but set from outside for a *stopped* persistent seat (no session to run it from)."""
+
+    def cli(self, *argv):
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            rc = cli.main(list(argv))
+        return rc, out.getvalue(), err.getvalue()
+
+    def test_marks_a_stopped_persistent_seat(self):
+        self.up()
+        self.end_shift("pm")
+        rc, out, _ = self.cli("rotate", str(self.shipdir), "pm")
+        self.assertEqual(rc, 0)
+        self.assertIn("pm: 入れ替えの印を立てた", out)
+        self.assertTrue(roster.seat(self.shipdir, "pm")["rotateRequested"])
+        [ev] = self.kinds(events.ROTATE_REQUESTED)
+        self.assertEqual(ev["seat"], "pm")
+        self.assertEqual(ev["by"], "owner")   # no CLAUDE_CODE_SESSION_ID in the test process
+        # the mark is then read exactly like seat-stop --rotate (§5.3 の 1)
+        out2 = self.send()
+        self.assertEqual(self.resume_calls(), [])
+        self.assertIn("入れ替え: 入れ替えの印", out2)
+
+    def send(self, text="x", sender="impl"):
+        return self.run_cmd(seat.send, self.shipdir, "pm", text, sender)
+
+    def test_all_marks_every_stopped_persistent_seat_only(self):
+        self.up()
+        self.end_shift("pm")
+        rc, out, _ = self.cli("rotate", str(self.shipdir), "--all")
+        self.assertEqual(rc, 0)
+        self.assertTrue(roster.seat(self.shipdir, "pm")["rotateRequested"])
+        # impl is per_task, not persistent: --all never touches it
+        self.assertIsNone(roster.seat(self.shipdir, "impl").get("rotateRequested"))
+
+    def test_refuses_a_live_seat_with_a_reason(self):
+        self.up()
+        rc, out, _ = self.cli("rotate", str(self.shipdir), "pm")
+        self.assertEqual(rc, 0)
+        self.assertIn("pm: 立てなかった (生きている", out)
+        self.assertFalse(roster.seat(self.shipdir, "pm").get("rotateRequested"))
+        self.assertEqual(self.kinds(events.ROTATE_REQUESTED), [])
+
+    def test_refuses_a_per_task_seat_with_a_reason(self):
+        rc, out, _ = self.cli("rotate", str(self.shipdir), "impl")
+        self.assertEqual(rc, 0)
+        self.assertIn("impl: 立てなかった (shift: per_task", out)
+        self.assertIsNone(roster.seat(self.shipdir, "impl").get("rotateRequested"))
+
+    def test_unknown_seat_is_a_clean_error(self):
+        rc, _, err = self.cli("rotate", str(self.shipdir), "nope")
+        self.assertEqual(rc, 1)
+        self.assertIn("席がありません", err)
+
+    def test_all_and_a_seat_name_together_is_an_error(self):
+        rc, _, err = self.cli("rotate", str(self.shipdir), "pm", "--all")
+        self.assertEqual(rc, 1)
+        self.assertIn("両方はできません", err)
+
+    def test_neither_a_seat_nor_all_is_an_error(self):
+        rc, _, err = self.cli("rotate", str(self.shipdir))
+        self.assertEqual(rc, 1)
+        self.assertIn("--all", err)
+
+    def test_status_flags_the_mark(self):
+        self.up()
+        self.end_shift("pm")
+        roster.update(self.shipdir, "pm", rotateRequested=True)
+        out = self.run_cmd(seat.status, self.shipdir)
+        self.assertIn("次は新しいシフト", out)
 
 
 class HookTest(_Base):
