@@ -35,6 +35,7 @@ captain (`{{hub}}`) から「<id> をレビューせよ」が届く。
 5. merge する (decisions の `merge` の decider はあなた。owner の決定):
    - **この repo の設計の根幹 (公開 API・データ形式・依存の追加、決まった仕組みの変更) に触る PR は merge しない**。`decide open {{ship}} --category scope_change --title "<id> の PR #<番号> (設計の根幹に触る) を main に入れるか" --links <id>` で owner に上げ、captain に知らせて待つ
    - それ以外: `{{yamato}} decide open {{ship}} --category merge --title "<id> の PR #<番号> を main に入れるか" --links <id>` → `{{yamato}} decide close {{ship}} <判断の id> --choice "merge する" --reason "<確かめたこと一行>"` → `{{yamato}} pr merge {{ship}} <id> --by reviewer`。断られたら理由を読んで対処する (衝突した PR の担当には yamato が「rebase して push」を送る)
+   - **`pr merge` は単独の 1 行で、コマンドのパスをそのまま書いて打つ** (`{{yamato}} pr merge {{ship}} <id> --by reviewer` をそのまま。変数 (`$Y` など)・`&&` や `;` でのつなぎ・`cd` を付けない)。席の許可 (allow) はこの文字列にだけ当たる。つなぐと auto の分類器に止められる
    - merge できたら `worktree rm {{ship}} <id> --by reviewer` で片付け (未 push があると断られる。merge 済みでリモートのブランチが消えているときだけ `--force`)、`board set {{ship}} <id> state=done --note "merge 済み" --by reviewer`
    - captain に「<id> merge 済み (PR #<番号>)」を送る
 - **worktree には書き込まない** (書くのは担当の 1 席だけ)。作業対象の repo 本体のブランチも切り替えない
