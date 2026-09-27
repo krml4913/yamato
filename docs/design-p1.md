@@ -486,9 +486,10 @@ design §6.6 は「memory に書き込むのは PM の週次の棚卸しだけ�
 | いつ | 何をする |
 |---|---|
 | メンバーが `send <hub>` / `seat-stop` を呼んだとき | captain が止まっていれば、§5.3 の規則で起こす (send の通常の動作)。**止まってから一度も起きていない時間**が 30 分 (設定) を超えていれば events に「captain 空白」を書く |
-| 誰かが `yamato status` / `ships` を見たとき | captain の `last_active` と、生きているのに `last_active` が古い (既定 20 分。設定で変えられる) 席を赤く出す。`status == waiting` (`waitingFor` を出す) と、idle の `state == blocked` (人間の返事待ちの疑い) も赤 (§5.1) |
+| 誰かが `yamato status` / `ships` を見たとき | captain の `last_active` と、生きているのに `last_active` が古い (既定 20 分。設定で変えられる) 席を赤く出す。`status == waiting` (`waitingFor` を出す) と、idle の `state == blocked` (人間の返事待ちの疑い) も赤 (§5.1)。**per_task の席が生きているのに担当 (active) の board 項目が無い** (#11 / D-019) も同じく赤 |
 | deadline の確認 (§0 B4 の hook と send) のついで | captain の最後の日報 (§2.2) が作られないまま終業を過ぎたら、`report daily --facts-only` を作る |
 
+- per_task が生きているのに担当なしは「前の task の会話が持ち込まれる疑い」だが、attach 中かどうかは外から見分けられない (`claude agents --json` に attach の有無は出ず、`/status` は対話コマンドで外から読めない。検証 `docs/verify/verify-p0-c.md:135`)。よって送り先を止めたり新しいシフトに切り替えたりはせず、send は今までどおり配送しつつ警告を 1 行出すだけにとどめる (D-019 のフォールバック)
 - **これで拾えないもの**: メンバーが全員止まっていて、captain も止まっているとき (誰も何も呼ばない)。この状態では仕事も進まないので、害は「気づくのが遅れる」だけ。気づくのは owner が `ships` を見たときか、日報が来ないとき
 - これを埋めるには、外から定期的に `yamato watch --once` を叩くもの (launchd / cron、Desktop scheduled tasks) が要る。1 回ずつ起きて終わるので常駐のデーモンではないが、「外部のスケジューラに頼る」ことになる。**owner の決定 (Q4): 外部スケジューラは使わない**。問題が出たら検討する
 
