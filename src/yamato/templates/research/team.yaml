@@ -127,9 +127,6 @@ memory:
     knowledge_lines: 120
     knowledge_chars: 5000
 
-# 席を起動するときに外す環境変数 (秘密を席の環境に置かない)。bg の席には `env -u` が効かないので、席の settings の env に空文字でも書く
-env_unset: [GH_TOKEN, GITHUB_TOKEN]
-
 # 全席の settings.json に重ねる中身
 settings:
   remoteControlAtStartup: false   # 席を Remote Control につながない。つなぐ席は roles.<role>.remote_control: true (検証 D V10)

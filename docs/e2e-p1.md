@@ -234,5 +234,7 @@ r1 (調査艦、問い 1 件):
 | C: 送り手が席の未読では起こさない | unit test のみ | この E2E では editor 宛ての send は定型文 2 回と owner の 1 回だけで、席からの send は無かった (`test_wait_deadline_inbox_wakes_once_and_skips_seat_senders`) |
 | E: captain の送信のあとの seat-stop で送り直さない | ✅ | editor は 16:41:06 に日報を送り、16:41:17 に seat-stop (`shift_end`)。そのあとの `down --force` の安全網は送り直さなかった (シフトの終わりは変化に数えない)。2 回目の終業の更新は unit test で確かめた (`test_second_stop_of_the_day_refreshes_facts_and_sends_an_update`) |
 
+> 注 (2026-09-27, D-003): 上の D の検証は、ひな形が `env_unset: [GH_TOKEN, GITHUB_TOKEN]` を既定で持っていた当時のもの。今はこの既定を外し、GH_TOKEN はそのまま席に渡す (gh の権限はトークンのスコープで絞る)。`env_unset` の仕組み自体 (settings の `env` に空文字で書き出す、bg の席には `env -u` が効かないなど、上の検証結果) は変わらず、艦が明示して使う道具として残る。
+
 - 問いから報告書まで 2 分 4 秒 (16:39:13 → 16:41:17)。使用量は editor 748k (cache 読みがほとんど)
 - 片付け: `down x1 --force` → editor の session を `claude rm`。`claude agents --json --all` に `x1.` の名前は 0 件。watchdog のプロセスは kill し、watcher のプロセスも 0。艦フォルダ (worktree の中の一時フォルダ) は消した。YAMATO_HOME は scratchpad に向け、owner の `~/yamato` には触れていない

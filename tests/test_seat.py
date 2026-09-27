@@ -56,7 +56,7 @@ class SeatTest(_SeatBase):
         [call] = self.bg_calls()
         a = call["argv"]
         self.assertEqual(call["cwd"], str(self.workspace))
-        self.assertIsNone(call["GH_TOKEN"])
+        self.assertEqual(call["GH_TOKEN"], "secret")  # D-003: env_unset の既定は空。gh の権限はトークン側で絞る
         self.assertEqual(a[a.index("--name") + 1], "t1.pm")
         self.assertEqual(a[a.index("--agent") + 1], "pm")
         self.assertEqual(a[a.index("--model") + 1], "opus")
@@ -81,15 +81,16 @@ class SeatTest(_SeatBase):
         self.assertEqual(rec["sessionId"], self.fake()["sessions"][0]["sessionId"])
 
     def test_env_unset_comes_from_team_yaml(self):
+        """D-003: 既定は空 (GH_TOKEN はそのまま渡す)。艦が env_unset を書けば、その名前を外す道具は残る。"""
         os.environ["GH_TOKEN"] = "secret"
         self.addCleanup(os.environ.pop, "GH_TOKEN", None)
         ty = self.shipdir / "team.yaml"
-        ty.write_text(ty.read_text().replace("env_unset: [GH_TOKEN, GITHUB_TOKEN]", "env_unset: []"))
+        ty.write_text(ty.read_text() + "\nenv_unset: [GH_TOKEN, GITHUB_TOKEN]\n")
         os.environ["CLAUDE_CODE_SESSION_ID"] = "caller"
         self.addCleanup(os.environ.pop, "CLAUDE_CODE_SESSION_ID", None)
         self.up()
         [call] = self.bg_calls()
-        self.assertEqual(call["GH_TOKEN"], "secret")
+        self.assertIsNone(call["GH_TOKEN"])
         self.assertIsNone(call["CLAUDE_CODE_SESSION_ID"])  # the caller's identity never leaks
 
     def test_up_resumes_a_stopped_hub_with_an_up_prompt(self):

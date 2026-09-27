@@ -114,9 +114,6 @@ deny:
   - "Edit(/{{ship}}/knowledge.md)"
   - "Write(/{{ship}}/knowledge.md)"
 
-# 席を起動するときに外す環境変数 (席に gh の権限を渡さない)。gh を使わせる艦は消してよい。bg の席には `env -u` が効かないので、席の settings の env に空文字でも書く
-env_unset: [GH_TOKEN, GITHUB_TOKEN]
-
 # 席の settings.json に重ねる中身 (yamato が要る hooks・auto・受信の設定はその上に載る)
 settings:
   worktree:
