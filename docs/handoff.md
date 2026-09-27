@@ -114,6 +114,7 @@ Claude Code 2.1.283 での観測。research preview なので変わりうる (de
 | bg の席は daemon の環境で動き、起動側の `env -u` は効かない。席の Bash に効かせるのは settings の `env`。ただし席のプロセスの環境には daemon の値が残る | verify-p0-c Q2、[e2e-p1](e2e/e2e-p1.md) の D と追記 |
 | idle の席は最後のターンから約 60 分で止められる。attach 中と **Remote Control に繋がった席は止まらない** (4 時間 48 分生存) | verify-p0-c Q3 |
 | 席ごとの Remote Control は settings の `remoteControlAtStartup: false` で外し `--remote-control` で足せる | verify-p1-d V10 |
+| auto モードの分類器は `yamato pr merge` を「レビューなしの merge」として揺れて止める (同じ席で通る日と止まる日がある)。merge を打つ役の settings の allow に `Bash(<yamato> pr merge*)` を足すと通る (ひな形は `profiles.merger`、reviewer が使う) | D-026 (2026-09-27 に yamato-dev で観測) |
 | `-p` は `--bare` を付けない (サブスクで未ログイン)、`< /dev/null` を付ける。SIGTERM では結果 JSON が出ない (使用量は transcript から)。SessionEnd hook の待ちは 1.5 秒 | verify-p1-d V1・V4 |
 | `-p` に呼び出し元のセッションの環境変数を渡すと transcript が保存されない (`claude.PRINT_CALLER_ENV` を外す) | [e2e-headless](e2e/e2e-headless.md) の見つかったこと 1 |
 | linked worktree の trust は main repo から引き継がれる。trust は git root ごとで、bg の席は対話で trust できない | verify-p1-d V6、verify-p0-b |
@@ -156,7 +157,7 @@ yamato の開発を yamato の開発艦にやらせる (design.md §16)。以下
 2. 艦フォルダを整える: `team.yaml` (model・`time_limit`・`notify.via`)、`charter.md`。`knowledge.md` には [dogfood-knowledge.md](dogfood-knowledge.md) を写す (yamato の repo には CLAUDE.md が無く、席はユーザー設定の CLAUDE.md も読まないので、knowledge.md が約束の置き場になる)
 3. trust: `~/dev/yamato` (git root) が trust されていなければ、owner が `cd ~/dev/yamato && claude` で承認する。`ship create` が警告し、`up` は止まる
 4. 最初の依頼を送ってから起こす: `./yamato send <name> pm "<依頼。完了条件つき>"` → `./yamato up <name> --for 3h`。依頼は board の task 1 件に収まる小さいものから (例: e2e-p1 の「観測したこと」の 1 つ)
-5. merge: ひな形では `merge: owner`。pm が merge の判断を開くので、owner が決め、pm が `pr merge` を打つ (`roles/pm.md`)
+5. merge: ひな形の既定は `merge: reviewer` (D-010)。reviewer が承認して merge の判断を閉じ、自分で `pr merge` を打つ (`roles/reviewer.md`。`profiles.merger` の allow で分類器を通す、D-026)。設計の根幹に触る PR だけ owner に上げる (`scope_change`)。pm は割り振りだけでレビューも merge もしない。owner と話して要件を詰めるのは planner (`yamato talk <name> planner`)
 
 admiral (移行期間は fleet の leader、docs/admiral.md): `up` / `ships` / `status` / `extend` / `down` / `halt` と、赤い席・判断待ちを owner に伝えるだけ。艦の中身 (方針・順番・レビューの指摘) は中継しない。owner が captain と話すときは owner の端末で `yamato talk <name>`。
 

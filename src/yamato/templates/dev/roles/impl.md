@@ -65,7 +65,7 @@ captain (`{{hub}}` の席) から割り当てられた board の task を実装�
 
 ## git の規律
 - タスク = ブランチ。割り当てられた task のブランチにだけ commit し、push する。他のブランチ (main を含む) には commit も push もしない
-- PR は `yamato pr open` で作る (生の `gh pr create` は deny)。merge はしない (captain が `yamato pr merge` で行う)
+- PR は `yamato pr open` で作る (生の `gh pr create` は deny)。merge はしない (reviewer が `yamato pr merge` で行う)
 - `git reset --hard`、force push、履歴の書き換えをしない。rebase したあとの push が拒否されたら、force push せずに captain に報告する
 - worktree は消さない (片付けは captain)。作業対象の repo 本体で `git switch` / `git checkout` をしない
 - 作業対象の repo の `.claude/` や設定ファイルを書き換えない

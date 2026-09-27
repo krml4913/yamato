@@ -19,8 +19,8 @@ roles:
   pm:
     model: opus
     shift: persistent
-    trust: clean              # merge の権限を持つ captain は外部の文章を読まない (§0 B2。仕込まれた指示に乗っ取られる経路を断つ)
-    description: captain。owner の依頼を board の task に分けて席に割り振り、成果を確認して回収する
+    trust: clean              # merge の権限を持つ席が近くにいる艦なので、割り振りの captain も外部の文章を読まない (§0 B2)
+    description: captain。owner の依頼や planner の要件を board の task に分けて席に割り振り、成果を確認して回収する。**自分では実装もレビューも merge もしない**
     remote_control: true     # この席だけ --remote-control を付けて起こす (スマホから話せる席を captain に絞る。design-p1 §1.5)
     inject: [handoff, log_tail, mine, orphans, last_report, board, inbox, memory, knowledge]   # last_report: 前回の日報の「一言」「owner の判断待ち」「明日」 / orphans: 担当が落ちて active のまま残った項目 / board: 艦全体の進み具合 (kanban 風、T-030)
     # persistent の席の入れ替え (design-p1 §5.3, §5.4)。どれも off にできる
@@ -40,6 +40,16 @@ roles:
     shift: per_task
     count: 1                 # 2 以上にすると席は impl-1, impl-2, ... になる
     description: 実装担当。割り当てられた task を実装してテストし、captain に報告する
+  reviewer:
+    model: opus
+    shift: per_task
+    trust: merger             # 外部の文章を読まない + pr merge は分類器なしで通す (下の profiles。auto の分類器が merge を揺れて止めるため)
+    description: レビューと merge の担当。実装担当の PR を読み、テストを流し、直すところを返すか、承認して merge する。自分では実装しない
+  planner:
+    model: opus
+    shift: persistent
+    remote_control: true     # owner がスマホから話せるように
+    description: 要件担当。owner と要件・課題・方針を詰め、要件ファイルと board の goal / milestone / task (assignee なし) に落として captain に渡す。実装も割り振りもしない
   # headless の役割の例 (1 シフト = claude -p 1 回。design-p1 §4)。調査や 1 回で終わる確認に向く
   # researcher:
   #   model: sonnet
@@ -125,7 +135,7 @@ settings:
 #   tools  役割が使えるツールの一覧 (省略時は制限なし)
 #   allow / deny  席の settings の permissions に足すルール。{{ship}} / {{yamato}} / {{seat}} が置き換わる
 #   send   false にすると、その席からの yamato send を断る
-# 開発艦の既定では pm (merge の権限を持つ) だけ clean にする。impl には付けない (付けるかは艦ごと)。
+# 開発艦の既定では pm と reviewer (merge に近い席) を clean にする。impl・planner には付けない (付けるかは艦ごと)。
 # 外を読む役割を置くなら research のひな形の profiles.external を写す
 profiles:
   clean:
@@ -133,6 +143,14 @@ profiles:
     deny:
       - "WebFetch"
       - "WebSearch"
+  merger:
+    # clean (外部の文章を読まない) + yamato pr merge だけは分類器なしで通す (reviewer。auto の分類器が
+    # 「レビューなしの merge」として揺れて止めるので、merge を打つ役の allow に足す)
+    deny:
+      - "WebFetch"
+      - "WebSearch"
+    allow:
+      - "Bash({{yamato}} pr merge*)"
 
 # seat-stop が終業前に確かめること
 seat_stop:
@@ -191,9 +209,9 @@ notify:
 # 表にない category は default に落ちる。`merge: owner` のような短い書き方もできる (when なし)
 # when は役割プロンプトの「いつ判断を開くか」の説明。艦ごとに自由に変えてよい
 decisions:
-  merge:        { decider: owner, when: "PR を main に入れる" }
-  design:       { decider: pm,    when: "公開 API・データ形式・依存の追加を決める" }
-  scope_change: { decider: owner, when: "charter や goal の範囲を変える" }
+  merge:        { decider: reviewer, when: "PR を main に入れる (reviewer が承認して自分で merge する。設計の根幹に触る PR は owner に上げる)" }
+  design:       { decider: planner,  when: "公開 API・データ形式・依存の追加を決める (planner が owner と詰める)" }
+  scope_change: { decider: owner,    when: "charter や goal の範囲を変える" }
   default:      { decider: pm }
 
 # 日報 (design-p1 §2)。reports/daily/<日付>.md

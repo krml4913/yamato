@@ -2,6 +2,7 @@
 import io
 import json
 import os
+import re
 import time
 from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
@@ -14,10 +15,28 @@ from yamato.util import YamatoError
 SID_IMPL = "i" * 36
 SID_PM = "p" * 36
 
+# These tests are about the mechanism (a seat decider vs the human owner), so the table is pinned:
+# category ``merge`` is a human's, ``design`` the hub's. The dev template's own table (merge: reviewer,
+# design: planner) is checked in TeamTableTest / tests/test_dev_template.py.
+PINNED_DECISIONS = """decisions:
+  merge:        { decider: owner, when: "PR を main に入れる" }
+  design:       { decider: pm,    when: "公開 API・データ形式・依存の追加を決める" }
+  scope_change: { decider: owner, when: "charter や goal の範囲を変える" }
+  default:      { decider: pm }
+
+"""
+
 
 class DecideTestCase(ShipTestCase):
+    pin_decisions = True
+
     def setUp(self):
         super().setUp()
+        if self.pin_decisions:
+            ty = self.shipdir / "team.yaml"
+            text, n = re.subn(r"(?ms)^decisions:\n.*?^\n", lambda _m: PINNED_DECISIONS, ty.read_text(encoding="utf-8"), count=1)
+            assert n == 1
+            ty.write_text(text, encoding="utf-8")
         self._sid = os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
         self.addCleanup(self._restore_sid)
         roster.start_shift(self.shipdir, "impl", session_id=SID_IMPL, short_id="iiiiiiii",
@@ -64,12 +83,16 @@ class DecideTestCase(ShipTestCase):
 
 
 class TeamTableTest(DecideTestCase):
+    pin_decisions = False
+
     def data(self):
         return load_yaml(self.shipdir / "team.yaml")
 
     def test_template_defaults(self):
         team = self.team()
-        self.assertEqual(team["decisions"]["merge"], {"decider": "owner", "when": "PR を main に入れる"})
+        self.assertEqual(team["decisions"]["merge"]["decider"], "reviewer")
+        self.assertEqual(team["decisions"]["design"]["decider"], "planner")
+        self.assertEqual(team["decisions"]["scope_change"]["decider"], "owner")
         self.assertEqual(team["decisions"]["default"]["decider"], "pm")
         self.assertEqual(team["notify"]["decisions"], "digest")
 
@@ -113,8 +136,9 @@ class TeamTableTest(DecideTestCase):
 
     def test_resolution(self):
         team = self.team()
-        self.assertEqual(decide.resolve_decider(team, "merge"), "owner")
-        self.assertEqual(decide.resolve_decider(team, "design"), "pm")
+        self.assertEqual(decide.resolve_decider(team, "merge"), "reviewer")
+        self.assertEqual(decide.resolve_decider(team, "design"), "planner")
+        self.assertEqual(decide.resolve_decider(team, "scope_change"), "owner")
         self.assertEqual(decide.resolve_decider(team, "unknown"), "pm")   # default
         team["decisions"] = {}
         self.assertEqual(decide.resolve_decider(team, "merge"), "pm")     # no table: the hub

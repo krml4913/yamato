@@ -231,7 +231,7 @@ class LayoutForTest(ShipTestCase):
         self.assertEqual(by_name, by_path)
         self.assertIn('tab name="t1" focus=true {', by_name)
         self.assertIn(f'args "view" "attach" "{self.shipdir.resolve()}" "pm"', by_name)
-        self.assertEqual(by_name.count("pane name="), 2)   # dev template: pm + impl
+        self.assertEqual(by_name.count("pane name="), 4)   # dev template: pm + impl + reviewer + planner
 
     def test_seats_come_from_team_yaml_before_up(self):
         ty = self.shipdir / "team.yaml"
@@ -245,7 +245,7 @@ class LayoutForTest(ShipTestCase):
         seat.prepare(self.shipdir)   # what `yamato up` writes
         team_json = self.shipdir / ".runtime" / "team.json"
         data = json.loads(team_json.read_text())
-        self.assertEqual(list(data["seats"]), ["pm", "impl"])
+        self.assertEqual(list(data["seats"]), ["pm", "impl", "reviewer", "planner"])
         data["seats"] = {"pm": data["seats"]["pm"], "qa-1": data["seats"]["impl"]}
         team_json.write_text(json.dumps(data))
         kdl = layout.layout_for(["t1"], "yamato")
