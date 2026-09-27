@@ -74,6 +74,27 @@ class SeatTest(_SeatBase):
         self.assertIn("新しいシフトを起動した", out)
         self.assertIsNone(roster.seat(self.shipdir, "impl").get("sessionId"))  # only the hub
 
+    def test_up_with_time_limit_none_skips_deadline_and_watchdog(self):
+        # T-020 / D-013: the admiral-only exception. No --for: no deadline is written, no
+        # watchdog is spawned, and §0 B4's enforcement stays permanently a no-op.
+        ty = self.shipdir / "team.yaml"
+        ty.write_text(ty.read_text().replace("time_limit: 3h", "time_limit: none"))
+        out = self.run_cmd(seat.up, self.shipdir, None)
+        self.assertIn("稼働時間の上限なし", out)
+        self.assertIsNone(deadline.read(self.shipdir))
+        self.assertFalse(seat.spawn_watchdog.called)
+        self.assertEqual(roster.seat(self.shipdir, "pm")["state"], roster.ON_SHIFT)
+        self.assertEqual(seat.enforce(self.shipdir, self.team()), [])
+
+    def test_up_with_time_limit_none_still_honors_an_explicit_for(self):
+        ty = self.shipdir / "team.yaml"
+        ty.write_text(ty.read_text().replace("time_limit: 3h", "time_limit: none"))
+        out = self.run_cmd(seat.up, self.shipdir, "20m")
+        self.assertIn("deadline", out)
+        dl = deadline.read(self.shipdir)
+        self.assertAlmostEqual(dl["deadline"] - dl["upAt"], 1200, delta=1)
+        self.assertTrue(seat.spawn_watchdog.called)
+
     def test_launch_adopts_the_session_when_the_output_has_no_id(self):
         self.set_fake_mode(noid=True)
         self.up()

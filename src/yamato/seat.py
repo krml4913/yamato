@@ -365,7 +365,7 @@ def up(shipdir: Path, for_: str | None) -> int:
         out(f"注意: {unsure}")
     now = time.time()
     limit = parse_duration(for_) if for_ else team["time_limit"]
-    if for_ is None:
+    if for_ is None and limit is not None:
         # D-015: 艦がすでに稼働中なら、--for なしの up (よくあるのは up --seats で席を
         # 足すためだけの呼び出し) で締切を縮めない。--for を明示したときは今までどおり
         # その値で上書きする (縮める意図を尊重)。
@@ -374,17 +374,28 @@ def up(shipdir: Path, for_: str | None) -> int:
             limit = max(limit, current["deadline"] - now)
     listing = claude.agents()
     reconcile(shipdir, team, listing)
-    token = uuid.uuid4().hex[:12]
-    dl = deadline.write(shipdir, limit=limit, grace=team["grace"], token=token, last_call=last_call_conf(team),
-                        now=now)
+    # time_limit: none は admiral だけの例外 (D-013, §0 B4): deadline を書かず、watchdog も
+    # 立てない。deadline ファイルが無いままなので、hooks 側の終業の促し・強制停止は働かない
+    # (deadline.phase(None) は NOT_UP のまま; hooks.py / seat.enforce はそれを「上限にまだ
+    # 掛かっていない」として扱う)。--for を明示すればその艦でも一時的に上限を掛けられる
+    token = None
+    dl = None
+    if limit is not None:
+        token = uuid.uuid4().hex[:12]
+        dl = deadline.write(shipdir, limit=limit, grace=team["grace"], token=token, last_call=last_call_conf(team),
+                            now=now)
     hub = team["hub"]
     try:
         what, rec = wake(shipdir, team, hub, reason="up")
     except BaseException:
-        _unwatched_deadline(shipdir, team, token)
+        if dl is not None:
+            _unwatched_deadline(shipdir, team, token)
         raise
-    spawn_watchdog(shipdir, token)
-    out(f"艦 {team['name']} を起動: deadline {fmt_time(dl['deadline'])} (稼働 {fmt_span(limit)}, 猶予 {fmt_span(team['grace'])})")
+    if dl is not None:
+        spawn_watchdog(shipdir, token)
+        out(f"艦 {team['name']} を起動: deadline {fmt_time(dl['deadline'])} (稼働 {fmt_span(limit)}, 猶予 {fmt_span(team['grace'])})")
+    else:
+        out(f"艦 {team['name']} を起動: 稼働時間の上限なし")
     label = {"alive": "すでに動いている", "resumed": "resume した", "started": "新しいシフトを起動した",
              "spawned": "headless のシフトを起動した (run-headless)", "queued": "headless のシフト中"}[what]
     out(f"  captain 席 {hub}: {label}" + (f" (session {rec['sessionId']})" if what != "spawned" else ""))

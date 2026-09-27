@@ -63,6 +63,7 @@ LAST_CALL_FALLBACK = {"at_most": 1800, "ratio": 0.2}
 NOTIFY_DECISIONS = ("digest", "each")   # human deciders: gather into the daily report / one by one
 DEFAULT_TIME_LIMIT = "3h"
 DEFAULT_GRACE = "20m"
+NO_TIME_LIMIT = "none"   # team.yaml: time_limit: none — the admiral-only exception (D-013, §0 B4)
 
 
 def load_yaml(path: Path) -> dict:
@@ -100,9 +101,13 @@ def validate(data: dict, shipdir: Path) -> dict:
 
     warnings: list[str] = []
     # `0` must not silently become the default (review N4)
-    time_limit = parse_duration(DEFAULT_TIME_LIMIT if data.get("time_limit") is None else data["time_limit"])
-    if time_limit <= 0:
-        raise YamatoError("team.yaml: time_limit は 0 より長くする")
+    raw_time_limit = data.get("time_limit")
+    if isinstance(raw_time_limit, str) and raw_time_limit.strip().lower() == NO_TIME_LIMIT:
+        time_limit = None   # D-013: 上限を持たない艦 (admiral の土台。T-020)
+    else:
+        time_limit = parse_duration(DEFAULT_TIME_LIMIT if raw_time_limit is None else raw_time_limit)
+        if time_limit <= 0:
+            raise YamatoError("team.yaml: time_limit は 0 より長くする")
     roles_in = data.get("roles")
     if not isinstance(roles_in, dict) or not roles_in:
         raise YamatoError("team.yaml: roles が空です")

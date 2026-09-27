@@ -9,8 +9,8 @@ from contextlib import redirect_stdout
 from unittest import mock
 
 from tests.helpers import ShipTestCase
-from yamato import admiral, claude, cli, deadline, events, headless, inbox, report, roster, seat
-from yamato.util import YamatoError
+from yamato import admiral, claude, cli, deadline, events, headless, inbox, report, roster, seat, ship
+from yamato.util import YamatoError, load_registry, yamato_home
 
 
 class AdmiralTest(ShipTestCase):
@@ -306,6 +306,29 @@ class AdmiralTest(ShipTestCase):
         self.assertTrue(l2.startswith("t2"))
         self.assertIn("停止中", l2)
         self.assertIn("日報 -", l2)
+
+    # --- T-020: a ship folder created without registering it (the admiral's _admiral/) ---
+
+    def test_ships_excludes_a_folder_created_without_registering(self):
+        admdir, _ = ship.create("admiral", str(self.workspace), str(yamato_home() / "_admiral"),
+                                "dev", register=False)
+        self.assertEqual(admdir, yamato_home() / "_admiral")
+        # 同じ形の艦フォルダはできる (team.yaml、席の log/inbox) が、登録も一覧もされない
+        self.assertTrue((admdir / "team.yaml").is_file())
+        self.assertTrue((admdir / "seats" / "pm" / "log").is_dir())
+        self.assertTrue((admdir / "seats" / "pm" / "inbox.jsonl").is_file())
+        self.assertNotIn("admiral", load_registry())
+        found = admiral.all_ships()
+        self.assertIn("t1", found)
+        self.assertNotIn("_admiral", found)
+        self.assertNotIn("admiral", found)
+        rc, out = self.cli("ships")
+        self.assertEqual(rc, 0)
+        self.assertNotIn("_admiral", out)
+        # still reachable directly by its folder name (resolve_ship's plain fallback)
+        rc, out = self.cli("status", "_admiral")
+        self.assertEqual(rc, 0)
+        self.assertIn("pm", out)
 
     # --- talk ---
 
