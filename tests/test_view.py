@@ -288,16 +288,22 @@ class RegistryTest(ShipTestCase):
 
 class FakeZellijRun:
     """Stands in for ``subprocess.run`` in opener tests: records every zellij
-    invocation and answers ``list-sessions --short`` from ``sessions``."""
+    invocation (argv and kwargs) and answers ``list-sessions --short`` from
+    ``sessions``. ``rc`` (or ``rc_for``, a ``argv -> int`` override) controls the
+    exit code returned, to exercise the non-zero -> ``YamatoError`` path."""
 
-    def __init__(self, sessions: str = ""):
+    def __init__(self, sessions: str = "", rc: int = 0, rc_for=None):
         self.calls: list[list[str]] = []
+        self.kwargs: list[dict] = []
         self.sessions = sessions
+        self.rc = rc
+        self.rc_for = rc_for or (lambda argv: self.rc)
 
     def __call__(self, argv, **kwargs):
         self.calls.append(argv)
+        self.kwargs.append(kwargs)
         out = self.sessions if argv[1:3] == ["list-sessions", "--short"] else ""
-        return subprocess.CompletedProcess(argv, 0, stdout=out, stderr="")
+        return subprocess.CompletedProcess(argv, self.rc_for(argv), stdout=out, stderr="")
 
 
 class OpenerTest(ShipTestCase):
@@ -318,8 +324,10 @@ class OpenerTest(ShipTestCase):
         self.assertIn('tab name="other"', text)
 
     def test_outside_zellij_attaches_an_existing_session(self):
+        # same layout as last time (dest already holds it) -> attach, no rebuild
         run = FakeZellijRun(sessions="yamato-view [Created ...]\n")
         dest = self.tmp / "view.kdl"
+        dest.write_text(layout.layout_for(["t1"], "yamato"))
         opener.open_ships(["t1"], command="yamato", output=str(dest), run=run, in_zellij=False)
         self.assertIn('args "view" "attach"', dest.read_text())
         self.assertEqual(run.calls, [
@@ -336,6 +344,45 @@ class OpenerTest(ShipTestCase):
             ["zellij", "list-sessions", "--short"],
             ["zellij", "--session", "my-view", "--new-session-with-layout", str(dest)],
         ])
+
+    def test_attach_and_new_session_are_not_captured(self):
+        # attach / --new-session-with-layout are interactive TUIs: capturing their
+        # stdout/stderr would blank the screen, so they must be called without it.
+        # list-sessions is non-interactive and keeps capture_output=True.
+        run = FakeZellijRun(sessions="yamato-view\n")
+        dest = self.tmp / "view.kdl"
+        dest.write_text(layout.layout_for(["t1"], "yamato"))
+        opener.open_ships(["t1"], command="yamato", output=str(dest), run=run, in_zellij=False)
+        self.assertEqual(run.calls[0][1:3], ["list-sessions", "--short"])
+        self.assertTrue(run.kwargs[0].get("capture_output"))
+        self.assertEqual(run.calls[1][1], "attach")
+        self.assertNotIn("capture_output", run.kwargs[1])
+
+        run2 = FakeZellijRun(sessions="")
+        opener.open_ships(["t1"], command="yamato", output=str(dest), run=run2, in_zellij=False)
+        self.assertEqual(run2.calls[1][1], "--session")
+        self.assertNotIn("capture_output", run2.kwargs[1])
+
+    def test_outside_zellij_recreates_a_session_when_the_layout_changed(self):
+        # the crew grew since the session was created: dest holds the *old* layout,
+        # the freshly built one differs -> delete-session --force, then rebuild
+        run = FakeZellijRun(sessions="yamato-view\n")
+        dest = self.tmp / "view.kdl"
+        dest.write_text("stale layout")
+        opener.open_ships(["t1"], command="yamato", output=str(dest), run=run, in_zellij=False)
+        self.assertEqual([c[1] for c in run.calls],
+                         ["list-sessions", "delete-session", "--session"])
+        self.assertEqual(run.calls[1], ["zellij", "delete-session", "--force", "yamato-view"])
+        self.assertTrue(run.kwargs[1].get("capture_output"))
+        self.assertIn('args "view" "attach"', dest.read_text())
+
+    def test_zellij_failure_raises(self):
+        run = FakeZellijRun(sessions="yamato-view\n",
+                            rc_for=lambda argv: 1 if "attach" in argv else 0)
+        dest = self.tmp / "view.kdl"
+        dest.write_text(layout.layout_for(["t1"], "yamato"))
+        with self.assertRaises(YamatoError):
+            opener.open_ships(["t1"], command="yamato", output=str(dest), run=run, in_zellij=False)
 
     def test_default_output_is_under_yamato_home(self):
         run = FakeZellijRun(sessions="yamato-view\n")

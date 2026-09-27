@@ -2,7 +2,11 @@
 
 Outside zellij: builds the layout for the requested ships (every registered
 ship, if none are named), writes it to a file, and attaches the ``yamato-view``
-session -- starting it from that layout if it is not already up.
+session -- starting it from that layout if it is not already up. If the
+session is already up but the crew (or the set of ships) changed since it was
+created, the layout on disk will now differ from what is on disk this time --
+the stale session is torn down (``delete-session --force``; its only panes
+are ``view attach`` processes, so nothing is lost) and rebuilt fresh.
 
 Inside zellij (``$ZELLIJ`` set): there is already a window to grow, so each
 ship instead gets one ``zellij action new-tab --layout <file>`` call into the
@@ -11,6 +15,11 @@ ship instead gets one ``zellij action new-tab --layout <file>`` call into the
 The layout is rebuilt from ``team.yaml`` / ``.runtime/team.json`` on every
 call (nothing is cached), so a change in a ship's seats shows up the next
 time someone runs ``view open``.
+
+``attach`` and ``--new-session-with-layout`` are interactive TUIs that take
+over the terminal, so those two calls are made without capturing
+stdout/stderr (capturing would blank the screen). Every zellij call raises
+``YamatoError`` on a non-zero exit.
 """
 from __future__ import annotations
 
@@ -35,11 +44,25 @@ def _refs(refs: list[str] | None) -> list[str]:
     return list(refs) if refs else sorted(admiral.all_ships())
 
 
-def _zellij(run, args: list[str]):
+def _run_zellij(run, args: list[str], **kwargs):
     try:
-        return run([zellij_bin(), *args], capture_output=True, text=True)
+        cp = run([zellij_bin(), *args], **kwargs)
     except FileNotFoundError:
         raise YamatoError(f"zellij コマンドが見つかりません ({zellij_bin()})") from None
+    if cp.returncode != 0:
+        raise YamatoError(f"zellij {' '.join(args)} が失敗しました (exit {cp.returncode})")
+    return cp
+
+
+def _zellij(run, args: list[str]):
+    """Non-interactive calls (list-sessions / new-tab / delete-session): capture output."""
+    return _run_zellij(run, args, capture_output=True, text=True)
+
+
+def _zellij_interactive(run, args: list[str]):
+    """``attach`` / ``--new-session-with-layout``: TUIs that take over the terminal --
+    do not capture stdout/stderr (capturing would blank the screen)."""
+    return _run_zellij(run, args)
 
 
 def _session_exists(run, session: str) -> bool:
@@ -77,8 +100,15 @@ def open_ships(refs: list[str] | None = None, *, command: str | None = None,
     text = layout.layout_for(refs, command)
     path = Path(output) if output else yamato_home() / "view.kdl"
     path.parent.mkdir(parents=True, exist_ok=True)
+    old_text = path.read_text(encoding="utf-8") if path.exists() else None
     path.write_text(text, encoding="utf-8")
+
     if _session_exists(run, session):
-        _zellij(run, ["attach", session])
-    else:
-        _zellij(run, ["--session", session, "--new-session-with-layout", str(path)])
+        if old_text == text:
+            _zellij_interactive(run, ["attach", session])
+            return
+        # the crew (or the set of ships) changed since this session was created.
+        # its only panes are `view attach` processes, so nothing is lost by tearing
+        # it down and rebuilding from the new layout.
+        _zellij(run, ["delete-session", "--force", session])
+    _zellij_interactive(run, ["--session", session, "--new-session-with-layout", str(path)])
