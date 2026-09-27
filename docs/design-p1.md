@@ -70,7 +70,7 @@ P1 で新しく足す記録は 1 つだけ: **`events.jsonl` (艦の出来事の
 | 3 | memory の棚卸し | 候補は `yamato memo` で memory-inbox に追記。反映役は設定 (ひな形の既定は captain) で、コードは検査しない。上限を超える案は反映を拒否する (安全網) | 案は各役割の headless シフト、反映は captain (Q2) |
 | 4 | `shift: headless` | 1 シフト = `claude -p` 1 回。ラッパー `yamato run-headless` が起動、時間切れ、使用量の記録、終了報告まで持つ。予算上限は既定で掛けない | ― |
 | 5 | captain の監視と入れ替え | 監視は「仕事が流れるところで見る」(send / seat-stop / status)。入れ替えの条件は役割ごとの設定 | 外部スケジューラは使わない (Q4) |
-| 6 | admiral | yamato の CLI + 薄い skill。席ではない。一望は `yamato ships` | 移行期間は fleet の leader が兼ねる (Q3) |
+| 6 | admiral | どの艦にも属さない常駐の Claude のセッション (`_admiral/`)。時間の上限なし。一望は `yamato ships` | D-011 / D-013 でこの形に決定 (v0 の Q3 「移行期間は fleet の leader が兼ねる」を覆した) |
 | 7 | 調査艦 | ひな形の既定: researcher ×N / fact-checker は headless で「外を読むが何もできない」(dontAsk + allow + `tools`、V7)、editor は外を読まない | 成果を外に出す承認は decisions 表で艦ごとに決める (Q6) |
 | 8 | 複数の実装担当 | yamato は worktree を作る・移る道具と PR / merge の道具を出すだけ。タスク = ブランチなどの git の流れは役割プロンプト (ひな形) | worktree は仕組みで割り当てない (Q5) |
 | 9 | 3 段の停止 | 戻す。ただし「最終受付」は captain への 1 回の注意書きだけの軽い版 | ― |
@@ -556,36 +556,43 @@ team.yaml の `count` を変える (1 ↔ 2 以上) と役割の席の名前が�
 
 ---
 
-## 6. admiral (窓口) の最小仕様
+## 6. admiral (窓口)
+
+owner との会話 (2026-09-27) を受けて、v1 の「admiral は席ではなく CLI + 薄い skill」を覆した (D-011)。要件の叩き台は `work/requirements/admiral.md`。
 
 ### 6.1 形
 
-- **admiral は yamato の席ではない**。yamato の CLI (`yamato ship create / up / down / extend / halt / status / ships / talk`) と、それを使うための薄い skill (または CLAUDE.md の 1 節) の組み合わせ。owner がシェルで直接打ってもよいし、owner の対話セッション (今の fleet leader のような) が打ってもよい
-- 艦の中身 (board、判断、方針) には触らない (design §11)。触れるのは艦の出撃と帰投と一望だけ。**これは admiral の skill / プロンプトの約束で、CLI は admiral からの send や board の操作を拒否しない** (v1)
+- **admiral はどの艦にも属さない、常駐の Claude のセッション** (D-011)。名前付きの bg セッション (`yamato.admiral`)
+- `yamato admiral` で、生きていれば attach、止まっていれば talk と同じ規則で起こしてから attach する (止まったセッションに直接 attach しない)。スマホからは Remote Control (`--remote-control`) で話せる
+- 記録は `~/yamato/_admiral/` (`$YAMATO_HOME/_admiral/`): handoff.md、作業ログ、memory、inbox。艦の席と同じ作りで、**記録から起き直せる** (会話の resume は楽をするための最適化にとどめる)
+- **時間の上限は掛けない** (`time_limit: none`。design §0 B4 の例外、D-013)。実装せず CLI を打って話すだけなので、上限を掛ける理由がない。長くなったら rotate (コンテキスト・compaction・シフトの長さ・日付) で入れ替える
+- **しないこと**: 艦の中の仕事に踏み込まない (task の割り振り・実装・レビュー・merge)。中身の話は owner と captain / planner が直接やる。**これは admiral の役割プロンプトの約束で、CLI は admiral からの send や board の操作を拒否しない** (mechanism-not-policy)。艦に送るのは出撃と帰投に伴う定型のメッセージだけ、と役割プロンプトに書く (`roles/admiral.md`)
 
 ### 6.2 コマンド
 
 | コマンド | 内容 |
 |---|---|
+| `yamato admiral [--stop [--force]]` | 常駐の admiral セッション (`_admiral/`) に attach する。止まっていれば talk と同じ規則で起こしてから。`_admiral/` が無ければ `admiral` ひな形から初回に作る (登録はしない。`ships` には出ない)。`--stop` は引き継ぎを書いて `seat-stop` するよう admiral に伝えるだけ (ブロックしない)。`--force` は自分で止まらなければ強制停止する (`down --force` と同じ扱い) |
 | `yamato ship create <name> --template dev\|research [--path <dir>] [--workspace <dir>]` | ひな形から艦フォルダを作り、艦の一覧 (`~/yamato/ships.json`) に登録する。workspace の trust が通っているかを確かめ、通っていなければ手順を表示して止める (bg の席に対話で trust させることはできない、検証 B)。確かめる対象は worktree ではなく **main repo (git root)** でよい (worktree の trust は main repo から引き継がれる、検証 D V6) |
-| `yamato up <name> [--for 3h] [--seats <seat,...>]` | deadline を書き、captain の新しいシフトを起こす。既定では他の席は起こさない (captain が割り振ったときに send で起きる)。`--seats` で一緒に起こす席を足せる |
+| `yamato up <name> [--for 3h] [--seats <seat,...>]` | deadline を書き、captain の新しいシフトを起こす。既定では他の席は起こさない (captain が割り振ったときに send で起きる)。`--seats` で一緒に起こす席を足せる。艦がすでに稼働中で `--for` を付けなければ、deadline は縮めない (`max(now + time_limit, 今の deadline)`。D-015) |
 | `yamato down <name> [--force]` | 終業の段階から始める (§9)。`--force` は P0 の実装のとおり即時に強制停止 |
-| `yamato extend <name> 1h` | deadline を延ばす (データを書き換えるだけ) |
+| `yamato extend <name> 1h` | deadline を延ばす (データを書き換えるだけ。過ぎていれば今から数える) |
 | `yamato halt <name>` | 緊急停止。猶予なしで強制停止の段階を走らせる |
 | `yamato status <name>` | 席ごとの状態 (生存・`last_active`・詰まり)、残り時間、board の要約、owner の判断待ちの数 |
-| `yamato ships` | 全艦を 1 行ずつ: 稼働中か、残り時間、captain の `last_active`、赤い席の数、owner の判断待ちの数、今日の使用量、最新の日報の日付 |
-| `yamato talk <name> [<seat>]` | 席と話す。既定は captain (§1.5) |
+| `yamato ships` | 全艦を 1 行ずつ: 稼働中か、残り時間、captain の `last_active`、赤い席の数、owner の判断待ちの数、今日の使用量、最新の日報の日付。`_admiral/` は登録しないので出ない |
+| `yamato talk <name> [<seat>]` | 席と話す。既定は team.yaml の `talk_default` (省略時 captain、§1.5) |
+| `yamato rotate <ship> <seat>...` | 止まっている persistent の席に「次のシフトは入れ替え」の印を立てる (design-drift D)。admiral 自身の入れ替えも同じ仕組み (§5.4) |
 
-- admiral の skill には「艦に送るのは出撃と帰投に伴う定型のメッセージだけ。『この方針で』のような中身の指示は、owner が `talk` で captain に直接言う」と書く (既定の運用。コードでは縛らない)
 - 艦の一覧 `ships.json` は、艦名 → 艦フォルダのパスだけを持つ。状態は各艦のフォルダから毎回読む (正本を二重に持たない)
 
-### 6.3 fleet の leader との関係 (決定)
+### 6.3 作り方 (D-013)
 
-**owner の決定 (Q3): 移行期間は fleet の leader が yamato の CLI を叩いて admiral を兼ねる**。fleet の仕組み (タスク、driver) は yamato の開発にだけ使う。
-
-- leader のプロンプト (または skill) に、yamato の CLI の使い方と「艦の中に踏み込まない」を足す
-- admiral の中身は CLI なので、leader でなくても同じことができる。fleet を引退させたら、同じ skill を owner の対話セッションに載せる
-- 検討した他の案: yamato 専用の admiral セッションを最初から作る / 艦 1 つを fleet のタスク 1 件にする (艦は常設でタスクの「終わり」がなく、形が合わない)
+- `_admiral/` を「席 1 つ・deadline なしの特別な艦」として、既存の seat / inject / rotate / talk / inbox の仕組みをそのまま使い回す (専用の小さなモジュールを新設する案もあったが、採らなかった)。記録の形が艦の席と揃い、コードも増えない
+- `ships.json` には登録しない (`register=False`)。名前が `_` 始まりなので通常の艦の名前としても拒む。`yamato ships` の一覧・`all_ships()` から外れる (§0 B4 の「上限の無い席」の例外と対で、design §0 に 1 行)
+- `admiral` ひな形 (`templates/admiral/`) から `yamato admiral` の初回に作る。二度目以降は既にある `team.yaml` / `roles/admiral.md` / `charter.md` を壊さない (owner の手直しを上書きしない)
+- 権限は `opus` + `auto`。`~/yamato/**` は編集してよい (team 構成・roles・charter の変更をやらせる仕事のため)。各艦の記録本体 (`.runtime/`・`roster.json`・inbox・memory.md 本体など) は deny で守る。WebFetch / WebSearch も使ってよい (owner の判断。他の役割にある B2 の分離は admiral には掛けない)。`~/dev/yamato` (yamato 自身の repo) は読むだけ (Edit / Write を deny。pull は Bash で打つが、その checkout を使う艦が全部止まっているときだけ、という約束はコードでは縛らず役割プロンプトに書く)
+- 艦の席からの `send` は当面作らない (中身に踏み込まない約束とぶつかりやすいので後回し、D-013 Q6)。owner と admiral 本人だけが使う
+- 移行前 (v1) は fleet の leader が CLI を叩いて admiral を兼ねていたが、D-011 でこの形に置き換えた。fleet の仕組み (タスク、driver) は yamato の開発にだけ使う
 
 ---
 

@@ -14,7 +14,7 @@
 |---|---|
 | ship (艦) | チーム。艦フォルダ (既定 `~/yamato/<name>/`) と `team.yaml` で定義する |
 | captain (艦長) | 艦の司令塔。`team.yaml` の `hub:` の役割 (開発艦は `pm`、調査艦は `editor`) |
-| admiral (提督) | 窓口。艦の出撃・帰投と全艦の一望だけ。yamato の席ではなく、CLI を打つ人かセッション (docs/admiral.md) |
+| admiral (提督) | 窓口。艦の出撃・帰投・構成の変更・全艦の一望・判断の代筆。どの艦にも属さない常駐の Claude のセッション (`_admiral/`、`yamato admiral`、D-011。docs/admiral.md) |
 | owner | 人間 |
 | 席 (seat) | 役割を担う名前付きセッション `<ship>.<seat>`。`count: n` の役割は `<role>-1..n` |
 | シフト | 席のセッション 1 回分。起動 → 記録を読む → 働く → 引き継ぎを書く → 終わる。`shift:` は `per_task` / `persistent` / `headless` |
@@ -159,7 +159,7 @@ yamato の開発を yamato の開発艦にやらせる (design.md §16)。以下
 4. 最初の依頼を送ってから起こす: `./yamato send <name> pm "<依頼。完了条件つき>"` → `./yamato up <name> --for 3h`。依頼は board の task 1 件に収まる小さいものから (例: e2e-p1 の「観測したこと」の 1 つ)
 5. merge: ひな形の既定は `merge: reviewer` (D-010)。reviewer が承認して merge の判断を閉じ、自分で `pr merge` を打つ (`roles/reviewer.md`。`profiles.merger` の allow で分類器を通す、D-026)。設計の根幹に触る PR だけ owner に上げる (`scope_change`)。pm は割り振りだけでレビューも merge もしない。owner と話して要件を詰めるのは planner (`yamato talk <name> planner`)。艦ごとに変えられる (owner が決める艦の流れは design-p1 §8.3)
 
-admiral (移行期間は fleet の leader、docs/admiral.md): `up` / `ships` / `status` / `extend` / `down` / `halt` と、赤い席・判断待ちを owner に伝えるだけ。艦の中身 (方針・順番・レビューの指摘) は中継しない。owner が captain と話すときは owner の端末で `yamato talk <name>`。
+admiral (docs/admiral.md): `yamato admiral` で attach する常駐の Claude のセッション (`_admiral/`、D-011)。`up` / `ships` / `status` / `extend` / `down` / `halt` と、赤い席・判断待ちを owner に伝えるだけ。艦の中身 (方針・順番・レビューの指摘) は中継しない。owner が captain と話すときは owner の端末で `yamato talk <name>`。
 
 気をつけること:
 - **worktree の衝突**: fleet の worktree (`agent-fleet/fleet-state/projects/yamato/worktrees/`) も艦の worktree (`~/yamato/<name>/worktrees/`) も、同じ `~/dev/yamato` の worktree になる。同じブランチは 1 か所でしか checkout できない。fleet の task と艦の task に同じファイルを触らせない (後から merge した方が衝突する)

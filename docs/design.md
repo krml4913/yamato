@@ -75,7 +75,7 @@ DA レビュー (`da-yamato-design-v0.md`) を受けて、owner と合意した�
 - **B1 配送**: 送り手が自分で届ける。`send` は記録 (inbox) に残し、宛先の席が止まっていれば起こす。生きている席への即時の配送は、送り手のエージェントが `SendMessage` ツールで行う (送り手は captain / admiral / メンバーで、いずれも Claude のセッション)。席の側で受信箱を監視する方式は、送り手が席でない未読 (owner・yamato の定型文・headless の終わりの報告など、誰も `SendMessage` で届けないもの) に限って、Stop hook の deadline watcher (`asyncRewake`) に足した (2026-09-26 leader 決定、e2e-p1 の C)
 - **B2 権限**: 席の既定は auto モード + 「無人のときにやらせない操作」の deny リスト (チームごとに持つ)。外部の文章を読む役割 (調査など) と、merge などの権限を持つ役割を分ける
 - **B3 シフトの終わり**: `per_task` の席は、終業処理のあとに自分を停止する。`per_task` 宛ての `send` は常に新しいシフトを起動する (再開はしない)。`persistent` 宛てだけ再開する
-- **B4 時間の上限**: 終了時刻はプロセスではなくデータ (`.runtime/deadline`) として持つ。席の hook (SessionStart / Stop) と `send` が毎回確認し、過ぎていれば「引き継ぎを書いて止まれ」を返す。一度きりのタイマーは補助にとどめる (消えても上限は効く)
+- **B4 時間の上限**: 終了時刻はプロセスではなくデータ (`.runtime/deadline`) として持つ。席の hook (SessionStart / Stop) と `send` が毎回確認し、過ぎていれば「引き継ぎを書いて止まれ」を返す。一度きりのタイマーは補助にとどめる (消えても上限は効く)。**例外は admiral だけ** (`time_limit: none`)。deadline を持たず、長くなったら rotate で入れ替える (D-013、§11)
 - **B5 シフトの方式**: 役割ごとに選べるようにする。`shift` に `headless` (`claude -p` の使い捨て。覗けないが、権限・予算・コストの扱いが単純) を追加する。覗いて割り込みたい役割は background のまま
 
 **important の決定 (P1 まで)**
@@ -497,11 +497,13 @@ zellij セッション
 
 ## 11. admiral (窓口)
 
-- 人間の窓口。仕事は**チームの作成、出撃と帰投、全チームの状況を一望すること**
-- **admiral は yamato の席ではない**。yamato の CLI (`ship create` / `up` / `down` / `status`。P1 で `ships` / `talk` などを足す) と、それを使うための薄い skill (または CLAUDE.md の 1 節) の組み合わせ。owner がシェルで直接打ってもよいし、owner の対話セッションが打ってもよい
-- チームの中身 (判断、方針) には踏み込まない。それは人間と captain が直接やる。**これは admiral の skill / プロンプトの約束で、CLI は admiral からの `send` や board の操作を拒否しない**。艦に送るのは出撃と帰投に伴う定型のメッセージだけ、と skill に書く
-- **移行期間は、fleet の leader が yamato の CLI を叩いて admiral を兼ねる** (owner の決定、design-p1 §6.3)。fleet の仕組み (タスク、driver) は yamato の開発にだけ使う。fleet を引退させたら、同じ skill を owner の対話セッションに載せる
-- コマンドの一覧は design-p1 §6.2
+- 人間の窓口。仕事は**チームの作成・構成の変更、出撃と帰投、全チームの状況を一望し、owner の判断を代筆すること**
+- **admiral はどの艦にも属さない、常駐の Claude のセッション**である (owner の決定、D-011)。名前付きの bg セッション (`yamato.admiral`)。`yamato admiral` で、生きていれば attach、止まっていれば talk と同じ規則で起こしてから attach する。スマホからは Remote Control (`--remote-control`) で話せる
+- 記録は `~/yamato/_admiral/` (`$YAMATO_HOME/_admiral/`)。**`_admiral/` は「席 1 つ・deadline なしの特別な艦」として、既存の seat / inject / rotate / talk / inbox の仕組みを丸ごと使い回す** (D-013)。`ships.json` には登録せず、`yamato ships` の一覧にも出ない (名前が `_` 始まり)
+- **時間の上限は掛けない** (`time_limit: none`。§0 B4 の例外、D-013)。実装しておらず CLI を打って話すだけなので、上限を掛ける理由がない。長くなったら rotate (コンテキスト・compaction・日付) で入れ替える
+- **艦の中身の仕事には踏み込まない** (task の割り振り・実装・レビュー・merge。判断や方針の中身は owner と captain / planner が直接やる)。**これは admiral の役割プロンプトの約束で、CLI は admiral からの `send` や board の操作を拒否しない** (mechanism-not-policy)。艦に送るのは出撃と帰投に伴う定型のメッセージだけ
+- 権限は `opus` + `auto`。`~/yamato/**` (艦フォルダ全部・`ships.json`) は編集してよい (team.yaml・roles・charter の変更をやらせる仕事のため)。各艦の記録本体 (`.runtime/`・`roster.json`・inbox・memory.md など、各艦の yamato のコマンドだけが書く場所) は deny で守る。WebFetch / WebSearch は使ってよい (owner の判断。他の役割にある B2 の分離は admiral には掛けない)。`~/dev/yamato` (yamato 自身の repo) は読むだけ (Edit / Write を deny。pull は Bash で打つ)
+- コマンドの一覧・使い方は design-p1 §6、[docs/admiral.md](admiral.md)
 
 ## 12. 1 日の回り方 (例)
 
@@ -590,7 +592,7 @@ design-p1 には、別の名前で書かれている箇所がある (`ship up / 
 - 稼働時間の各時刻の既定値: 終業は `time_limit`、猶予は `grace` (ひな形は 3h と 20m)。最終受付は design-p1 §9 の軽い形 (§12.1)
 - `persistent` の席を入れ替える条件: 設定 `rotate:` (コンテキストの量、compaction、時間、日付。どれも off にできる。design-p1 §5.3〜5.4)
 - 人間宛て通知の経路: `notify.via` に `slack` / `mac` / `windows` (複数可) と、任意の `command` (§7、design-p1 §2.4)
-- leader の扱い: 移行期間は fleet の leader が admiral を兼ねる (§11)
+- admiral の形: どの艦にも属さない常駐の Claude のセッション。時間の上限は掛けない (D-011、D-013、§11)
 - 会話ログ (transcript) の艦フォルダへの退避: しない (D-022)。代筆 (design-p1 §1.5) の根拠は `--reason` (owner の言葉をそのまま書いたもの) を正とする。transcript をコピーする hook は作らない
 
 **まだ決まっていないこと**
