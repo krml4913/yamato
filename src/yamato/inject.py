@@ -14,7 +14,7 @@ from pathlib import Path
 from . import board as board_mod
 from . import board_view, deadline, inbox, memory, roster
 from .team import inject_parts
-from .util import YAMATO_BIN, today
+from .util import YAMATO_BIN, YamatoError, today
 
 # fallback only: the template's team.yaml spells these out (`inject.limits`). The role's
 # memory and knowledge.md are cut at `memory.limits`, the limits `memory apply` keeps to
@@ -122,14 +122,21 @@ def _orphans(shipdir: Path, team: dict, max_items: int, y: str) -> str:
 def _fleet(limit: int, y: str) -> str:
     """The `fleet` part (T-022, admiral's own): one line per ship, the same as `yamato
     ships`, capped at ``limit``; over that, the rest points at the uncapped command
-    instead of being cut mid-line (design-drift D, D-013: admiral 用の全艦の要約)."""
+    instead of being cut mid-line (design-drift D, D-013: admiral 用の全艦の要約).
+
+    ``claude.agents()`` can fail or time out (up to 60s, ``YamatoError``): an extra part
+    must never cost the hook its real job (``_touch`` と同じ考え), so only this section
+    degrades to a pointer at `yamato ships` instead of taking session_start down with it."""
     from . import admiral, claude
 
     title = f"## fleet (全艦の様子。全文は `{y} ships`)"
     found = admiral.all_ships()
     if not found:
         return f"{title}\n(艦がありません)"
-    by = claude.by_session(claude.agents())
+    try:
+        by = claude.by_session(claude.agents())
+    except YamatoError as e:
+        return f"{title}\n(claude agents を読めない: {e}。`{y} ships` で見る)"
     now = time.time()
     names = list(found.items())
     lines = [admiral.ship_line(name, path, by, now) for name, path in names[:limit]]
