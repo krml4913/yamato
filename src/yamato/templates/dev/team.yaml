@@ -19,6 +19,7 @@ roles:
   pm:
     model: opus
     shift: persistent
+    trust: clean              # merge の権限を持つ captain は外部の文章を読まない (§0 B2。仕込まれた指示に乗っ取られる経路を断つ)
     description: captain。owner の依頼を board の task に分けて席に割り振り、成果を確認して回収する
     remote_control: true     # この席だけ --remote-control を付けて起こす (スマホから話せる席を captain に絞る。design-p1 §1.5)
     inject: [handoff, log_tail, mine, orphans, last_report, inbox, memory, knowledge]   # last_report: 前回の日報の「一言」「owner の判断待ち」「明日」 / orphans: 担当が落ちて active のまま残った項目
@@ -127,8 +128,14 @@ settings:
 #   tools  役割が使えるツールの一覧 (省略時は制限なし)
 #   allow / deny  席の settings の permissions に足すルール。{{ship}} / {{yamato}} / {{seat}} が置き換わる
 #   send   false にすると、その席からの yamato send を断る
-# 開発艦の既定では使わない。外を読む役割を置くなら research のひな形の profiles.external を写す
-profiles: {}
+# 開発艦の既定では pm (merge の権限を持つ) だけ clean にする。impl には付けない (付けるかは艦ごと)。
+# 外を読む役割を置くなら research のひな形の profiles.external を写す
+profiles:
+  clean:
+    # 外部の文章を読まない。モードは既定の auto (最上位の deny つき)
+    deny:
+      - "WebFetch"
+      - "WebSearch"
 
 # seat-stop が終業前に確かめること
 seat_stop:

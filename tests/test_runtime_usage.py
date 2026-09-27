@@ -29,6 +29,18 @@ class RuntimeTest(ShipTestCase):
         self.assertIn("wait-deadline", waiter["command"])
         self.assertTrue(set(s["hooks"]) >= {"SessionStart", "UserPromptSubmit", "Stop", "PermissionRequest", "PermissionDenied"})
 
+    def test_dev_template_keeps_web_away_from_the_merge_role(self):
+        # design-drift #3: pm (merge の権限を持つ captain) は開発艦の既定で trust: clean。
+        # impl には付けない (付けるかは艦ごと)
+        team = self.team()
+        runtime.generate(self.shipdir, team)
+        pm_deny = json.loads(runtime.settings_path(self.shipdir, "pm").read_text())["permissions"]["deny"]
+        self.assertIn("WebFetch", pm_deny)
+        self.assertIn("WebSearch", pm_deny)
+        impl_deny = json.loads(runtime.settings_path(self.shipdir, "impl").read_text())["permissions"]["deny"]
+        self.assertNotIn("WebFetch", impl_deny)
+        self.assertNotIn("WebSearch", impl_deny)
+
     def test_env_unset_blanked_in_settings_env(self):
         # e2e-p1 D: a bg seat inherits the daemon's environment; `env -u` at launch misses it
         team = self.team()
