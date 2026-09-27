@@ -59,8 +59,11 @@ def count(paths: list[Path], since: float, until: float | None = None) -> dict:
     return totals
 
 
-def record(shipdir: Path, seat: str, *, session_id: str, shift_no: int | None,
-           since: float, until: float | None = None) -> dict:
+def build(seat: str, *, session_id: str, shift_no: int | None,
+          since: float, until: float | None = None) -> dict:
+    """The ``usage.jsonl`` line, computed by parsing the transcript. Read-only (no
+    lock): #10 has ``seat.finish_shift`` call this before it takes the ship lock,
+    so a slow transcript read never holds up anyone else's write."""
     until = until or time.time()
     totals = count(claude.transcript_paths(session_id), since, until)
     read = totals.pop("read")
@@ -71,6 +74,14 @@ def record(shipdir: Path, seat: str, *, session_id: str, shift_no: int | None,
     }
     if not read:
         line["unknown"] = True
+    return line
+
+
+def record(shipdir: Path, seat: str, *, session_id: str, shift_no: int | None,
+           since: float, until: float | None = None) -> dict:
+    """``build`` + ``append`` in one call, for callers that don't need the ship
+    lock released while the transcript is parsed."""
+    line = build(seat, session_id=session_id, shift_no=shift_no, since=since, until=until)
     append(shipdir, line)
     return line
 
