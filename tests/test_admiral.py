@@ -21,7 +21,7 @@ class AdmiralTest(ShipTestCase):
         p.start()
         self.addCleanup(p.stop)
         p2 = mock.patch.object(seat, "_spawn_detached")
-        p2.start()
+        self.spawn_mock = p2.start()
         self.addCleanup(p2.stop)
 
     def run_cmd(self, fn, *args, **kw):
@@ -209,6 +209,33 @@ class AdmiralTest(ShipTestCase):
             self.assertTrue(t.is_alive())          # still waiting on the new deadline
             self.assertEqual(forced, [])           # the old graceUntil passed without a force stop
             deadline.write_raw(self.shipdir, {**deadline.read(self.shipdir), "token": "other"})
+            t.join(5)
+        self.assertFalse(t.is_alive())
+
+    def test_watchdog_forces_a_stuck_stopping_seat(self):
+        """T-012: the watchdog's own loop notices a seat stuck `stopping` too, not just
+        `status` -- it does not need a human to run `status` for the fix to kick in."""
+        self.run_cmd(seat.up, self.shipdir, "20m")
+        rec = roster.seat(self.shipdir, "pm")
+        roster.mark_stopping(self.shipdir, "pm", handoff_written=True,
+                             now=time.time() - 999999)   # long past any STOPPING_STUCK_AFTER
+        dl = deadline.read(self.shipdir)
+        # STOPPING_STUCK_AFTER stays at its real (several-minute) default: `ago` above already
+        # clears it on the very first poll, and the default is comfortably longer than this
+        # test's whole run, so the "not too often" guard reliably keeps this to one retry
+        with mock.patch.object(seat, "WATCHDOG_POLL", 0.02), mock.patch.object(seat, "WATCHDOG_MIN_SLEEP", 0.01):
+            t = threading.Thread(target=seat.watchdog, args=(self.shipdir, dl["token"]))
+            t.start()
+            time.sleep(0.2)                        # several polls
+            self.assertTrue(t.is_alive())           # still watching the (unchanged) deadline
+            self.spawn_mock.assert_called()
+            [(args, kwargs)] = [(c.args[0], c.kwargs) for c in self.spawn_mock.call_args_list]
+            self.assertEqual(kwargs.get("cwd"), str(self.shipdir))
+            self.assertIn("sleep 0; ", args[2])
+            self.assertTrue(roster.seat(self.shipdir, "pm")["restopAttemptAt"])
+            [ev] = events.read(self.shipdir, kinds=events.STOPPING_STUCK)
+            self.assertEqual(ev["seat"], "pm")
+            deadline.write_raw(self.shipdir, {**deadline.read(self.shipdir), "token": "other"})   # let it exit
             t.join(5)
         self.assertFalse(t.is_alive())
 

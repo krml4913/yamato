@@ -8,7 +8,7 @@ from contextlib import redirect_stdout
 from unittest import mock
 
 from tests.helpers import ShipTestCase
-from yamato import deadline, events, inbox, roster, runtime, seat
+from yamato import claude, deadline, events, inbox, roster, runtime, seat
 from yamato.util import YamatoError
 
 
@@ -19,7 +19,14 @@ class _SeatBase(ShipTestCase):
         p.start()
         self.addCleanup(p.stop)
         self.spawned = []
-        p2 = mock.patch.object(seat, "_spawn_detached", side_effect=self.spawned.append)
+        self.spawn_kwargs = []   # T-012: the same calls' kwargs (cwd=...), kept separate so the
+                                  # existing `[args] = self.spawned` call sites do not have to change
+
+        def _capture(args, **kwargs):
+            self.spawned.append(args)
+            self.spawn_kwargs.append(kwargs)
+
+        p2 = mock.patch.object(seat, "_spawn_detached", side_effect=_capture)
         p2.start()
         self.addCleanup(p2.stop)
 
@@ -501,6 +508,7 @@ class SeatTest(_SeatBase):
         self.assertIn(f"sleep 7; ", args[2])
         self.assertIn(f" stop {rec['sessionId'][:8]}; ", args[2])
         self.assertIn("_shift-ended", args[2])
+        self.assertEqual(self.spawn_kwargs[-1]["cwd"], str(self.shipdir))   # T-012: never the caller's cwd
         # the delayed part: after the stop, the shift is closed with its usage
         self.stop_session("pm")
         seat.shift_ended(self.shipdir, "pm", rec["sessionId"])
@@ -508,6 +516,21 @@ class SeatTest(_SeatBase):
         self.assertEqual((rec["state"], rec["endReason"], rec["handoffWritten"], rec["note"]),
                          (roster.OFF, "seat-stop", True, None))
         self.assertTrue((self.shipdir / "usage.jsonl").is_file())
+
+    def test_seat_stop_records_when_the_delayed_stop_fails_to_launch(self):
+        """T-012: spawning itself can fail (rare); seat-stop still accepts the stop (the
+        seat is not stuck retrying the same call), but the failure is not silent."""
+        self.up()
+        rec = roster.seat(self.shipdir, "pm")
+        (self.shipdir / "seats/pm/handoff.md").write_text("次: なし")
+        with mock.patch.object(seat, "_spawn_detached", side_effect=OSError("boom")):
+            with mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": rec["sessionId"]}):
+                out = self.run_cmd(seat.seat_stop, self.shipdir, "pm", 7)
+        self.assertIn("7 秒後", out)
+        self.assertEqual(roster.seat(self.shipdir, "pm")["state"], roster.STOPPING)
+        [ev] = events.read(self.shipdir, kinds=events.RESTOP_FAILED)
+        self.assertIn("boom", ev["summary"])
+        self.assertEqual(ev["seat"], "pm")
 
     def test_forced_stop_by_the_seats_own_hooks(self):
         """§0 B4: past the grace period with the watchdog gone, a seat hook stops the seat."""
@@ -677,6 +700,61 @@ class SeatTest(_SeatBase):
         self.assertIn("生存=yes", out)
         self.assertIn("!!! pm: 詰まり", out)
         self.assertIn("残り", out)
+
+
+class RestopStuckTest(_SeatBase):
+    """T-012: a seat stuck ``stopping`` past ``STOPPING_STUCK_AFTER`` (its delayed stop
+    likely never ran -- a removed worktree cwd, say) is forced again by ``restop_stuck``,
+    which ``status`` and the watchdog both call."""
+
+    def _make_stuck(self, ago=None):
+        self.up()
+        rec = roster.seat(self.shipdir, "pm")
+        ago = seat.STOPPING_STUCK_AFTER + 1 if ago is None else ago
+        roster.mark_stopping(self.shipdir, "pm", handoff_written=True, now=time.time() - ago)
+        return rec["sessionId"]
+
+    def test_forces_a_seat_still_alive_past_the_threshold(self):
+        self._make_stuck()
+        team = seat.current_team(self.shipdir)
+        acted = seat.restop_stuck(self.shipdir, team, claude.agents())
+        self.assertEqual(acted, ["pm"])
+        [args] = self.spawned
+        self.assertEqual(args[:2], ["sh", "-c"])
+        self.assertIn("sleep 0; ", args[2])
+        self.assertEqual(self.spawn_kwargs[-1]["cwd"], str(self.shipdir))
+        self.assertTrue(roster.seat(self.shipdir, "pm")["restopAttemptAt"])
+        [ev] = events.read(self.shipdir, kinds=events.STOPPING_STUCK)
+        self.assertEqual(ev["seat"], "pm")
+
+    def test_leaves_a_seat_not_yet_stuck_alone(self):
+        self._make_stuck(ago=10)   # well under the threshold
+        team = seat.current_team(self.shipdir)
+        acted = seat.restop_stuck(self.shipdir, team, claude.agents())
+        self.assertEqual(acted, [])
+        self.assertEqual(self.spawned, [])
+
+    def test_does_not_retry_more_often_than_the_threshold(self):
+        self._make_stuck()
+        team = seat.current_team(self.shipdir)
+        listing = claude.agents()
+        self.assertEqual(seat.restop_stuck(self.shipdir, team, listing), ["pm"])
+        self.assertEqual(seat.restop_stuck(self.shipdir, team, listing), [])   # too soon to retry
+        self.assertEqual(len(self.spawned), 1)
+
+    def test_a_dead_seat_is_left_for_reconcile_instead(self):
+        self._make_stuck()
+        self.stop_session("pm")
+        team = seat.current_team(self.shipdir)
+        acted = seat.restop_stuck(self.shipdir, team, claude.agents())
+        self.assertEqual(acted, [])
+        self.assertEqual(self.spawned, [])
+
+    def test_status_surfaces_and_forces_it(self):
+        self._make_stuck()
+        out = self.run_cmd(seat.status, self.shipdir)
+        self.assertIn("stopping のまま長い席を止め直した: pm", out)
+        self.assertEqual(len(self.spawned), 1)
 
 
 class RealClaudeProcessTest(_SeatBase):
