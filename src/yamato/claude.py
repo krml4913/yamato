@@ -195,15 +195,35 @@ def is_trusted(workspace: Path) -> bool | None:
     if not isinstance(projects, dict):
         return None
 
-    def ok(p: Path) -> bool:
+    def ok(p: Path) -> bool | None:
+        """True/False when the entry has the key; None when the entry is a dict but the
+        key itself is missing (Claude Code renamed it, say) -- "cannot tell" (nit A), not
+        a clear refusal. No entry at all, or a malformed (non-dict) entry, stays False as
+        before: an outright absence is still "never trusted", only a present-but-keyless
+        entry is ambiguous."""
         entry = projects.get(str(p))
-        return isinstance(entry, dict) and bool(entry.get("hasTrustDialogAccepted"))
+        if isinstance(entry, dict):
+            if "hasTrustDialogAccepted" in entry:
+                return bool(entry["hasTrustDialogAccepted"])
+            return None
+        return False
+
+    def combine(results) -> bool | None:
+        """True wins outright; otherwise a "cannot tell" (a keyless entry) wins over the
+        plain False default of an absent entry, so one ambiguous entry does not get
+        drowned out by all the other (merely absent) candidates."""
+        results = list(results)
+        if any(r is True for r in results):
+            return True
+        if any(r is None for r in results):
+            return None
+        return False
 
     ws = Path(workspace).resolve()
     root = git_root(ws)
     if root is not None:
-        return ok(root) or ok(main_repo_root(ws) or root)
-    return any(ok(p) for p in (ws, *ws.parents))
+        return combine(ok(p) for p in (root, main_repo_root(ws) or root))
+    return combine(ok(p) for p in (ws, *ws.parents))
 
 
 def check_trust(workspace: Path) -> str | None:
