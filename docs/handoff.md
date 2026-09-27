@@ -157,7 +157,7 @@ yamato の開発を yamato の開発艦にやらせる (design.md §16)。以下
 2. 艦フォルダを整える: `team.yaml` (model・`time_limit`・`notify.via`)、`charter.md`。`knowledge.md` には [dogfood-knowledge.md](dogfood-knowledge.md) を写す (yamato の repo には CLAUDE.md が無く、席はユーザー設定の CLAUDE.md も読まないので、knowledge.md が約束の置き場になる)
 3. trust: `~/dev/yamato` (git root) が trust されていなければ、owner が `cd ~/dev/yamato && claude` で承認する。`ship create` が警告し、`up` は止まる
 4. 最初の依頼を送ってから起こす: `./yamato send <name> pm "<依頼。完了条件つき>"` → `./yamato up <name> --for 3h`。依頼は board の task 1 件に収まる小さいものから (例: e2e-p1 の「観測したこと」の 1 つ)
-5. merge: ひな形の既定は `merge: reviewer` (D-010)。reviewer が承認して merge の判断を閉じ、自分で `pr merge` を打つ (`roles/reviewer.md`。`profiles.merger` の allow で分類器を通す、D-026)。設計の根幹に触る PR だけ owner に上げる (`scope_change`)。pm は割り振りだけでレビューも merge もしない。owner と話して要件を詰めるのは planner (`yamato talk <name> planner`)
+5. merge: ひな形の既定は `merge: reviewer` (D-010)。reviewer が承認して merge の判断を閉じ、自分で `pr merge` を打つ (`roles/reviewer.md`。`profiles.merger` の allow で分類器を通す、D-026)。設計の根幹に触る PR だけ owner に上げる (`scope_change`)。pm は割り振りだけでレビューも merge もしない。owner と話して要件を詰めるのは planner (`yamato talk <name> planner`)。艦ごとに変えられる (owner が決める艦の流れは design-p1 §8.3)
 
 admiral (移行期間は fleet の leader、docs/admiral.md): `up` / `ships` / `status` / `extend` / `down` / `halt` と、赤い席・判断待ちを owner に伝えるだけ。艦の中身 (方針・順番・レビューの指摘) は中継しない。owner が captain と話すときは owner の端末で `yamato talk <name>`。
 
