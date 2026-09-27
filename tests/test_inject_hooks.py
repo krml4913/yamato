@@ -150,6 +150,15 @@ class HookTest(ShipTestCase):
         roster.start_shift(self.shipdir, "impl", session_id="s" * 36, short_id="ssssssss",
                            session_name="t1.impl", how="new")
 
+    def test_stop_and_pre_tool_use_are_quiet_with_no_deadline_at_all(self):
+        # T-020 / D-013: the admiral's permanent state is no ``.runtime/deadline`` ever
+        # written (``time_limit: none``), so ``deadline.phase`` stays NOT_UP forever and
+        # none of §0 B4's wrap-up / force-stop fires, the same as before any ``up``.
+        self.assertIsNone(deadline.read(self.shipdir))
+        self.assertEqual(self.run_hook(hooks.stop, {})[1], "")
+        self.assertEqual(self.run_hook(hooks.pre_tool_use, {"tool_name": "Bash"}), (0, "", ""))
+        self.assertEqual(seat.enforce(self.shipdir, self.team()), [])
+
     def test_session_start_emits_context_and_marks_read(self):
         inbox.append(self.shipdir, "impl", "pm", "hello")
         code, out, _ = self.run_hook(hooks.session_start, {"source": "compact", "session_id": "x"})

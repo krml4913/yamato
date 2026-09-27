@@ -30,12 +30,16 @@ def out(msg: str = "") -> None:
 # --- the ship list ------------------------------------------------------------
 
 def all_ships() -> dict[str, Path]:
-    """Every ship: ``$YAMATO_HOME/ships.json``, then the folders under ``$YAMATO_HOME``."""
-    ships = {name: Path(p) for name, p in load_registry().items()}
+    """Every ship: ``$YAMATO_HOME/ships.json``, then the folders under ``$YAMATO_HOME``.
+
+    A name starting with ``_`` (``_admiral``, T-020) is never a normal ship's own name
+    (``check_name`` forbids it) and is left out here: it is the admiral's special, unlisted
+    folder. ``resolve_ship``/``status`` still find it directly by that name/path."""
+    ships = {name: Path(p) for name, p in load_registry().items() if not name.startswith("_")}
     home = yamato_home()
     if home.is_dir():
         for d in sorted(home.iterdir()):
-            if (d / "team.yaml").is_file():
+            if not d.name.startswith("_") and (d / "team.yaml").is_file():
                 ships.setdefault(d.name, d)
     return {n: p for n, p in sorted(ships.items()) if (p / "team.yaml").is_file()}
 
