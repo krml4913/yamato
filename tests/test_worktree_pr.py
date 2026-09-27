@@ -599,7 +599,7 @@ class TeamGitTest(ShipTestCase):
     def test_template_git_section(self):
         g = self.team()["git"]
         self.assertEqual(g, {"base": "main", "strategy": "squash", "merge_requires": ["review", "ci", "decision"],
-                             "merge_decision": "off", "conflict": "author"})
+                             "conflict": "author"})
 
     def test_deny_defaults_follow_the_git_flow(self):
         deny = self.team()["deny"]
@@ -613,9 +613,18 @@ class TeamGitTest(ShipTestCase):
 
         base = {"name": "x", "hub": "pm", "workspace": str(self.workspace), "roles": {"pm": {}}}
         self.assertEqual(validate(base, self.shipdir)["git"]["merge_requires"], [])
-        self.assertEqual(validate({**base, "git": {"merge_decision": False}}, self.shipdir)["git"]["merge_decision"],
-                         "off")
-        for bad in ({"strategy": "ff"}, {"merge_requires": ["lgtm"]}, {"nope": 1}, {"merge_decision": "on"}):
+        for bad in ({"strategy": "ff"}, {"merge_requires": ["lgtm"]}, {"nope": 1}):
             with self.assertRaises(YamatoError):
                 validate({**base, "git": bad}, self.shipdir)
         self.assertEqual(git_conf({})["base"], "main")   # a .runtime/team.json from before P1
+
+    def test_merge_decision_is_dropped_but_not_rejected(self):
+        # D-021 案 b (#5): merge_decision は外れた。古い team.yaml に残っていても落とさず、
+        # 警告 1 行を出して無視する (git の項目には出さない)。
+        from yamato.team import validate
+
+        base = {"name": "x", "hub": "pm", "workspace": str(self.workspace), "roles": {"pm": {}},
+                "git": {"merge_decision": "auto"}}
+        team = validate(base, self.shipdir)
+        self.assertNotIn("merge_decision", team["git"])
+        self.assertTrue(any("git.merge_decision" in w for w in team["warnings"]))

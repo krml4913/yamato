@@ -139,7 +139,6 @@ decisions:                  # 開発艦のひな形の既定 (D-010)。merge を
 git:                        # 開発艦だけ (§8)
   base: main
   merge_requires: [review, ci, decision]
-  merge_decision: auto
   conflict: author
 roles:
   pm:
@@ -717,7 +716,6 @@ git:
   base: main
   strategy: squash
   merge_requires: [review, ci, decision]   # pr merge の前提 (ひな形の既定値)。[] で外せる
-  merge_decision: auto  # reviewer の承認で merge の D 項目を自動で開く (auto / off)
   conflict: author      # 衝突の知らせを送る先: そのタスクの実装担当 (author) / 役割名
 ```
 
@@ -732,7 +730,7 @@ git:
 `yamato pr open T-042`: `gh pr create` を呼び、項目の `pr` に番号を書き、`column` を review に進め (艦の列に review があれば)、項目の reviewer (無ければ hub) に `send` する。使うかどうかは役割プロンプト次第で、生の `gh pr create` を使う艦では項目の `pr` を `board set` で書く。
 
 reviewer が merge を決める艦 (開発艦のひな形の既定。owner の決定 D-010) の流れ:
-- reviewer が承認して (`review=approved`)、merge の D 項目を開いて (`category: merge`、`--links <item>`) 自分で閉じ、`pr merge` を打つ。`merge_decision: auto` (yamato が D 項目を自動で開く) はまだ無い。設計の根幹に触る PR は merge せず、`scope_change` の判断で owner に上げる。captain (pm) は割り振りと回収だけで、レビューも merge もしない
+- reviewer が承認して (`review=approved`)、merge の D 項目を開いて (`category: merge`、`--links <item>`) 自分で閉じ、`pr merge` を打つ。承認を契機に yamato が merge の D 項目を自動で開く仕組み (v0 の `git.merge_decision: auto`) は持たない: 承認も merge も reviewer 一人で行う今の流れでは、判断を開いても閉じるのは同じ reviewer で手間が増えるだけなので (D-021)、開くかどうかは役割プロンプト (reviewer.md) の話にした。設計の根幹に触る PR は merge せず、`scope_change` の判断で owner に上げる。captain (pm) は割り振りと回収だけで、レビューも merge もしない
 - owner が merge を決める艦にしたいときは decisions の `merge` を `owner` にし、役割プロンプトを「reviewer が承認 → captain が merge の判断を開く → owner が `talk` で「入れてよい」→ captain が `decide close --by owner` → `pr merge`」の流れに書き換える (v1 のひな形の既定だった流れ)
 - 後続のタスクが古い main から切られて衝突が増える (DA I2)。ひな形の captain の役割プロンプトに「同じファイルを触る後続のタスクは、前のタスクの merge まで割り当てない」を入れる。判断材料として項目に任意の `touches:` (触る予定のパス) を書けるようにし、board が重なりを警告する
 
