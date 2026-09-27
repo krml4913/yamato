@@ -19,7 +19,7 @@
 
 **スマホからは Remote Control** (`roles.admiral.remote_control: true` / 起動時から `remoteControlAtStartup: true`) で話せる。owner の端末で `claude attach` するのと同じセッションに、別経路でつながる。
 
-**時間の上限は掛けない** (`time_limit: none`。design.md §0 B4 の例外、D-013)。deadline も watchdog も持たないので、`up`/`down`/`extend`/`halt` の対象にはならない (自分自身には効かない)。長く続いたら「入れ替え」(下) で新しいシフトに切り替える。
+**時間の上限は掛けない** (`time_limit: none`。design.md §0 B4 の例外、D-013)。`--for` を付けない `up` は deadline を書かず、watchdog も立てない。`up`/`down`/`extend`/`halt` は admiral 自身にも効く (`up _admiral --for 3h` なら一時的に上限も掛けられ、そのあと `--for` なしの `up` で戻れば古い deadline は消える。`admiral --stop --force` は `down --force` に落ちる) が、admiral 自身には使わない約束で、`--for` を明示しない限り deadline は書かれない。長く続いたら「入れ替え」(下) で新しいシフトに切り替える。
 
 ## 各艦へのコマンド
 
