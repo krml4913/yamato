@@ -131,7 +131,7 @@ class InjectTest(ShipTestCase):
         self.t["roles"]["impl"]["inject"] = [*self.t["inject"]["parts"], "fleet"]
         text, _ = self.build()
         section = self._fleet_section(text)
-        self.assertIn(f"## fleet (全艦の様子。全文は `{YAMATO_BIN} ships`)", section)
+        self.assertIn(f"## fleet (全艦の様子。全文は `{runtime.yamato_invocation()} ships`)", section)
         self.assertIn("t1", section)
         self.assertIn("t2", section)
         self.assertIn("停止中", section)   # neither ship was `up`
@@ -149,7 +149,7 @@ class InjectTest(ShipTestCase):
         self.assertIn("t1", section)
         self.assertNotIn("t2", section)
         self.assertNotIn("t3", section)
-        self.assertIn(f"…ほか 2 件 (`{YAMATO_BIN} ships` で見る)", section)
+        self.assertIn(f"…ほか 2 件 (`{runtime.yamato_invocation()} ships` で見る)", section)
 
     def test_fleet_part_survives_claude_agents_failure(self):
         """reviewer #16 (T-022 差し戻し): claude.agents() は失敗/タイムアウトで YamatoError
@@ -166,7 +166,7 @@ class InjectTest(ShipTestCase):
         section = self._fleet_section(text)
         self.assertIn("## fleet (全艦の様子", section)
         self.assertIn("claude agents を読めない: タイムアウトしました", section)
-        self.assertIn(f"`{YAMATO_BIN} ships`", section)
+        self.assertIn(f"`{runtime.yamato_invocation()} ships`", section)
 
     def test_inbox_capped_and_cursor_only_over_full_messages(self):
         for i in range(12):

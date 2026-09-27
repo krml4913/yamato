@@ -14,7 +14,8 @@ from pathlib import Path
 from . import board as board_mod
 from . import board_view, deadline, inbox, memory, roster
 from .team import inject_parts
-from .util import YAMATO_BIN, YamatoError, today
+from .runtime import yamato_invocation
+from .util import YamatoError, today
 
 # fallback only: the template's team.yaml spells these out (`inject.limits`). The role's
 # memory and knowledge.md are cut at `memory.limits`, the limits `memory apply` keeps to
@@ -159,7 +160,7 @@ def build(shipdir: Path, team: dict, seat: str, source: str = "startup",
     shipdir = Path(shipdir)
     spec = team["seats"][seat]
     sdir = inbox.seat_dir(shipdir, seat)
-    y = str(YAMATO_BIN)
+    y = yamato_invocation()
     parts = []
 
     dl = deadline.read(shipdir)

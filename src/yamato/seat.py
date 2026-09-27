@@ -18,6 +18,7 @@ from pathlib import Path
 
 from . import claude, deadline, events, inbox, monitor, notify, report, roster, rotate, runtime, usage
 from .team import last_call_conf, load_team, profile_of, seat_spec
+from .runtime import yamato_invocation
 from .util import (YAMATO_BIN, YamatoError, append_log, fmt_span, fmt_time, read_json,
                    seat_lock, ship_lock, write_json)
 
@@ -112,7 +113,7 @@ def clear_pending(shipdir: Path, seat: str) -> None:
 
 def _first_prompt(shipdir: Path, seat: str) -> str:
     return (f"[yamato] シフト開始。SessionStart で注入された引き継ぎ・自分の担当・未読 inbox を確認し、"
-            f"役割どおりに仕事を進めてください。未読の続きは `{YAMATO_BIN} inbox {shipdir} {seat}` で読めます。")
+            f"役割どおりに仕事を進めてください。未読の続きは `{yamato_invocation()} inbox {shipdir} {seat}` で読めます。")
 
 
 def _resume_prompt(shipdir: Path, seat: str, reason: str = "send") -> str:
@@ -122,7 +123,7 @@ def _resume_prompt(shipdir: Path, seat: str, reason: str = "send") -> str:
         return (f"[yamato] 艦が起動された ({deadline.describe(deadline.read(shipdir))})。"
                 f"前のシフトの時間の判断は忘れ、SessionStart で注入された引き継ぎ・担当・未読 inbox を確認して、"
                 f"引き継ぎの「次にやること」から仕事を再開してください。")
-    return (f"[yamato] inbox に新しいメッセージがあります。`{YAMATO_BIN} inbox {shipdir} {seat}` で読んで対応してください。")
+    return (f"[yamato] inbox に新しいメッセージがあります。`{yamato_invocation()} inbox {shipdir} {seat}` で読んで対応してください。")
 
 
 def start_new_shift(shipdir: Path, team: dict, seat: str, rotated: list[str] | None = None) -> dict:
@@ -424,8 +425,8 @@ def notify_retired_seats(shipdir: Path, team: dict) -> list[dict]:
     for r in reported:
         lines.append(f"- {r['seat']}: 担当の task {', '.join(r['tasks']) if r['tasks'] else 'なし'}"
                      f" / 未読 {r['unread']} 件" + (" / handoff あり" if r["handoff"] else ""))
-    lines.append(f"読む: `{YAMATO_BIN} inbox {shipdir} <席>`、task: `{YAMATO_BIN} board mine {shipdir} <席>`、"
-                 f"振り直し: `{YAMATO_BIN} board set {shipdir} <id> assignee=<席>`")
+    lines.append(f"読む: `{yamato_invocation()} inbox {shipdir} <席>`、task: `{yamato_invocation()} board mine {shipdir} <席>`、"
+                 f"振り直し: `{yamato_invocation()} board set {shipdir} <id> assignee=<席>`")
     text = "\n".join(lines)
     hub = team["hub"]
     entry = inbox.append(shipdir, hub, REPORTER, text)
@@ -561,7 +562,7 @@ def send(shipdir: Path, seat: str, text: str, sender: str | None, cwd: str | Non
             raise YamatoError("--cwd は席への send でだけ使える")
         entry = inbox.append(shipdir, OWNER, sender, text)
         _send_event(shipdir, OWNER, sender, entry)
-        out(f"owner の inbox に記録した: #{entry['n']} (`{YAMATO_BIN} inbox {shipdir} owner` で読む)")
+        out(f"owner の inbox に記録した: #{entry['n']} (`{yamato_invocation()} inbox {shipdir} owner` で読む)")
         _watch_send(shipdir, team, sender, OWNER, entry, text)
         for line in notify.notify(team, f"yamato {team['name']}: {sender} から", text, shipdir=shipdir):
             out(line)
@@ -583,7 +584,7 @@ def send(shipdir: Path, seat: str, text: str, sender: str | None, cwd: str | Non
     if cwd:
         roster.update(shipdir, seat, nextCwd=cwd)
         out(f"次のシフトは {cwd} を cwd にして起動する (bgIsolation: none)")
-    y = YAMATO_BIN
+    y = yamato_invocation()
     ph = deadline.phase(dl)
     # a ship with no time limit at all (time_limit: none, D-013, the admiral only, T-020)
     # never has a deadline to read, so `phase` always reads NOT_UP -- but unlike a normal

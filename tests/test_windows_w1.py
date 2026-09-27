@@ -7,10 +7,12 @@ tests/test_util.py does for W2), and by asserting what the code hands to ``subpr
 ``open`` rather than by running it."""
 import io
 import os
+import re
 import shlex
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -304,6 +306,72 @@ class WritesKeepLfTest(ShipTestCase):
 
     def test_inbox_append(self):
         self.opens_with_lf(lambda: inbox.append(self.shipdir, "impl", "pm", "hi"))
+
+
+class SeatCommandsMatchPermissionsTest(ShipTestCase):
+    """The commands the code tells a seat to type must fall under the seat-stop allow
+    rule that ``build_settings`` writes (a dontAsk seat is denied otherwise)."""
+
+    def rule(self, seat="impl"):
+        rules = runtime.build_settings(self.shipdir, self.team(), seat)["permissions"]["allow"]
+        return next(r for r in rules if "seat-stop" in r)
+
+    def assert_typable(self, text, sub):
+        from tests.test_research import rule_matches
+
+        spans = [s for s in re.findall(r"`([^`\n]+)`", text) if f" {sub} " in s or s.endswith(f" {sub}")]
+        self.assertTrue(spans, f"no `{sub}` command in: {text}")
+        for span in spans:
+            with self.subTest(span=span):
+                self.assertTrue(rule_matches(self.rule(), "Bash", span), span)
+
+    def test_wrap_up_message(self):
+        from yamato import hooks
+
+        self.assert_typable(hooks._wrapup_message(self.shipdir, "impl"), "seat-stop")
+
+    def test_rotate_message(self):
+        from yamato import rotate
+
+        text = rotate.MESSAGE.format(reasons="x", yamato=runtime.yamato_invocation(), ship=self.shipdir, seat="impl")
+        self.assert_typable(text, "seat-stop")
+
+    def test_inbox_wake_message(self):
+        from yamato import hooks
+        from tests.test_research import rule_matches
+
+        text = hooks._inbox_wake_message(self.shipdir, "impl", [{"from": "pm"}])
+        span = re.findall(r"`([^`\n]+)`", text)[0]
+        self.assertTrue(span.startswith(runtime.yamato_invocation() + " inbox "), span)
+        # same prefix as the seat-stop rule, so the seat's own yamato allow rules cover it
+        self.assertTrue(rule_matches(f"Bash({runtime.yamato_invocation()} inbox:*)", "Bash", span))
+
+    def test_session_start_header(self):
+        from yamato import inject
+        from tests.test_research import rule_matches
+
+        text, _ = inject.build(self.shipdir, self.team(), "impl")
+        line = next(l for l in text.splitlines() if l.startswith("- yamato コマンド: "))
+        cmd = line[len("- yamato コマンド: "):].split(" (")[0]
+        self.assertEqual(cmd, runtime.yamato_invocation())
+        self.assertTrue(rule_matches(self.rule(), "Bash", f"{cmd} seat-stop {self.shipdir} impl"))
+
+    def test_session_start_wrap_up(self):
+        from yamato import deadline, inject
+
+        deadline.write(self.shipdir, limit=60, grace=600, token="t", now=time.time() - 120)
+        self.assertEqual(deadline.phase(deadline.read(self.shipdir)), deadline.OVER)
+        text, _ = inject.build(self.shipdir, self.team(), "impl")
+        self.assert_typable(text, "seat-stop")
+
+    def test_no_bare_script_path_in_seat_facing_text(self):
+        # every place that names the yamato command for a seat goes through yamato_invocation()
+        src = Path(YAMATO_BIN).parent / "src" / "yamato"
+        for f in ("hooks", "seat", "decide", "report", "memory", "inject", "headless"):
+            text = (src / f"{f}.py").read_text(encoding="utf-8")
+            with self.subTest(module=f):
+                self.assertNotIn("{YAMATO_BIN}", text)
+                self.assertNotIn("yamato=YAMATO_BIN", text)
 
 
 if __name__ == "__main__":
