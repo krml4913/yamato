@@ -135,6 +135,36 @@ class AdmiralTest(ShipTestCase):
         self.cli("up", str(self.shipdir))
         self.assertEqual(self.bg_names(), ["t1.pm"])
 
+    # --- up の再呼び出しが deadline を巻き戻さないこと (D-015) ---
+
+    def test_up_without_for_does_not_shrink_a_running_deadline(self):
+        # 艦がすでに稼働中で、extend で team.yaml の time_limit (3h) よりずっと先まで
+        # 延ばしてある。--for なしでもう一度 up (--seats で席を足すときの典型) を呼んでも、
+        # 締切は time_limit の既定 (now + 3h) には巻き戻らない。
+        self.run_cmd(seat.up, self.shipdir, "20m")
+        self.run_cmd(admiral.extend, self.shipdir, "5h")
+        before = deadline.read(self.shipdir)
+        self.assertGreater(before["deadline"] - time.time(), 3 * 3600)   # time_limit を超えて延びている
+        self.cli("up", str(self.shipdir), "--seats", "impl")
+        after = deadline.read(self.shipdir)
+        self.assertAlmostEqual(after["deadline"], before["deadline"], delta=2)
+        self.assertAlmostEqual(after["graceUntil"], after["deadline"] + before["grace"], delta=2)
+
+    def test_up_with_for_still_overwrites_explicitly(self):
+        # --for を明示したときは、縮める意図を尊重して今までどおり上書きする。
+        self.run_cmd(seat.up, self.shipdir, "2h")
+        self.run_cmd(admiral.extend, self.shipdir, "3h")
+        self.cli("up", str(self.shipdir), "--for", "10m")
+        after = deadline.read(self.shipdir)
+        self.assertAlmostEqual(after["deadline"], time.time() + 600, delta=2)
+
+    def test_up_without_for_uses_the_team_time_limit_when_not_up(self):
+        # 艦が稼働中でなければ (NOT_UP / OVER / FORCE)、--for なしはこれまでどおり
+        # team.yaml の time_limit を使う。
+        self.cli("up", str(self.shipdir))
+        after = deadline.read(self.shipdir)
+        self.assertAlmostEqual(after["deadline"], time.time() + self.team()["time_limit"], delta=2)
+
     # --- extend ---
 
     def test_extend_moves_deadline_and_grace(self):
