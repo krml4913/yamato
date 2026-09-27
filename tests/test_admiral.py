@@ -9,7 +9,7 @@ from contextlib import redirect_stdout
 from unittest import mock
 
 from tests.helpers import ShipTestCase
-from yamato import admiral, claude, cli, deadline, events, headless, inbox, report, roster, seat
+from yamato import admiral, board, claude, cli, deadline, events, headless, inbox, report, roster, seat
 from yamato.util import YamatoError
 
 
@@ -270,9 +270,29 @@ class AdmiralTest(ShipTestCase):
         self.set_session("pm", pid=None, state="blocked")   # liveness is the pid, not state
         self.assertNotIn("!!!", self.run_cmd(seat.status, self.shipdir))
 
+    def test_status_flags_a_live_per_task_seat_without_an_active_item(self):
+        # design-drift #11 / D-019
+        self.cli("up", str(self.shipdir), "--for", "1h")
+        self.cli("send", str(self.shipdir), "impl", "T-001")   # impl comes up and stays alive
+        rc, out = self.cli("status", str(self.shipdir))
+        self.assertIn("!!! impl: per_task の席が生きているのに担当", out)
+
+    def test_status_does_not_flag_a_per_task_seat_with_an_active_item(self):
+        self.cli("up", str(self.shipdir), "--for", "1h")
+        self.cli("send", str(self.shipdir), "impl", "T-001")
+        board.Board(self.shipdir, self.team()).add("T-001", {"assignee": "impl", "state": "active"}, by="pm")
+        rc, out = self.cli("status", str(self.shipdir))
+        self.assertNotIn("!!!", out)
+
+    def test_ships_counts_a_live_per_task_orphan_as_red(self):
+        self.cli("up", str(self.shipdir), "--for", "1h")
+        self.cli("send", str(self.shipdir), "impl", "T-001")
+        rc, out = self.cli("ships")
+        self.assertIn("赤 1 (impl)", out)
+
     def test_a_stopped_seat_is_not_red(self):
         team = self.team()
-        self.assertEqual(admiral.red_flags(team, {"lastActive": 1}, None, time.time()), [])
+        self.assertEqual(admiral.red_flags(team, "pm", {"lastActive": 1}, None, time.time()), [])
 
     # --- ships ---
 

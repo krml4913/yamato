@@ -8,7 +8,7 @@ from contextlib import redirect_stdout
 from unittest import mock
 
 from tests.helpers import ShipTestCase
-from yamato import deadline, events, inbox, roster, runtime, seat
+from yamato import board, deadline, events, inbox, roster, runtime, seat
 from yamato.util import YamatoError
 
 
@@ -403,6 +403,31 @@ class SeatTest(_SeatBase):
         self.assertEqual(second["shiftNo"], 2)
         self.assertEqual(self.resume_calls(), [])
         self.assertEqual(len(self.bg_calls()), 3)
+
+    def test_send_to_a_live_per_task_seat_without_an_active_item_warns_but_still_delivers(self):
+        # design-drift #11 / D-019: attach cannot be told apart from idle (docs/verify/
+        # verify-p0-c.md:135), so a live per_task orphan is never stopped -- only warned
+        self.up()
+        self.run_cmd(seat.send, self.shipdir, "impl", "T-001", "pm")   # starts impl's shift; it stays alive
+        out = self.run_cmd(seat.send, self.shipdir, "impl", "T-002", "pm")
+        self.assertIn('SendMessage ツールで to="t1.impl"', out)   # still delivered, not stopped
+        self.assertIn("担当 (active) の項目が無いのに生きている", out)
+        self.assertIn("自動では止めない", out)
+        self.assertEqual(len(self.bg_calls()), 2)   # no extra stop/relaunch happened
+
+    def test_send_to_a_live_per_task_seat_with_an_active_item_warns_the_other_way(self):
+        self.up()
+        self.run_cmd(seat.send, self.shipdir, "impl", "T-001", "pm")
+        board.Board(self.shipdir, self.team()).add("T-001", {"assignee": "impl", "state": "active"}, by="pm")
+        out = self.run_cmd(seat.send, self.shipdir, "impl", "T-002", "pm")
+        self.assertIn('SendMessage ツールで to="t1.impl"', out)
+        self.assertIn("前の task (T-001) の会話のまま生きている", out)
+        self.assertNotIn("自動では止めない", out)
+
+    def test_send_to_a_live_persistent_seat_is_never_flagged_as_a_per_task_orphan(self):
+        self.up()
+        out = self.run_cmd(seat.send, self.shipdir, "pm", "report", "impl")
+        self.assertNotIn("担当 (active) の項目が無いのに生きている", out)
 
     def test_send_past_deadline_does_not_wake_and_tells_sender_to_wrap_up(self):
         self.up()
