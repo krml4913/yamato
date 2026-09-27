@@ -82,6 +82,39 @@ class FeedTailTest(unittest.TestCase):
             self.assertEqual(got[0]["summary"], "new one")
             it.close()
 
+    def test_follow_joins_a_line_written_in_two_parts(self):
+        # PR #37 のレビュー指摘: follow 中の readline() が改行の来ていない
+        # 書きかけの行を返すと、そのまま parse に失敗して 1 件消えてしまう。
+        # 半分書いて poll (readline が "" を返す) を挟み、残りを書いてから
+        # ちょうど 1 件だけ出ることを確かめる。
+        _write(self.shipdir, events.SEND, seat="pm", summary="history")
+        line = json.dumps({"kind": "send", "seat": "pm", "summary": "split write"}) + "\n"
+        half = len(line) // 2
+        with mock.patch.object(feed, "POLL", 0):
+            it = feed.tail(self.shipdir, lines=1, follow=True)
+            first = next(it)
+            self.assertEqual(first["summary"], "history")
+
+            got = []
+
+            def reader():
+                got.append(next(it))
+
+            t = threading.Thread(target=reader, daemon=True)
+            t.start()
+            time.sleep(0.05)  # give the reader a moment to block on readline (sees "" -> sleeps)
+            with open(self.shipdir / "events.jsonl", "a", encoding="utf-8") as f:
+                f.write(line[:half])  # 改行なし: 書きかけ
+            time.sleep(0.05)  # readline がこの書きかけを一度読んで pending に溜めるだけの間
+            self.assertTrue(t.is_alive(), "書きかけだけで next() が返ってはいけない")
+            with open(self.shipdir / "events.jsonl", "a", encoding="utf-8") as f:
+                f.write(line[half:])  # 残りを書いて改行で閉じる
+            t.join(timeout=5)
+            self.assertFalse(t.is_alive())
+            self.assertEqual(len(got), 1)
+            self.assertEqual(got[0]["summary"], "split write")
+            it.close()
+
     def test_follow_waits_for_the_file_to_appear(self):
         with mock.patch.object(feed, "POLL", 0):
             it = feed.tail(self.shipdir, follow=True)

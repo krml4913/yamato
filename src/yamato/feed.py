@@ -114,6 +114,7 @@ def tail(shipdir: Path, *, lines: int = DEFAULT_LINES, kinds: str | Iterable[str
 
         if not follow:
             return
+        pending = ""  # 改行で終わっていない書きかけの読みを溜めておく (改行が来てから parse する)
         while True:
             if f is None:
                 try:
@@ -123,9 +124,13 @@ def tail(shipdir: Path, *, lines: int = DEFAULT_LINES, kinds: str | Iterable[str
                     continue
             raw = f.readline()
             if raw:
-                e = _parse_line(raw)
-                if e is not None and matches(e):
-                    yield e
+                pending += raw
+                if pending.endswith("\n"):
+                    e = _parse_line(pending)
+                    pending = ""
+                    if e is not None and matches(e):
+                        yield e
+                # 改行が無ければ書きかけ。pending に残したまま次の readline を待つ
             else:
                 time.sleep(poll)
     finally:
@@ -168,7 +173,7 @@ def run_feed(shipdir: Path, *, lines: int = DEFAULT_LINES, kinds: str | Iterable
         pass
 
 
-# --- CLI (cli.py への配線は T-006 の merge 後。ここでは定義だけ) -----------------
+# --- CLI (cli.py に配線済み: register を parser 組み立てで、run を dispatch で呼ぶ) ---
 
 def register(sub) -> None:
     f = sub.add_parser("feed", help="艦の出来事 (events.jsonl) を流し見する (tail -f の要領)")
