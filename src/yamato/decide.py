@@ -26,7 +26,8 @@ from pathlib import Path
 
 from . import board as bmod
 from . import events, inbox, notify, roster
-from .util import YAMATO_BIN, YamatoError, atomic_write, parse_duration, resolve_ship, ship_lock
+from .runtime import yamato_invocation
+from .util import YamatoError, atomic_write, parse_duration, resolve_ship, ship_lock
 
 OWNER = inbox.OWNER
 ID_PREFIX = "D-"
@@ -203,7 +204,7 @@ def deliver_open(shipdir: Path, team: dict, meta: dict, out=print) -> None:
     blocks = f" 止まっているもの: {', '.join(stopped)}。" if stopped else ""
     text = (f"{meta['id']} の判断を頼む ({meta['category']}){' [急ぎ]' if meta.get('urgent') else ''}: "
             f"{meta['title']}。{blocks}項目ファイル: {path} 。"
-            f"決めたら `{YAMATO_BIN} decide close {shipdir} {meta['id']} --choice \"...\" --reason \"...\"`")
+            f"決めたら `{yamato_invocation()} decide close {shipdir} {meta['id']} --choice \"...\" --reason \"...\"`")
     if decider == by:
         out(f"decider ({decider}) は開いた本人なので送らない。")
         return
@@ -334,7 +335,7 @@ def deliver_close(shipdir: Path, team: dict, result: dict, out=print) -> None:
                 + (f"{t['id']} は判断の前から blocked だったので blocked のまま。" if still
                    else f"{t['id']} の止まりが解けた (state={t.get('state')})。")
                 + "決定と理由は "
-                f"`{YAMATO_BIN} board show {shipdir} {meta['id']}` で読める")
+                f"`{yamato_invocation()} board show {shipdir} {meta['id']}` で読める")
         if to == meta["closed_by"]:
             out(f"{t['id']} の担当 ({to}) は閉じた本人なので送らない。")
             continue
@@ -344,7 +345,7 @@ def deliver_close(shipdir: Path, team: dict, result: dict, out=print) -> None:
     if opener in team["seats"] and opener != meta["closed_by"] and opener not in told:
         links = f" 結んだ項目: {', '.join(meta['links'])}。" if meta.get("links") else ""
         text = (f"{meta['id']} が決まった ({meta['title']}): {meta.get('on_behalf_of')} の決定「{result['choice']}」。"
-                f"{links}理由は `{YAMATO_BIN} board show {shipdir} {meta['id']}` で読める")
+                f"{links}理由は `{yamato_invocation()} board show {shipdir} {meta['id']}` で読める")
         seatmod.send(shipdir, opener, text, meta["closed_by"])
 
 

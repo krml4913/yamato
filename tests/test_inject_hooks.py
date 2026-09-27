@@ -131,7 +131,7 @@ class InjectTest(ShipTestCase):
         self.t["roles"]["impl"]["inject"] = [*self.t["inject"]["parts"], "fleet"]
         text, _ = self.build()
         section = self._fleet_section(text)
-        self.assertIn(f"## fleet (全艦の様子。全文は `{YAMATO_BIN} ships`)", section)
+        self.assertIn(f"## fleet (全艦の様子。全文は `{runtime.yamato_invocation()} ships`)", section)
         self.assertIn("t1", section)
         self.assertIn("t2", section)
         self.assertIn("停止中", section)   # neither ship was `up`
@@ -149,7 +149,7 @@ class InjectTest(ShipTestCase):
         self.assertIn("t1", section)
         self.assertNotIn("t2", section)
         self.assertNotIn("t3", section)
-        self.assertIn(f"…ほか 2 件 (`{YAMATO_BIN} ships` で見る)", section)
+        self.assertIn(f"…ほか 2 件 (`{runtime.yamato_invocation()} ships` で見る)", section)
 
     def test_fleet_part_survives_claude_agents_failure(self):
         """reviewer #16 (T-022 差し戻し): claude.agents() は失敗/タイムアウトで YamatoError
@@ -166,7 +166,7 @@ class InjectTest(ShipTestCase):
         section = self._fleet_section(text)
         self.assertIn("## fleet (全艦の様子", section)
         self.assertIn("claude agents を読めない: タイムアウトしました", section)
-        self.assertIn(f"`{YAMATO_BIN} ships`", section)
+        self.assertIn(f"`{runtime.yamato_invocation()} ships`", section)
 
     def test_inbox_capped_and_cursor_only_over_full_messages(self):
         for i in range(12):
@@ -259,9 +259,9 @@ class HookTest(ShipTestCase):
         self.assertIn("KNOW-X", data["additionalContext"])
         # two hooks with different commands (one command twice would be merged into one)
         settings = json.loads(runtime.settings_path(self.shipdir, "impl").read_text())
-        cmds = [h["command"] for g in settings["hooks"]["SessionStart"] for h in g["hooks"]]
+        cmds = [(h["command"], tuple(h["args"])) for g in settings["hooks"]["SessionStart"] for h in g["hooks"]]
         self.assertEqual(len(set(cmds)), 2)
-        self.assertTrue(any(" session-start-knowledge " in c for c in cmds))
+        self.assertTrue(any("session-start-knowledge" in args for _, args in cmds))
 
     def test_stop_hook_quiet_before_deadline(self):
         deadline.write(self.shipdir, limit=600, grace=60, token="t")
@@ -646,8 +646,8 @@ class HookTest(ShipTestCase):
 
     def test_pre_tool_use_hook_is_wired_and_skips_the_cli(self):
         settings = json.loads(runtime.settings_path(self.shipdir, "impl").read_text())
-        [cmd] = [h["command"] for g in settings["hooks"]["PreToolUse"] for h in g["hooks"]]
-        self.assertIn(" hook pre-tool-use ", cmd)
+        [h] = [h for g in settings["hooks"]["PreToolUse"] for h in g["hooks"]]
+        self.assertEqual(h["args"][1:3], ["hook", "pre-tool-use"])
         deadline.write(self.shipdir, limit=600, grace=60, token="t")
         cp = subprocess.run([sys.executable, "-X", "importtime", str(YAMATO_BIN), "hook", "pre-tool-use",
                              str(self.shipdir), "impl"], capture_output=True, text=True, stdin=subprocess.DEVNULL)

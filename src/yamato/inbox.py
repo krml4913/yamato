@@ -51,7 +51,7 @@ def append(shipdir: Path, seat: str, sender: str, text: str) -> dict:
         entry = {"n": n, "ts": time.time(), "from": sender, "text": text}
         path = _inbox(shipdir, seat)
         path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "a", encoding="utf-8") as f:
+        with open(path, "a", encoding="utf-8", newline="\n") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
         return entry
 

@@ -54,8 +54,11 @@ def register_ship(name: str, path: Path) -> None:
 
 
 def resolve_ship(ref: str) -> Path:
-    """A ship is given by name (registry, then ``$YAMATO_HOME/<name>``) or by path."""
-    if "/" in ref or ref.startswith(("~", ".")):
+    """A ship is given by name (registry, then ``$YAMATO_HOME/<name>``) or by path.
+
+    ``/`` is the POSIX path marker; Windows paths use ``\\`` too (``os.altsep``), e.g. a
+    bare ``C:\\Users\\x\\ship`` typed outside Git Bash (W1, work/windows-research.md §2.1)."""
+    if "/" in ref or (os.altsep and os.altsep in ref) or ref.startswith(("~", ".")):
         path = Path(ref).expanduser().resolve()
     else:
         reg = load_registry()
@@ -93,7 +96,9 @@ def atomic_write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
+        # newline="\n": otherwise Windows' text-mode write turns every "\n" already in
+        # `text` into "\r\n" (jsonl/markdown records would pick up CRLF, W1 §2.2)
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
             f.write(text)
         _replace(tmp, path)
     except BaseException:
@@ -179,8 +184,29 @@ def lock_file(f) -> None:
         fcntl.flock(f, fcntl.LOCK_EX)
 
 
+def try_lock_file(f) -> bool:
+    """Non-blocking ``lock_file``: True once ``f`` is locked, False if another holder has
+    it right now. ``msvcrt.locking(LK_NBLCK)`` already makes one attempt and gives up, so
+    it doubles as the Windows side of this (headless.py's own run-lock used to import
+    ``fcntl`` at module level for the same POSIX half, W1 §2.1)."""
+    if os.name == "nt":
+        import msvcrt
+        f.seek(0)
+        try:
+            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+        except OSError:
+            return False
+        return True
+    import fcntl
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return False
+    return True
+
+
 def unlock_file(f) -> None:
-    """Release a lock taken with ``lock_file``."""
+    """Release a lock taken with ``lock_file`` / ``try_lock_file``."""
     if os.name == "nt":
         import msvcrt
         f.seek(0)
@@ -248,5 +274,5 @@ def append_log(shipdir: Path, seat: str, text: str) -> None:
     """Append one line to the seat's work log (``seats/<seat>/log/<date>.md``)."""
     path = Path(shipdir) / "seats" / seat / "log" / f"{today()}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "a", encoding="utf-8") as f:
+    with open(path, "a", encoding="utf-8", newline="\n") as f:
         f.write(f"- {time.strftime('%H:%M:%S')} {text}\n")

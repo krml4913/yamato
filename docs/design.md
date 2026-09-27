@@ -174,13 +174,13 @@ owner (人間)
     --add-dir <ship> -- "<最初のプロンプト>"
   ```
   - `--settings <ship>/.runtime/settings-<seat>.json`: **席ごと**のファイル。hook のコマンドに席名を埋め込むため。hooks、`crossSessionInbound: "accept"`、権限 (auto モード + `deny`) が入る。1 本にまとめて渡す (2 回渡すと片方しか効かない、検証 B)
-  - `--agents '<json>'`: 役割の定義。艦フォルダの `roles/<role>.md` から `.runtime/agents.json` に生成する (ファイルパス指定は `--print` のときだけなので、JSON 文字列で渡す)。役割プロンプトの `{{yamato}}` などは生成時に置き換える
+  - `--agents '<json>'`: 役割の定義。艦フォルダの `roles/<role>.md` から `.runtime/agents.json` に生成する (ファイルパス指定は `--print` のときだけなので、JSON 文字列で渡す)。役割プロンプトの `{{yamato}}` などは生成時に置き換える。`{{yamato}}` は「yamato を動かしているインタプリタ + `yamato` スクリプト」の 2 語 (`<sys.executable> <repo>/yamato`、各語をシェルの引用で包む) になる。shebang の `python3` に頼らないため (Windows の Git Bash に `python3` は無い)。役割プロンプトと permission 規則 (`Bash({{yamato}} ...)`、`seat-stop` の allow) が同じ形を使うので、規則は席が打つ文字列とそのまま当たる
   - `--add-dir <ship>`: 記録を読み書きできるようにする。`--add-dir` は複数の値を取って後ろのプロンプトまで食うので、プロンプトの前に `--` を置く
   - `--setting-sources project,local`: ユーザー設定 (`~/.claude`) の plugin hooks・言語設定・CLAUDE.md を席に持ち込まない (検証 B Q3)。作業対象の repo の設定は効く
   - `env -u`: team.yaml の `env_unset` の環境変数を外して起動する (ひな形の既定は空。D-003: gh の権限はトークンのスコープで絞り、env_unset は席から外したい環境変数があるときの道具)。**bg の席には効かない** (検証 C Q2。下の検証済み) ので、同じ名前を席の settings の `env` に空文字で書く。`env -u` が効くのは `-p` (headless) だけ。呼び出し元のセッションの識別子 (`CLAUDE_CODE_SESSION_ID` など) は、新しい席に漏らさないよう常に外す (技術的な理由)
   - 起動の成否: `claude --bg` は worker が起動前に落ちても exit 0 で `backgrounded · <id>` を出す (検証 C Q5)。`yamato up` と `send` は起動・resume のあとに `claude agents --json` を見て、pid が付くのを確かめる。`state == failed` や pid なしは失敗として roster (`launchFailed`) と events (`launch_failed`) に残し、送り手にエラーを返す (design-p1 §5.1)
 - `.runtime/` は `yamato up` のたびに team.yaml から作り直す。settings はパスで渡すので、resume のときにファイルが読み直され、変更が次のシフトから効く (検証 B Q2)。hook は YAML を読まず、`.runtime/team.json` (team.yaml の検証済みの写し) を読む。ただし deadline は例外 (D-015): 艦がすでに稼働中 (RUNNING) なら、`--for` なしの `up` は締切を縮めない (`max(now + time_limit, 今の締切)`)。`--for` を明示したときは今までどおりその値で書く
-- hook のコマンドには、艦の場所と席名を**引数として埋め込む**。環境変数では渡さない。Claude Code の常駐 daemon が環境変数を焼き付ける問題があるため (fleet #315 の教訓)
+- hook のコマンドには、艦の場所と席名を**引数として埋め込む**。環境変数では渡さない。Claude Code の常駐 daemon が環境変数を焼き付ける問題があるため (fleet #315 の教訓)。hook は **exec form** (`command` = `sys.executable`、`args` = [`yamato` スクリプト, `hook`, イベント名, 艦, 席]) で、シェルを通さない (引用が要らず、シェルの profile の出力が JSON に混ざらず、Windows でも同じ形。Windows の exec form は `command` が `.exe` であることを求める (W1))。
 - 作業対象の repo 自身の CLAUDE.md と設定は、そのまま効く (上乗せになる)。プロジェクトの規律はそちらが担う
 - 席の作業ディレクトリは、Claude Code の workspace trust を事前に通しておく必要がある (bg の席は trust を対話で通せない。trust は git root ごと)。`ship create` は通っていなければ警告し、`up` は手順を出して止まる。yamato は trust を自動で承認しない
   - trust の確かめ方: 本当の判定は、`claude --bg` の出力の `Workspace not trusted` で行う (起動を失敗扱いにして手順を出す)。起動の前にも `~/.claude.json` の `projects[<git root>].hasTrustDialogAccepted` を見るが、これは Claude Code の内部のファイルで、安定したインターフェースではない (§4)。そのため結果は「trust 済み / trust されていない / 分からない」の 3 値にする。ファイルが無い・読めない・形が違うときは「分からない」で、警告を出して起動し、claude の出力で判定する。起動の前に断るのは、はっきり「trust されていない」ときだけ (`up`・新しいシフト・`send --cwd`。`ship create` は警告だけ)

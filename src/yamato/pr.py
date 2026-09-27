@@ -43,7 +43,8 @@ def gh_bin() -> str:
 
 def gh(args: list[str], cwd: Path, check: bool = True) -> subprocess.CompletedProcess:
     try:
-        cp = subprocess.run([gh_bin(), *args], cwd=str(cwd), capture_output=True, text=True, timeout=180)
+        cp = subprocess.run([gh_bin(), *args], cwd=str(cwd), capture_output=True, text=True,
+                            encoding="utf-8", errors="replace", timeout=180)
     except FileNotFoundError:
         raise YamatoError(f"gh コマンドが見つかりません ({gh_bin()})") from None
     except subprocess.TimeoutExpired:

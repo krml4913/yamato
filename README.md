@@ -131,6 +131,18 @@ notify:
 - 日報 (design-p1 §2): `report.daily: on_down` (ひな形の既定) の艦では、`down`・強制停止のときにその日の日報が無ければ事実だけで作り、日報を作った・送ったあとに日報に載る出来事 (board・判断・PR・異常の events) があれば「一言」「明日」を残して事実の節を作り直し、まだ送っていないか、最後に送ったあとに変化があれば要約を送る (2 回目は件名に「(更新)」。captain が落ちていても owner に届く安全網。同じ日の 2 回目の終業にも効く)。captain が終業時に「一言」「明日」を書いて `report send` する流れは `roles/pm.md` に書いてある。captain の注入には `inject` の `last_report` で前回の日報の「一言」「owner の判断待ち」「明日」だけが入る
 - `PushNotification` は方式にしない (席の外から出せない。[verify-p1-d](docs/verify/verify-p1-d.md) V11)
 
+## Windows + Git Bash
+
+Windows ネイティブの Claude Code と、Git for Windows の Git Bash から動かす形に対応している途中 (W1 まで。設計と調査は `work/windows-research.md`、実機の検証手順は [verify-win-plan](docs/verify/verify-win-plan.md))。macOS の動作は変わらない。
+
+- 要るもの: Windows ネイティブの Python 3.11+ (python.org 版など)、Claude Code、Git for Windows。**Python の名前は `python`** (python.org のインストーラーは `python3.exe` を作らない。`py -3` でもよい)。yamato の入口は `python <repo>/yamato ...` で打つ。人が短く打ちたいなら Git Bash の alias (`alias yamato='python /c/path/to/yamato/yamato'`) か `yamato.cmd` を自分で作る
+- 席と hook は Python の名前に依存しない: hook は exec form (`sys.executable` + `args`) で、役割プロンプトの `{{yamato}}` も `<インタプリタのフルパス> <yamato のパス>` の 2 語に展開される。`yamato up` を動かした Python が、そのまま席の Bash でも使われる
+- `claude`: `PATH` から `shutil.which` で探す。npm 版の `claude.cmd` は `cmd /c` を挟んで起動する。見つからない・別の場所にあるときは `YAMATO_CLAUDE` にフルパス (`claude.exe` が確実) を書く。`gh` は `YAMATO_GH`
+- 改行と文字コード: リポジトリは `.gitattributes` で LF に固定してある (`core.autocrlf=true` でも `yamato` の shebang は壊れない)。yamato は標準入出力を UTF-8 にし (入口で `reconfigure`)、子プロセスの出力も UTF-8 で読み、記録は LF で書く。日本語の Windows (cp932) でも化けない
+- Git Bash の MSYS のパス変換: `/` で始まる引数 (`yamato log <艦> <席> "/review 済み"` など) は Windows のパスに書き換えられる。止めたいときは `MSYS_NO_PATHCONV=1`
+- `notify.command` は Windows では `cmd.exe` で動く (シェルの書き方は艦の設定で決める)
+- まだ動かないもの (W3 以降、W0 の実機検証のあと): 席の切り離し起動・生死の判定・停止・遅延 stop・`admiral talk`・permission 規則のパスの形。**deny が実機で当たることを確かめるまで、Windows で無人の席を出さない**
+
 ## テストの実行
 
 ```sh

@@ -106,7 +106,7 @@ def open_ships(refs: list[str] | None = None, *, command: str | None = None,
         for ref in refs:
             text = layout.layout_for([ref], command)
             fd, tmp = tempfile.mkstemp(prefix="yamato-view-", suffix=".kdl")
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
                 f.write(text)
             try:
                 _zellij(run, ["action", "new-tab", "--layout", tmp])
@@ -121,7 +121,7 @@ def open_ships(refs: list[str] | None = None, *, command: str | None = None,
     path = Path(output) if output else yamato_home() / "view.kdl"
     path.parent.mkdir(parents=True, exist_ok=True)
     old_text = path.read_text(encoding="utf-8") if path.exists() else None
-    path.write_text(text, encoding="utf-8")
+    path.write_text(text, encoding="utf-8", newline="\n")
 
     if _session_exists(run, session):
         if old_text == text:

@@ -1,4 +1,5 @@
 import json
+import sys
 import unittest
 
 from tests.helpers import ShipTestCase
@@ -13,7 +14,7 @@ class RuntimeTest(ShipTestCase):
         s = json.loads(runtime.settings_path(self.shipdir, "impl").read_text())
         self.assertEqual(s["crossSessionInbound"], "accept")
         self.assertEqual(s["permissions"]["defaultMode"], "auto")
-        self.assertEqual(s["permissions"]["allow"], [f"Bash({YAMATO_BIN} seat-stop:*)"])
+        self.assertEqual(s["permissions"]["allow"], [f"Bash({runtime.yamato_invocation()} seat-stop:*)"])
         self.assertNotIn("ask", s["permissions"])
         deny = s["permissions"]["deny"]
         # the deny list comes from the template's team.yaml ({{ship}} expanded), not from code
@@ -21,12 +22,14 @@ class RuntimeTest(ShipTestCase):
                      "Bash(gh pr create*)", f"Edit(/{self.shipdir}/roster.json)"):
             self.assertIn(rule, deny)
         self.assertEqual(s["worktree"], {"bgIsolation": "none"})  # template `settings:`
-        cmds = [h["command"] for ev in s["hooks"].values() for grp in ev for h in grp["hooks"]]
-        self.assertTrue(all(c.startswith(str(YAMATO_BIN) + " hook ") for c in cmds))
-        self.assertTrue(all(c.endswith(f"{self.shipdir} impl") for c in cmds))
+        # exec form (W1): no shell string. command = the interpreter, args = script + "hook <event> <ship> <seat>"
+        hooks = [h for ev in s["hooks"].values() for grp in ev for h in grp["hooks"]]
+        self.assertTrue(all(h["command"] == sys.executable for h in hooks))
+        self.assertTrue(all(h["args"][:2] == [str(YAMATO_BIN), "hook"] for h in hooks))
+        self.assertTrue(all(h["args"][-2:] == [str(self.shipdir), "impl"] for h in hooks))
         waiter = s["hooks"]["Stop"][0]["hooks"][1]
         self.assertTrue(waiter["async"] and waiter["asyncRewake"])
-        self.assertIn("wait-deadline", waiter["command"])
+        self.assertIn("wait-deadline", waiter["args"])
         self.assertTrue(set(s["hooks"]) >= {"SessionStart", "UserPromptSubmit", "Stop", "PermissionRequest", "PermissionDenied"})
 
     def test_dev_template_keeps_web_away_from_the_merge_role(self):
@@ -64,7 +67,7 @@ class RuntimeTest(ShipTestCase):
         self.assertEqual(s["permissions"]["deny"], [])
         self.assertEqual(s["worktree"], {"bgIsolation": "auto"})
         self.assertEqual(s["language"], "English")
-        self.assertEqual(s["permissions"]["allow"], ["Bash(make test)", f"Bash({YAMATO_BIN} seat-stop:*)"])
+        self.assertEqual(s["permissions"]["allow"], ["Bash(make test)", f"Bash({runtime.yamato_invocation()} seat-stop:*)"])
         # what the mechanism needs is not overridable
         self.assertEqual(s["permissions"]["defaultMode"], "auto")
         self.assertEqual(s["crossSessionInbound"], "accept")

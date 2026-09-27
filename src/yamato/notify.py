@@ -95,7 +95,7 @@ def _send_command(team: dict, cfg: dict, title: str, text: str, level: str) -> s
     env = dict(os.environ, YAMATO_TITLE=title, YAMATO_MESSAGE=text, YAMATO_LEVEL=level)
     payload = json.dumps({"title": title, "message": text, "level": level})
     cp = subprocess.run(cfg["command"], shell=True, env=env, input=payload, capture_output=True,
-                        text=True, timeout=COMMAND_TIMEOUT)
+                        text=True, encoding="utf-8", errors="replace", timeout=COMMAND_TIMEOUT)
     if cp.returncode != 0:
         raise RuntimeError(f"exit {cp.returncode}: {(cp.stderr or '').strip()[:200]}")
     return "exit 0"
@@ -132,7 +132,8 @@ def _send_mac(team: dict, cfg: dict, title: str, text: str, level: str) -> str:
         raise _Skip("macOS ではない")
     body = _one_line(f"{emoji(level)} {text}", MAC_BODY_CHARS)
     script = f"display notification {_q(body)} with title {_q(_one_line(title, TITLE_CHARS))}"
-    cp = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=TIMEOUT)
+    cp = subprocess.run(["osascript", "-e", script], capture_output=True, text=True,
+                        encoding="utf-8", errors="replace", timeout=TIMEOUT)
     if cp.returncode != 0:
         raise RuntimeError(f"exit {cp.returncode}: {(cp.stderr or '').strip()[:200]}")
     return "exit 0"

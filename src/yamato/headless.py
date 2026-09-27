@@ -19,7 +19,6 @@ where it goes is a setting, that it is fixed-form is the safety net.
 """
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import signal
@@ -33,7 +32,8 @@ from pathlib import Path
 from . import board as board_mod
 from . import claude, deadline, events, inbox, notify, roster, runtime, usage
 from .team import seat_spec
-from .util import YAMATO_BIN, YamatoError, append_log
+from .runtime import yamato_invocation
+from .util import YAMATO_BIN, YamatoError, append_log, lock_file, try_lock_file, unlock_file
 
 REPORTER = "yamato"   # the `from` of the end-of-shift report: not a seat, so nobody owes a SendMessage
 POLL = 1.0            # seconds between time-limit checks while claude -p runs
@@ -57,23 +57,21 @@ def _lock_path(shipdir: Path, seat: str, kind: str) -> Path:
 def _try_lock(path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
     f = open(path, "a")
-    try:
-        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        f.close()
-        return None
-    return f
+    if try_lock_file(f):
+        return f
+    f.close()
+    return None
 
 
 def _lock(path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
     f = open(path, "a")
-    fcntl.flock(f, fcntl.LOCK_EX)
+    lock_file(f)
     return f
 
 
 def _release(f) -> None:
-    fcntl.flock(f, fcntl.LOCK_UN)
+    unlock_file(f)
     f.close()
 
 
@@ -136,7 +134,8 @@ def live_pid(rec: dict) -> int | None:
     if not pid or not sid:
         return None
     try:
-        cp = subprocess.run(["ps", "-p", str(int(pid)), "-o", "command="], capture_output=True, text=True, timeout=10)
+        cp = subprocess.run(["ps", "-p", str(int(pid)), "-o", "command="], capture_output=True, text=True,
+                            encoding="utf-8", errors="replace", timeout=10)
     except (OSError, subprocess.TimeoutExpired, ValueError):
         return None
     return int(pid) if cp.returncode == 0 and sid in cp.stdout else None
@@ -210,7 +209,7 @@ def run(shipdir: Path, seat: str) -> int:
 
 
 def first_prompt(shipdir: Path, seat: str) -> str:
-    y = YAMATO_BIN
+    y = yamato_invocation()
     return (f"[yamato] headless のシフト開始 (この 1 回の実行で終わります)。SessionStart で注入された引き継ぎ・"
             f"自分の担当・未読 inbox を確認し、役割どおりに仕事を進めてください。未読の続きは "
             f"`{y} inbox {shipdir} {seat}` で読めます。終える前に handoff.md "
@@ -230,7 +229,7 @@ class _Stream:
         self.message_ids: set = set()
 
     def __call__(self) -> None:
-        with open(self.dest, "a", encoding="utf-8") as out:
+        with open(self.dest, "a", encoding="utf-8", newline="\n") as out:
             for line in self.src:
                 out.write(line)
                 out.flush()
