@@ -42,8 +42,10 @@ class RuntimeTest(ShipTestCase):
         self.assertNotIn("WebSearch", impl_deny)
 
     def test_env_unset_blanked_in_settings_env(self):
-        # e2e-p1 D: a bg seat inherits the daemon's environment; `env -u` at launch misses it
+        # e2e-p1 D: a bg seat inherits the daemon's environment; `env -u` at launch misses it.
+        # D-003: env_unset の既定は空なので、この艦は明示して使う (道具としては残る)
         team = self.team()
+        team["env_unset"] = ["GH_TOKEN", "GITHUB_TOKEN"]
         team["settings"] = {"env": {"GH_TOKEN": "leak", "YAMATO_GH": "/x/gh"}}
         runtime.generate(self.shipdir, team)
         env = json.loads(runtime.settings_path(self.shipdir, "impl").read_text())["env"]

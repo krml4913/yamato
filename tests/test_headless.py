@@ -105,7 +105,7 @@ class HeadlessTest(_Base):
         [call] = self.p_calls()
         a = call["argv"]
         self.assertEqual(call["cwd"], str(self.workspace))
-        self.assertIsNone(call["GH_TOKEN"])                  # env_unset
+        self.assertEqual(call["GH_TOKEN"], "x")  # D-003: env_unset の既定は空。gh の権限はトークン側で絞る
         self.assertIsNone(call["CLAUDE_CODE_CHILD_SESSION"])  # the caller's markers (transcript saving)
         self.assertTrue(call["stdin_is_devnull"])            # < /dev/null (V1)
         self.assertNotIn("--bare", a)                        # bare = Not logged in (V1)
