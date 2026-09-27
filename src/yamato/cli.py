@@ -130,6 +130,7 @@ def _parser() -> argparse.ArgumentParser:
     e.add_argument("ship")
     e.add_argument("seat")
     e.add_argument("session_id")
+    e.add_argument("--forced", action="store_true")
     return p
 
 
@@ -293,7 +294,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd == "_watchdog":
             return seat.watchdog(Path(args.ship), args.token)
         if args.cmd == "_shift-ended":
-            return seat.shift_ended(Path(args.ship), args.seat, args.session_id)
+            return seat.shift_ended(Path(args.ship), args.seat, args.session_id, args.forced)
     except YamatoError as e:
         print(f"yamato: {e}", file=sys.stderr)
         return 1

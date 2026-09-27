@@ -44,11 +44,12 @@ def create(name: str, workspace: str | None, path: str | None, template: str) ->
     ensure_seat_dirs(shipdir, team)
     register_ship(name, shipdir)
     warnings = list(team.get("warnings") or [])
-    from .claude import is_trusted, untrusted_message
+    from .claude import is_trusted, unknown_trust_message, untrusted_message
 
     if ws is not None and ws != Path(team["workspace"]):
         warnings.append(f"ひな形 {template} は --workspace を使わない (席の作業ディレクトリは {team['workspace']})")
     ws = Path(team["workspace"])
-    if not is_trusted(ws):
-        warnings.append(untrusted_message(ws))
+    trusted = is_trusted(ws)
+    if not trusted:
+        warnings.append(untrusted_message(ws) if trusted is False else unknown_trust_message(ws))
     return shipdir, warnings

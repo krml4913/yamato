@@ -1,12 +1,15 @@
 import io
 import json
+import subprocess
+import sys
 import time
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
 from tests.helpers import ShipTestCase
-from yamato import board, deadline, hooks, inbox, inject, roster, runtime
+from yamato import board, deadline, hooks, inbox, inject, pretool, roster, runtime, seat
+from yamato.util import YAMATO_BIN
 
 
 class InjectTest(ShipTestCase):
@@ -240,6 +243,116 @@ class HookTest(ShipTestCase):
         code, _, err = self.run_hook(hooks.wait_deadline, {})
         self.assertIn("seat-stop", err)
         self.assertNotIn("未読", err)
+
+    # --- the time limit inside a long turn (§0 B4) ---
+
+    def past(self, grace_left: float):
+        """Deadline passed; ``grace_left`` seconds of grace left (negative: past the grace too)."""
+        deadline.write(self.shipdir, limit=0, grace=600, token="t", now=time.time() - 600 + grace_left)
+
+    def test_pre_tool_use_quiet_while_running(self):
+        deadline.write(self.shipdir, limit=600, grace=60, token="t")
+        self.assertEqual(self.run_hook(hooks.pre_tool_use, {"tool_name": "Bash"}), (0, "", ""))
+        self.assertEqual(pretool.main(str(self.shipdir), "impl"), 0)
+        self.assertEqual(pretool.main(str(self.tmp / "no-ship"), "impl"), 0)   # not up
+
+    def test_pre_tool_use_wrapup_shares_the_count_with_stop(self):
+        self.past(300)
+        code, out, _ = self.run_hook(hooks.pre_tool_use, {"tool_name": "Bash"})
+        d = json.loads(out)["hookSpecificOutput"]
+        self.assertEqual((code, d["hookEventName"]), (0, "PreToolUse"))
+        self.assertNotIn("permissionDecision", d)   # the tool still runs: the seat has to wrap up
+        self.assertIn("seat-stop", d["additionalContext"])
+        self.run_hook(hooks.pre_tool_use, {})
+        self.assertTrue(self.run_hook(hooks.stop, {})[1])   # the third and last
+        self.assertEqual(self.run_hook(hooks.pre_tool_use, {})[1], "")
+        self.assertEqual(self.run_hook(hooks.stop, {})[1], "")
+
+    def test_pre_tool_use_denies_and_stops_the_seat_once_past_the_grace(self):
+        self.past(-1)
+        with mock.patch.object(seat, "spawn_delayed_stop") as spawn:
+            outs = [self.run_hook(hooks.pre_tool_use, {"session_id": "s" * 36, "tool_name": "Bash"})[1]
+                    for _ in range(3)]
+            spawn.assert_called_once_with(self.shipdir, "impl", "s" * 36, hooks.FORCE_STOP_AFTER, forced=True)
+            for o in outs:
+                d = json.loads(o)["hookSpecificOutput"]
+                self.assertEqual(d["permissionDecision"], "deny")
+                self.assertIn("止めます", d["permissionDecisionReason"])
+            # the fast path hands over past the deadline
+            with redirect_stdout(io.StringIO()) as buf, mock.patch("sys.stdin", io.StringIO("{}")):
+                self.assertEqual(pretool.main(str(self.shipdir), "impl"), 0)
+            self.assertIn('"deny"', buf.getvalue())
+            # another session of the seat gets its own stop
+            self.run_hook(hooks.pre_tool_use, {"session_id": "t" * 36})
+            self.assertEqual(spawn.call_count, 2)
+            # a persistent seat resumes under the same session id: the next shift is stopped too
+            roster.start_shift(self.shipdir, "impl", session_id="t" * 36, short_id="tttttttt",
+                               session_name="t1.impl", how="resume")
+            self.run_hook(hooks.pre_tool_use, {"session_id": "t" * 36})
+            self.assertEqual(spawn.call_count, 3)
+            # a stop that did not take is tried again
+            self.run_hook(hooks.pre_tool_use, {"session_id": "t" * 36})
+            self.assertEqual(spawn.call_count, 3)
+            with mock.patch.object(hooks.time, "time", return_value=time.time() + hooks.FORCE_STOP_RETRY):
+                self.run_hook(hooks.pre_tool_use, {"session_id": "t" * 36})
+        self.assertEqual(spawn.call_count, 4)
+        self.assertIn("強制停止", next((self.shipdir / "seats/impl/log").glob("*.md")).read_text())
+
+    def test_pre_tool_use_denies_even_if_the_stop_cannot_be_set(self):
+        self.past(-1)
+        with mock.patch.object(seat, "spawn_delayed_stop", side_effect=OSError("no sh")):
+            code, out, err = self.run_hook(hooks.pre_tool_use, {"session_id": "s" * 36})
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.assertIn("no sh", err)
+
+    def test_headless_seat_past_the_grace_is_left_to_its_wrapper(self):
+        self.past(-1)
+        team = self.team()
+        team["seats"]["impl"]["shift"] = "headless"
+        with mock.patch.object(hooks, "runtime_team", return_value=team), \
+                mock.patch.object(seat, "spawn_delayed_stop") as spawn:
+            out = self.run_hook(hooks.pre_tool_use, {"session_id": "s" * 36})[1]
+            self.assertEqual(self.run_hook(hooks.stop, {"session_id": "s" * 36})[1], "")
+        self.assertEqual(json.loads(out)["hookSpecificOutput"]["permissionDecision"], "deny")
+        spawn.assert_not_called()
+
+    def test_stop_hook_past_the_grace_stops_instead_of_blocking(self):
+        self.past(-1)
+        with mock.patch.object(seat, "spawn_delayed_stop") as spawn:
+            self.assertEqual(self.run_hook(hooks.stop, {"session_id": "s" * 36, "stop_hook_active": True})[1], "")
+        spawn.assert_called_once()
+
+    def test_wait_deadline_stops_an_idle_seat_past_the_grace(self):
+        self.past(-1)
+        with mock.patch.object(seat, "spawn_delayed_stop") as spawn:
+            self.assertEqual(self.run_hook(hooks.wait_deadline, {"session_id": "s" * 36})[0], 0)
+        spawn.assert_called_once()
+
+    def test_wait_deadline_keeps_watching_after_the_notices_run_out(self):
+        self.past(300)
+        for _ in range(hooks.MAX_WRAPUP_NOTICES):
+            hooks.take_wrapup_notice(self.shipdir, "impl", roster.seat(self.shipdir, "impl")["shiftNo"])
+
+        def grace_ends(_):
+            self.past(-1)
+
+        with mock.patch.object(hooks.time, "sleep", side_effect=grace_ends) as sleep, \
+                mock.patch.object(seat, "spawn_delayed_stop") as spawn:
+            self.assertEqual(self.run_hook(hooks.wait_deadline, {"session_id": "s" * 36})[0], 0)
+        sleep.assert_called_once()
+        spawn.assert_called_once()
+
+    def test_pre_tool_use_hook_is_wired_and_skips_the_cli(self):
+        settings = json.loads(runtime.settings_path(self.shipdir, "impl").read_text())
+        [cmd] = [h["command"] for g in settings["hooks"]["PreToolUse"] for h in g["hooks"]]
+        self.assertIn(" hook pre-tool-use ", cmd)
+        deadline.write(self.shipdir, limit=600, grace=60, token="t")
+        cp = subprocess.run([sys.executable, "-X", "importtime", str(YAMATO_BIN), "hook", "pre-tool-use",
+                             str(self.shipdir), "impl"], capture_output=True, text=True, stdin=subprocess.DEVNULL)
+        self.assertEqual((cp.returncode, cp.stdout), (0, ""))
+        loaded = [ln.rsplit("|", 1)[-1].strip() for ln in cp.stderr.splitlines() if "yamato" in ln]
+        self.assertEqual(loaded, ["yamato", "yamato.pretool"])
 
     def test_deny_dialog(self):
         code, out, _ = self.run_hook(hooks.deny_dialog, {"tool_name": "Write", "tool_input": {"file_path": "x"}})

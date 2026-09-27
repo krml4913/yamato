@@ -180,22 +180,39 @@ def main_repo_root(path: Path) -> Path | None:
     return git_root(path)
 
 
-def is_trusted(workspace: Path) -> bool:
+def is_trusted(workspace: Path) -> bool | None:
     """Trust is per git root; a non-git dir is covered by a trusted ancestor (verify-p0-b Q4).
-    A linked worktree inherits the trust of its main repo (verify-p1-d V6)."""
+    A linked worktree inherits the trust of its main repo (verify-p1-d V6).
+
+    ``~/.claude.json`` is Claude Code's internal file, not an interface (design §4): None
+    means "cannot tell" (missing, unreadable, another shape). Then ``launch()`` decides
+    from Claude's own ``Workspace not trusted``; only a clear False refuses beforehand."""
     try:
-        projects = json.loads(_claude_json().read_text()).get("projects", {})
-    except (FileNotFoundError, ValueError):
-        return False
+        data = json.loads(_claude_json().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    projects = data.get("projects") if isinstance(data, dict) else None
+    if not isinstance(projects, dict):
+        return None
 
     def ok(p: Path) -> bool:
-        return bool(projects.get(str(p), {}).get("hasTrustDialogAccepted"))
+        entry = projects.get(str(p))
+        return isinstance(entry, dict) and bool(entry.get("hasTrustDialogAccepted"))
 
     ws = Path(workspace).resolve()
     root = git_root(ws)
     if root is not None:
         return ok(root) or ok(main_repo_root(ws) or root)
     return any(ok(p) for p in (ws, *ws.parents))
+
+
+def check_trust(workspace: Path) -> str | None:
+    """Before a launch: refuse a clear "not trusted"; for "cannot tell", a warning to print
+    (the launch goes on and ``launch()`` sees Claude's own answer)."""
+    trusted = is_trusted(workspace)
+    if trusted is False:
+        raise YamatoError(untrusted_message(workspace))
+    return None if trusted else unknown_trust_message(workspace)
 
 
 # --- lifecycle -------------------------------------------------------------
@@ -303,12 +320,23 @@ def untrusted_message(workspace: Path) -> str:
             f"\n  (yamato は trust を自動では承認しません)")
 
 
+def unknown_trust_message(workspace: Path) -> str:
+    return (f"workspace の trust を {_claude_json()} から確かめられなかった: "
+            f"{main_repo_root(Path(workspace)) or Path(workspace)}\n"
+            "  そのまま起動し、trust されていなければ claude の出力で止める")
+
+
 # --- transcripts -----------------------------------------------------------
 
 def transcript_paths(session_id: str) -> list[Path]:
+    """Where Claude Code keeps the session's transcripts (an internal layout, design §4):
+    an empty list when they cannot be found or read, and the callers treat that as unknown."""
     base = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / "projects"
-    mains = list(base.glob(f"*/{session_id}.jsonl"))
-    subs = []
-    for m in mains:
-        subs += list((m.parent / session_id).glob("subagents/*.jsonl"))
+    try:
+        mains = list(base.glob(f"*/{session_id}.jsonl"))
+        subs = []
+        for m in mains:
+            subs += list((m.parent / session_id).glob("subagents/*.jsonl"))
+    except OSError:
+        return []
     return mains + subs

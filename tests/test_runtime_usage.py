@@ -118,6 +118,12 @@ class UsageTest(ShipTestCase):
         self.assertEqual(len(saved), 1)
         self.assertEqual(saved[0]["seat"], "impl")
         self.assertIn("計 177", usage.summary(line))
+        self.assertNotIn("unknown", line)
+
+    def test_usage_unknown_without_a_transcript(self):
+        line = usage.record(self.shipdir, "impl", session_id="no-such-session", shift_no=2, since=0)
+        self.assertTrue(line["unknown"])
+        self.assertIn("分からない", usage.summary(line))
 
 
 if __name__ == "__main__":

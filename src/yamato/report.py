@@ -325,8 +325,10 @@ def usage_lines(shipdir: Path, since: float, until: float) -> list[str]:
         return ["- シフト 0 回"]
     s = lambda k: sum(int(r.get(k) or 0) for r in rows)  # noqa: E731
     cache = s("cache_creation_input_tokens") + s("cache_read_input_tokens")
+    unknown = sum(1 for r in rows if r.get("unknown"))
     return [f"- シフト {len(rows)} 回 / 合計 入力 {_tokens(s('input_tokens'))}・出力 {_tokens(s('output_tokens'))}"
-            f"・cache {_tokens(cache)} トークン (席別は usage.jsonl)"]
+            f"・cache {_tokens(cache)} トークン (席別は usage.jsonl)"
+            + (f"。うち {unknown} 回は transcript を読めず、使用量が分からない" if unknown else "")]
 
 
 def _span_label(shipdir: Path, since: float, until: float, now: float) -> str:

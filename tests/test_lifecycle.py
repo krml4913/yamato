@@ -499,6 +499,12 @@ class SendCwdTest(_Base):
             self.run_cmd(seat.send, self.shipdir, "impl", "x", "pm", cwd=str(other))
         self.assertIn("trust", str(cm.exception))
 
+    def test_unknown_trust_warns_and_leaves_it_to_claude(self):
+        (self.config / ".claude.json").write_text("{broken")
+        out = self.run_cmd(seat.send, self.shipdir, "impl", "T-001", "pm", cwd=str(self.wt))
+        self.assertIn("確かめられなかった", out)
+        self.assertEqual(self.bg_calls()[-1]["cwd"], str(self.wt))
+
 
 class HeadlessCwdTest(ShipTestCase):
     def test_headless_shift_runs_in_the_directory(self):

@@ -14,8 +14,15 @@ from . import deadline, events, inbox, inject, roster
 from .team import runtime_team
 from .util import YAMATO_BIN, YamatoError, append_log, read_json, ship_lock, write_json
 
-MAX_WRAPUP_NOTICES = 3   # per shift; after that the grace-period force stop takes over
+MAX_WRAPUP_NOTICES = 3   # per shift, Stop and PreToolUse together; then the grace-period force stop takes over
 WAIT_POLL = 5            # seconds between checks (deadline, inbox) in the async watcher
+FORCE_STOP_AFTER = 5     # seconds from the hook to ``claude stop``: the denied call and the turn end first
+FORCE_STOP_RETRY = 60    # a seat still calling hooks this long after its forced stop gets another one
+
+FORCE_DENY_MESSAGE = (
+    "[yamato] 艦の稼働時間の上限と猶予を過ぎました。ツールはもう使えません。"
+    "このセッションは間もなく yamato が止めます。短い一言でこのターンを終えてください。"
+)
 
 INBOX_WAKE_MESSAGE = (
     "[yamato] inbox に未読があります ({count} 件、{senders} から)。"
@@ -93,6 +100,39 @@ def _needs_wrapup(shipdir: Path, seat: str) -> tuple[bool, dict]:
     return deadline.phase(deadline.read(shipdir)) in (deadline.OVER, deadline.FORCE), rec
 
 
+def _force_stop_path(shipdir: Path, seat: str) -> Path:
+    return Path(shipdir) / ".runtime" / f"force-stop-{seat}.json"
+
+
+def force_stop_self(shipdir: Path, seat: str, session_id: str | None, where: str) -> bool:
+    """Past deadline + grace, the seat's own hooks stop it, whether or not the watchdog
+    is still there (§0 B4): the delayed stop ``seat-stop`` uses, once per shift (a
+    persistent seat resumes under the same session id), again if the stop did not take.
+
+    A headless shift is left to its wrapper, which holds the time limit and ends
+    ``claude -p`` itself (the hooks only deny its tools). Returns whether a stop was set."""
+    team = runtime_team(shipdir)
+    spec = team["seats"].get(seat)
+    if spec is None or spec["shift"] == "headless":
+        return False
+    rec = roster.seat(shipdir, seat)
+    sid = session_id or rec.get("sessionId")
+    if not sid:
+        return False
+    path = _force_stop_path(shipdir, seat)
+    mark = {"sessionId": sid, "shiftNo": rec.get("shiftNo")}
+    with ship_lock(shipdir):   # parallel tool calls run their PreToolUse hooks at once
+        last = read_json(path, {}) or {}
+        if {k: last.get(k) for k in mark} == mark and time.time() - (last.get("at") or 0) < FORCE_STOP_RETRY:
+            return False
+        write_json(path, {**mark, "at": time.time()})
+    from . import seat as seat_mod
+
+    seat_mod.spawn_delayed_stop(shipdir, seat, sid, FORCE_STOP_AFTER, forced=True)
+    append_log(shipdir, seat, f"{where}: 猶予を過ぎた → {FORCE_STOP_AFTER} 秒後に強制停止 session={sid}")
+    return True
+
+
 def _wrapup_message(shipdir: Path, seat: str) -> str:
     return deadline.WRAP_UP_MESSAGE.format(yamato=YAMATO_BIN, ship=shipdir, seat=seat)
 
@@ -131,11 +171,15 @@ def _rotate_notice(shipdir: Path, team: dict, seat: str, rec: dict, data: dict) 
 
 
 def stop(shipdir: Path, seat: str) -> int:
-    """Past the deadline, block the end of the turn with the wrap-up order (§0 B4).
-    Otherwise, once each: the captain's last-call notice (design-p1 §9) and the
-    nudge to rotate (§5.4). At most one block per turn end."""
+    """Past the deadline, block the end of the turn with the wrap-up order (§0 B4);
+    past the grace period too, let the turn end and stop the seat. Otherwise, once
+    each: the captain's last-call notice (design-p1 §9) and the nudge to rotate
+    (§5.4). At most one block per turn end."""
     data = _stdin_json()
     _touch(shipdir, seat)
+    if deadline.phase(deadline.read(shipdir)) == deadline.FORCE:
+        force_stop_self(shipdir, seat, data.get("session_id"), "Stop hook")
+        return 0
     need, rec = _needs_wrapup(shipdir, seat)
     if data.get("stop_hook_active"):
         return 0
@@ -152,6 +196,33 @@ def stop(shipdir: Path, seat: str) -> int:
     reason = _last_call_notice(shipdir, team, seat, "Stop") or _rotate_notice(shipdir, team, seat, rec, data)
     if reason:
         _emit({"decision": "block", "reason": reason})
+    return 0
+
+
+def pre_tool_use(shipdir: Path, seat: str) -> int:
+    """Before every tool call (§0 B4): a seat that keeps working inside one long turn never
+    reaches its Stop hook. Past the deadline the tool runs with the wrap-up order beside it
+    (counted with the Stop hook's); past the grace period it is denied and the seat stopped.
+
+    The ``yamato`` entry runs ``pretool.main`` first, which returns while the ship is running
+    without importing this module."""
+    data = _stdin_json()
+    phase = deadline.phase(deadline.read(shipdir))
+    if phase == deadline.FORCE:
+        try:
+            force_stop_self(shipdir, seat, data.get("session_id"), "PreToolUse hook")
+        except Exception as e:  # noqa: BLE001 — the deny below must hold even so
+            sys.stderr.write(f"yamato: 強制停止を仕掛けられませんでした: {e}\n")
+        _emit({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                      "permissionDecisionReason": FORCE_DENY_MESSAGE}})
+        return 0
+    if phase != deadline.OVER:
+        return 0
+    need, rec = _needs_wrapup(shipdir, seat)
+    if need and take_wrapup_notice(shipdir, seat, rec.get("shiftNo")):
+        append_log(shipdir, seat, "PreToolUse hook: 稼働時間の上限 → 終業を指示")
+        _emit({"hookSpecificOutput": {"hookEventName": "PreToolUse",
+                                      "additionalContext": _wrapup_message(shipdir, seat)}})
     return 0
 
 
@@ -220,7 +291,7 @@ def wait_deadline(shipdir: Path, seat: str) -> int:
     Exit 2 with the message on stderr wakes the seat (verify-p0-a Q4). A
     pidfile keeps one watcher per seat, since every turn end spawns another.
     """
-    _stdin_json()
+    data = _stdin_json()
     try:
         seats = set(runtime_team(shipdir)["seats"])
     except (OSError, YamatoError, KeyError, TypeError):
@@ -242,18 +313,23 @@ def wait_deadline(shipdir: Path, seat: str) -> int:
             need, rec = _needs_wrapup(shipdir, seat)
             if rec.get("state") in (roster.STOPPING, roster.OFF):
                 return 0
-            if need:
-                if not take_wrapup_notice(shipdir, seat, rec.get("shiftNo")):
-                    return 0
+            phase = deadline.phase(dl)
+            if phase == deadline.FORCE:
+                # an idle seat past the grace period: stopped here if the watchdog is gone (§0 B4)
+                force_stop_self(shipdir, seat, data.get("session_id"), "deadline watcher")
+                return 0
+            if need and take_wrapup_notice(shipdir, seat, rec.get("shiftNo")):
                 append_log(shipdir, seat, "deadline watcher: 稼働時間の上限 → 終業を指示")
                 sys.stderr.write(_wrapup_message(shipdir, seat) + "\n")
                 return 2
-            news = take_inbox_wake(shipdir, seat, seats) if deadline.phase(dl) == deadline.RUNNING else []
+            # notices used up: keep watching until the grace period ends
+            news = take_inbox_wake(shipdir, seat, seats) if phase == deadline.RUNNING else []
             if news:
                 append_log(shipdir, seat, f"inbox watcher: 席の外からの未読 {len(news)} 件 (#{news[-1]['n']} まで) → 起こす")
                 sys.stderr.write(_inbox_wake_message(shipdir, seat, news) + "\n")
                 return 2
-            time.sleep(max(1.0, min(WAIT_POLL, dl["deadline"] - time.time())))
+            until = dl["deadline"] if phase == deadline.RUNNING else dl["graceUntil"]
+            time.sleep(max(1.0, min(WAIT_POLL, until - time.time())))
     finally:
         try:
             if pidfile.read_text().strip() == str(os.getpid()):
@@ -293,6 +369,7 @@ HOOKS = {
     "session-start-knowledge": session_start_knowledge,
     "stop": stop,
     "user-prompt-submit": user_prompt_submit,
+    "pre-tool-use": pre_tool_use,
     "pre-compact": pre_compact,
     "wait-deadline": wait_deadline,
     "deny-dialog": deny_dialog,

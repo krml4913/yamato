@@ -129,8 +129,9 @@ def start_new_shift(shipdir: Path, team: dict, seat: str, rotated: list[str] | N
     workspace = Path(cwd or team["workspace"])
     if not workspace.is_dir():
         raise YamatoError(f"{'--cwd の場所' if cwd else 'workspace'}がありません: {workspace}")
-    if not claude.is_trusted(workspace):
-        raise YamatoError(claude.untrusted_message(workspace))
+    unsure = claude.check_trust(workspace)
+    if unsure:
+        out(f"注意: {unsure}")
     settings = runtime.settings_path(shipdir, seat)
     if cwd:
         # in a worktree already: Claude Code must not cut another one from it (bgIsolation: none)
@@ -345,8 +346,9 @@ def up(shipdir: Path, for_: str | None) -> int:
     workspace = Path(team["workspace"])
     if not workspace.is_dir():
         raise YamatoError(f"workspace がありません: {workspace}")
-    if not claude.is_trusted(workspace):
-        raise YamatoError(claude.untrusted_message(workspace))
+    unsure = claude.check_trust(workspace)
+    if unsure:
+        out(f"注意: {unsure}")
     limit = parse_duration(for_) if for_ else team["time_limit"]
     listing = claude.agents()
     reconcile(shipdir, team, listing)
@@ -488,8 +490,9 @@ def _check_cwd(spec: dict, seat: str, cwd: str) -> str:
     path = Path(cwd).expanduser().resolve()
     if not path.is_dir():
         raise YamatoError(f"--cwd の場所がありません: {path}")
-    if spec["shift"] != "headless" and not claude.is_trusted(path):
-        raise YamatoError(claude.untrusted_message(path))
+    unsure = claude.check_trust(path) if spec["shift"] != "headless" else None
+    if unsure:
+        out(f"注意: {unsure}")
     return str(path)
 
 
@@ -558,21 +561,46 @@ def seat_stop(shipdir: Path, seat: str, after: int, delivered: bool = False, rot
         out("終業を受け付けた。headless のシフトはこのターンを終えれば終わる。短い一言で終えること (これ以上ツールを使わない)。")
         return 0
     append_log(shipdir, seat, f"seat-stop: 終業を受け付けた ({after} 秒後に停止)")
-    short = sid[:8]
-    # delayed stop (verify-p0-a Q3 b): the current turn and its Stop hook finish first
-    script = (f"sleep {int(after)}; {shlex.quote(claude.claude_bin())} stop {short}; "
-              f"{shlex.quote(sys.executable)} {shlex.quote(str(YAMATO_BIN))} _shift-ended "
-              f"{shlex.quote(str(shipdir))} {shlex.quote(seat)} {sid}")
-    _spawn_detached(["sh", "-c", script])
+    spawn_delayed_stop(shipdir, seat, sid, after)
     out(f"終業を受け付けた。{after} 秒後にこのセッションは止まる。このターンは短い一言で終えること (これ以上ツールを使わない)。")
     return 0
 
 
-def shift_ended(shipdir: Path, seat: str, sid: str) -> int:
-    """Run by the delayed stop after ``claude stop``: close the shift and record usage."""
+def spawn_delayed_stop(shipdir: Path, seat: str, sid: str, after: int, forced: bool = False) -> None:
+    """Stop the seat's own session ``after`` seconds from now, then close its shift
+    (verify-p0-a Q3 b: the current turn and its Stop hook finish first). ``forced``: the
+    seat's hooks past the grace period (§0 B4), not a ``seat-stop``."""
+    script = (f"sleep {int(after)}; {shlex.quote(claude.claude_bin())} stop {sid[:8]}; "
+              f"{shlex.quote(sys.executable)} {shlex.quote(str(YAMATO_BIN))} _shift-ended "
+              f"{shlex.quote(str(shipdir))} {shlex.quote(seat)} {sid}" + (" --forced" if forced else ""))
+    _spawn_detached(["sh", "-c", script])
+
+
+def shift_ended(shipdir: Path, seat: str, sid: str, forced: bool = False) -> int:
+    """Run by the delayed stop after ``claude stop``: close the shift and record usage.
+
+    ``forced`` (the seat's own hooks stopped it past the grace period): recorded like the
+    watchdog's force stop, and once no seat is left the day's report gets its safety net,
+    since the watchdog that would do both may be gone (§0 B4)."""
     claude.wait_gone(sid, timeout=60)
-    if roster.seat(shipdir, seat).get("sessionId") == sid:
+    if roster.seat(shipdir, seat).get("sessionId") != sid:
+        return 0
+    if not forced:
         finish_shift(shipdir, seat, reason="seat-stop")
+        return 0
+    shift_no = roster.seat(shipdir, seat).get("shiftNo")
+    if finish_shift(shipdir, seat, reason="grace-exceeded", forced=True) is None:
+        return 0   # the watchdog or enforce closed it first
+    events.emit(shipdir, events.FORCE_STOP, seat=seat, summary="強制停止 (grace-exceeded、席の hook から)",
+                data={"reason": "grace-exceeded", "shiftNo": shift_no, "sessionId": sid, "by": "hook"})
+    team = current_team(shipdir)
+    try:
+        by = claude.by_session(claude.agents())
+    except YamatoError:
+        return 0
+    if not any(_headless_running(shipdir, team, s) or claude.is_alive(by.get(roster.seat(shipdir, s).get("sessionId")))
+               for s in team["seats"]):
+        report.safety_net(shipdir, team, "猶予を過ぎたので強制停止")
     return 0
 
 
@@ -709,8 +737,8 @@ def _last_active(rec: dict) -> float | None:
         for p in claude.transcript_paths(sid):
             try:
                 times.append(p.stat().st_mtime)
-            except FileNotFoundError:
-                pass
+            except OSError:
+                pass   # unreadable: the hooks' lastActive and the shift's times still stand
     for k in ("endedAt", "shiftStartedAt"):
         if rec.get(k):
             times.append(rec[k])

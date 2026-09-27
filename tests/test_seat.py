@@ -131,6 +131,35 @@ class SeatTest(_SeatBase):
         self.assertIn("trust", str(cm.exception))
         self.assertEqual(self.bg_calls(), [])
 
+    def test_trust_unknown_from_claude_json(self):
+        from yamato import claude
+
+        cfg = self.config / ".claude.json"
+        for text in ("{broken", "[]", json.dumps({"projects": []}), json.dumps({"other": {}})):
+            cfg.write_text(text)
+            self.assertIsNone(claude.is_trusted(self.workspace), text)
+        cfg.unlink()
+        self.assertIsNone(claude.is_trusted(self.workspace))
+        from yamato import ship
+
+        _, warnings = ship.create("t9", str(self.workspace), None, "dev")
+        self.assertTrue([w for w in warnings if "確かめられなかった" in w])
+        cfg.write_text(json.dumps({"projects": {str(self.workspace): "odd"}}))
+        self.assertFalse(claude.is_trusted(self.workspace))
+
+    def test_up_with_unknown_trust_warns_and_launches(self):
+        (self.config / ".claude.json").unlink()
+        out = self.up()
+        self.assertIn("確かめられなかった", out)
+        self.assertEqual(len(self.bg_calls()), 1)
+
+    def test_up_with_unknown_trust_stops_on_claudes_answer(self):
+        (self.config / ".claude.json").write_text("{broken")
+        self.set_fake_mode(untrusted=True)
+        with self.assertRaises(YamatoError) as cm:
+            self.up()
+        self.assertIn("trust されていません", str(cm.exception))
+
     def test_untrusted_message_from_claude_is_explained(self):
         self.set_fake_mode(untrusted=True)
         with self.assertRaises(YamatoError) as cm:
@@ -373,6 +402,28 @@ class SeatTest(_SeatBase):
         self.assertEqual((rec["state"], rec["endReason"], rec["handoffWritten"], rec["note"]),
                          (roster.OFF, "seat-stop", True, None))
         self.assertTrue((self.shipdir / "usage.jsonl").is_file())
+
+    def test_forced_stop_by_the_seats_own_hooks(self):
+        """§0 B4: past the grace period with the watchdog gone, a seat hook stops the seat."""
+        from yamato import report
+
+        self.up()
+        rec = roster.seat(self.shipdir, "pm")
+        seat.spawn_delayed_stop(self.shipdir, "pm", rec["sessionId"], 5, forced=True)
+        [args] = self.spawned
+        self.assertIn(f"sleep 5; ", args[2])
+        self.assertIn(f" stop {rec['sessionId'][:8]}; ", args[2])
+        self.assertTrue(args[2].endswith(f"_shift-ended {self.shipdir} pm {rec['sessionId']} --forced"))
+        self.stop_session("pm")
+        with mock.patch.object(report, "safety_net") as net:
+            seat.shift_ended(self.shipdir, "pm", rec["sessionId"], forced=True)
+            seat.shift_ended(self.shipdir, "pm", rec["sessionId"], forced=True)   # once
+        net.assert_called_once()
+        rec = roster.seat(self.shipdir, "pm")
+        self.assertEqual((rec["state"], rec["endReason"], rec["note"]),
+                         (roster.OFF, "grace-exceeded", roster.NO_HANDOFF_NOTE))
+        stops = [e for e in events.read(self.shipdir) if e["kind"] == events.FORCE_STOP]
+        self.assertEqual([e["data"]["by"] for e in stops], ["hook"])
 
     def test_seat_stop_refuses_while_a_live_recipient_has_not_read_the_report(self):
         self.up()
