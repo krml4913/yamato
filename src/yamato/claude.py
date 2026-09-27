@@ -195,17 +195,23 @@ def is_trusted(workspace: Path) -> bool | None:
     if not isinstance(projects, dict):
         return None
 
+    # nit A: a keyless *dict* entry is ambiguous only while nothing in the whole file still
+    # uses the key -- i.e. Claude Code itself may have renamed it. If some other project's
+    # entry does have the key, the key is alive and well; this entry's own omission just
+    # means "not accepted", the ordinary, clear refusal.
+    key_known = any(isinstance(e, dict) and "hasTrustDialogAccepted" in e for e in projects.values())
+
     def ok(p: Path) -> bool | None:
-        """True/False when the entry has the key; None when the entry is a dict but the
-        key itself is missing (Claude Code renamed it, say) -- "cannot tell" (nit A), not
-        a clear refusal. No entry at all, or a malformed (non-dict) entry, stays False as
-        before: an outright absence is still "never trusted", only a present-but-keyless
-        entry is ambiguous."""
+        """True/False when the entry has the key; None when the entry is a dict without the
+        key AND no project anywhere in the file has it either (a rename, say) -- "cannot
+        tell" (nit A), not a clear refusal. No entry at all, a malformed (non-dict) entry,
+        or a keyless entry while the key is still in current use elsewhere, all stay False
+        as before: only a file-wide key rename is ambiguous."""
         entry = projects.get(str(p))
         if isinstance(entry, dict):
             if "hasTrustDialogAccepted" in entry:
                 return bool(entry["hasTrustDialogAccepted"])
-            return None
+            return None if not key_known else False
         return False
 
     def combine(results) -> bool | None:

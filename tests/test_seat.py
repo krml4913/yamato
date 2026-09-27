@@ -161,6 +161,21 @@ class SeatTest(_SeatBase):
         self.assertIn("確かめられなかった", out)
         self.assertEqual(len(self.bg_calls()), 1)
 
+    def test_trust_key_missing_but_known_elsewhere_is_a_clear_refusal(self):
+        """The key is still in current use (some other project has it), so this
+        workspace's own keyless entry is not a rename -- it just was never accepted."""
+        from yamato import claude
+
+        (self.config / ".claude.json").write_text(json.dumps({"projects": {
+            str(self.tmp / "other"): {"hasTrustDialogAccepted": True},
+            str(self.workspace): {},
+        }}))
+        self.assertFalse(claude.is_trusted(self.workspace))
+        with self.assertRaises(YamatoError) as cm:
+            self.up()
+        self.assertIn("trust", str(cm.exception))
+        self.assertEqual(self.bg_calls(), [])
+
     def test_trust_key_present_true_is_trusted(self):
         from yamato import claude
 
