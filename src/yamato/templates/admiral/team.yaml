@@ -13,16 +13,14 @@ talk_default: admiral        # yamato talk _admiral で席を省いたときに 
 
 time_limit: none             # D-013: admiral だけ時間の上限を持たない (§0 B4 の例外)。
                               # deadline も watchdog も作らない。長く続いたら rotate (下) で入れ替える。
-                              # 一時的に上限を掛けたいときは `yamato admiral --for <span>` のように明示する (T-011 のしくみがそのまま効く)
-
 roles:
   admiral:
     model: opus               # D-013: 話し相手・判断の代筆・構成変更の質を優先する
     shift: persistent
     remote_control: true      # スマホから話せる (design-p1 §1.5)。owner はこの席にだけ Remote Control でつながる
-    # TODO (T-022 で全艦の要約を注入する部品ができたら足す。今は仮名 ships_summary): それまでは
-    # admiral 自身の記録 (handoff・作業ログ・inbox・memory・knowledge) と直近の日報だけを読む
-    inject: [handoff, log_tail, last_report, inbox, memory, knowledge]
+    # 全艦の要約 (fleet, T-022) は admiral 自身の記録・直近の日報に加えて注入する (T-036)。
+    # 上限は下の inject.limits.fleet_items (既定 20) のまま
+    inject: [handoff, log_tail, last_report, inbox, memory, knowledge, fleet]
     description: owner の窓口。艦を作り・構成 (team.yaml・役割プロンプト・charter) を変え・出撃/延長/帰投/緊急停止させ、
       全艦を一望し、owner の判断を代筆する。艦の中の仕事 (task の割り振り・実装・レビュー・merge) には踏み込まない (D-011)
     rotate:                   # 常駐なので入れ替えの目安は dev ひな形の captain と同じにしておく
