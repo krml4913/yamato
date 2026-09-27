@@ -538,6 +538,7 @@ grace: 20m            # 終了時刻のあと、キリのいいところまで�
   - 作業中の席: ターンの終わりに Stop hook が終業を指示する (block)。1 つのターンの中でツールを呼び続ける席には、PreToolUse hook が、ツールは通したうえで終業の指示を添える (`additionalContext`)。Stop と PreToolUse を合わせて 1 シフトあたり数回まで (`MAX_WRAPUP_NOTICES`)
   - 待機中の席: Stop hook で起動した非同期の watcher (asyncRewake) が、終了時刻に席を起こして指示する。指示の回数を使い切ったあとも、猶予が切れるまで見張る
   - 同じ watcher (1 席 1 本) が inbox も数秒おきに見て、送り手が席でない未読が増えたら「inbox に未読がある。`yamato inbox` で読め」と席を起こす (§0 B1。同じ未読では 1 回だけ。終了時刻を過ぎたら起こさない)
+  - `time_limit: none` (D-013、admiral のみ) の艦は終了時刻を持たず、watcher は inbox だけを見張って回り続ける (上記)。これを終える経路 (`seat-stop`・強制停止) を通らずにセッションが死ぬと (手で `claude stop`・crash)、roster は `on_shift` のまま watcher だけが残り、次のシフトの watcher は pidfile を見て即 return してしまう (T-038)。そこで watcher は自分が古くなったことにも気付いて抜ける: 席の `shiftNo` が変わった (次のシフトが別の watcher を立てた)・pidfile が自分以外の watcher の名前になった、のいずれかで即座に return し、さらに数十秒おき (`LIVENESS_EVERY` ポーリングごと) に `claude agents --json` で自分のセッションがまだ生きているか確かめて、消えていれば見張りをやめる (`claude` を呼べない・答えが読めないときは「不明」として見張りを続ける。誤って早く諦めない側に倒す)
   - `send`: 終業のあとは宛先を起こさず記録だけして、送り手が席なら終業を指示する
   - 新しいシフトの SessionStart の注入にも、終業の指示が載る
 - 一度きりのタイマー (watchdog) は `up` と `down` が切り離して起動する。終了時刻 + 猶予に、生きている席を強制停止する補助で、消えても上限は効く (`send` / `status` と席の hook が毎回 deadline を確かめ、猶予を過ぎていれば強制停止する)。常駐のデーモンは作らない
