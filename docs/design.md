@@ -430,7 +430,7 @@ SessionStart hook が、次を注入する。**何を読ませるかは設定** 
 ### 8.3 シフトの終わり
 
 - 終業の手順は役割プロンプトに書く: 引き継ぎを Write で上書きし、作業ログに 1 行足し、`yamato seat-stop <ship> <seat>` を実行して、そのターンを一言で終える
-- **`seat-stop`** (席が使う道具): 自分の席のセッションかを確かめ (`CLAUDE_CODE_SESSION_ID` を roster と照合。席の取り違えを防ぐ整合性の検査で、権限の判定には使わない)、`handoff.md` が今回のシフトで更新されているか (`seat_stop.require_handoff`)、送り手として届けるはずの送信が読まれているか (`seat_stop.require_delivery`) を確かめる。通れば roster を `stopping` にし、遅延 stop (10 秒後に `claude stop`) を仕掛ける。直接 stop すると最後のターンが transcript に残らず、resume した席が自分を止め直そうとするため (検証 A Q3)
+- **`seat-stop`** (席が使う道具): 自分の席のセッションかを確かめ (`CLAUDE_CODE_SESSION_ID` を roster と照合。席の取り違えを防ぐ整合性の検査で、権限の判定には使わない)、`handoff.md` が今回のシフトで更新されているか (`seat_stop.require_handoff`)、送り手として届けるはずの送信が読まれているか (`seat_stop.require_delivery`) を確かめる。通れば roster を `stopping` にし、遅延 stop (10 秒後に `claude stop`) を仕掛ける。直接 stop すると最後のターンが transcript に残らず、resume した席が自分を止め直そうとするため (検証 A Q3)。遅延 stop は艦フォルダを cwd にして起動する (`worktree rm` で呼び出し元の worktree が消えても走る)。起動そのものに失敗したら events `restop_failed` と作業ログに残す (T-012)
 - 席が止まると、roster のシフトを閉じて、使用量を `usage.jsonl` に 1 行書く (transcript から数える。シフトの間の assistant のトークン数)。transcript の場所 (`~/.claude/projects/**/<sessionId>.jsonl`) は Claude Code の内部の形なので、見つからない・読めないときは 0 ではなく「分からない」(`"unknown": true`) と記録し、日報にもそう出す。`status` の「最終」も同じ場所の mtime を足しに見るだけで、読めなければ hook の `lastActive` とシフトの時刻で出す
 - **Stop hook は応答のたびに動くため、引き継ぎの強制には使わない**。P0 の Stop hook は、時間の上限を過ぎたときに終業を指示するだけ (§12.1)。日雇いの席が引き継ぎを書かずに終わろうとしたときの安全網 (Stop hook) は、P1 で設定 `handoff_guard:` (既定 on) として足す。短い headless の仕事には重いので、外せるようにする (design-p1 §0.4)
 - 会話ログ (transcript) は艦フォルダに退避しない (D-022)。Claude Code 側では 30 日で消えるが、コピーする hook は作らない。design-p1 §1.5 の代筆の追跡は、これを前提にせず `--reason` (owner の言葉をそのまま書いたもの) を根拠にする
@@ -539,6 +539,7 @@ grace: 20m            # 終了時刻のあと、キリのいいところまで�
   - `send`: 終業のあとは宛先を起こさず記録だけして、送り手が席なら終業を指示する
   - 新しいシフトの SessionStart の注入にも、終業の指示が載る
 - 一度きりのタイマー (watchdog) は `up` と `down` が切り離して起動する。終了時刻 + 猶予に、生きている席を強制停止する補助で、消えても上限は効く (`send` / `status` と席の hook が毎回 deadline を確かめ、猶予を過ぎていれば強制停止する)。常駐のデーモンは作らない
+- `watchdog` と `status` は、`stopping` のまま `STOPPING_STUCK_AFTER` (5 分) を超えて生きている席を止め直す (`restop_stuck`。遅延 stop がおそらく走らなかったとみなす)。同じ席には同じ間隔より頻繁には打たず、events `stopping_stuck` と作業ログに記録する (T-012)
 - 猶予を過ぎたときの席の hook (watchdog が消えていても席が止まるための経路):
   - PreToolUse hook: ツールを **deny** し (理由に「間もなく止める。一言でターンを終えよ」)、席自身の遅延 stop を仕掛ける。遅延 stop は `seat-stop` と同じ仕組み (切り離した `sh -c "sleep 5; claude stop <id>; yamato _shift-ended ... --forced"`) で、1 シフトに 1 回 (`.runtime/force-stop-<seat>.json`。persistent の席は resume しても sessionId が同じなので、シフト番号で見る。止まらずに hook を呼び続けていれば 60 秒後にもう一度)
   - Stop hook: 終業の指示 (block) ではなく、ターンを終わらせて同じ遅延 stop を仕掛ける

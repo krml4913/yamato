@@ -45,7 +45,7 @@ zellij --session yamato-view --new-session-with-layout ~/yamato/view.kdl
 | `ship create <name> [--workspace <path>] [--path <dir>] [--template dev\|research]` | ひな形から艦フォルダを作る。`dev` (開発艦) は `--workspace` (作業対象の repo) が要る。`research` (調査艦) は repo なしで、艦フォルダ自身が席の作業ディレクトリ (下の「調査艦」) |
 | `up <ship> [--for 3h] [--seats <seat,...>]` | `.runtime/` を作り直し、deadline を書き、captain の席を起動 (persistent なら resume)。`--seats` の席も一緒に起こす |
 | `down <ship> [--force]` | 終業 / 強制停止 |
-| `status [<ship>]` | 席ごとの状態。赤い席は `!!! <席>: ...` と出る (権限の確認待ち・API エラー (`state: failed`)・生きているのに `watch.stale_after` (既定 20m) より長く動いていない) |
+| `status [<ship>]` | 席ごとの状態。赤い席は `!!! <席>: ...` と出る (権限の確認待ち・API エラー (`state: failed`)・生きているのに `watch.stale_after` (既定 20m) より長く動いていない)。`stopping` のまま 5 分を超えた席は止め直す (T-012) |
 | `ships` | (admiral) 全艦を 1 行ずつ: 稼働中か・残り時間・captain の最終・赤い席の数・owner の判断待ちの数・今日の使用量・最新の日報の日付 |
 | `extend <ship> <期間>` | (admiral) deadline を延ばす (データの書き換えだけ。過ぎていれば今から数える) |
 | `halt <ship>` | (admiral) 緊急停止。猶予なしで全席を強制停止し、日報の安全網を通す |
