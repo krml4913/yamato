@@ -84,6 +84,15 @@ class TeamTest(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(YamatoError):
                 validate(base(inject=bad), Path("/ship"))
 
+    def test_inject_fleet_part_and_limit(self):
+        """T-022: `fleet` (admiral の全艦の要約) is a selectable part with its own limit key."""
+        from yamato.team import inject_parts
+
+        t = validate(base(inject={"parts": ["fleet"], "limits": {"fleet_items": 5}},
+                          roles={"pm": {"shift": "persistent"}, "impl": {}}), Path("/ship"))
+        self.assertEqual(inject_parts(t, "pm"), ["fleet"])
+        self.assertEqual(t["inject"]["limits"], {"fleet_items": 5})
+
     def test_zero_is_not_the_default(self):
         with self.assertRaises(YamatoError):
             validate(base(time_limit=0), Path("/ship"))

@@ -23,6 +23,16 @@ class InjectTest(ShipTestCase):
     def build(self, **limits):
         return inject.build(self.shipdir, self.t, "impl", "startup", limits or None)
 
+    @staticmethod
+    def _fleet_section(text):
+        """Only the `fleet` part, not the whole hook: the header carries the ship folder
+        (a random tmpXXXXXXXX path) and asserting ship names like t2/t3 against the full
+        text risks a ~1% collision with that random suffix (reviewer #16 T-022)."""
+        start = text.index("## fleet")
+        rest = text[start:]
+        end = rest.find("\n## ", 1)
+        return rest if end == -1 else rest[:end]
+
     def test_sections_present(self):
         (self.sdir / "handoff.md").write_text("前回: T-001 途中")
         (self.rdir / "memory.md").write_text("モックは 30 日で切れる")
@@ -108,6 +118,54 @@ class InjectTest(ShipTestCase):
         self.assertIn("ほか 1 件 (`", text)
         self.assertIn("board kanban", text)
         self.assertNotIn("done one", text)
+
+    def test_fleet_part_is_opt_in_and_lists_every_ship(self):
+        """T-022: the `fleet` part (admiral's own; opt-in like `board`) is a one-line-per-ship
+        summary, the same shape as `yamato ships` (admiral.ship_line), not just this ship."""
+        from yamato import ship
+
+        text, _ = self.build()
+        self.assertNotIn("fleet (全艦の様子", text)   # not in the default parts
+        ship.create("t2", str(self.workspace), None, "dev")
+        self.t["roles"]["impl"]["inject"] = [*self.t["inject"]["parts"], "fleet"]
+        text, _ = self.build()
+        section = self._fleet_section(text)
+        self.assertIn(f"## fleet (全艦の様子。全文は `{YAMATO_BIN} ships`)", section)
+        self.assertIn("t1", section)
+        self.assertIn("t2", section)
+        self.assertIn("停止中", section)   # neither ship was `up`
+
+    def test_fleet_part_capped(self):
+        """Past `fleet_items`, the rest is a count pointing at the uncapped `yamato ships`,
+        not a line cut mid-way (完了条件 2: 艦の数が多いときの上限)."""
+        from yamato import ship
+
+        for name in ("t2", "t3"):
+            ship.create(name, str(self.workspace), None, "dev")
+        self.t["roles"]["impl"]["inject"] = [*self.t["inject"]["parts"], "fleet"]
+        text, _ = self.build(fleet_items=1)
+        section = self._fleet_section(text)
+        self.assertIn("t1", section)
+        self.assertNotIn("t2", section)
+        self.assertNotIn("t3", section)
+        self.assertIn(f"…ほか 2 件 (`{YAMATO_BIN} ships` で見る)", section)
+
+    def test_fleet_part_survives_claude_agents_failure(self):
+        """reviewer #16 (T-022 差し戻し): claude.agents() は失敗/タイムアウトで YamatoError
+        を投げうる。おまけの `fleet` 部品のせいで session_start 全体を落とすな (_touch と同じ
+        考え) — handoff など本業の部品は出た上で、fleet だけ読めない旨に置き換わること。"""
+        from yamato.util import YamatoError
+
+        (self.sdir / "handoff.md").write_text("HANDOFF-Y")
+        self.t["roles"]["impl"]["inject"] = [*self.t["inject"]["parts"], "fleet"]
+        with mock.patch("yamato.claude.agents", side_effect=YamatoError("タイムアウトしました")):
+            text, _ = self.build()
+        self.assertIn("HANDOFF-Y", text)   # the real job survives the extra part's failure
+        self.assertIn("未読の inbox", text)
+        section = self._fleet_section(text)
+        self.assertIn("## fleet (全艦の様子", section)
+        self.assertIn("claude agents を読めない: タイムアウトしました", section)
+        self.assertIn(f"`{YAMATO_BIN} ships`", section)
 
     def test_inbox_capped_and_cursor_only_over_full_messages(self):
         for i in range(12):

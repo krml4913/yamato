@@ -406,7 +406,7 @@ Claude Code の `SendMessage` は、待機中のセッションを起こせる�
 
 - 1 日 1 回のようなシフトは、人間が手で起動・終業すればよい
 - **どの粒度でも、シフトの終わりに引き継ぎを書く**。そのため、粒度を変えても、席が予期せず止まっても、記録から再開できる。会話の再開 (resume) は「楽をするための最適化」であって、連続性の本体ではない (§0 I4。captain も同じ)
-- `per_task` 宛ての `send` は常に新しいシフトを起こす。`persistent` 宛てだけ再開する (§0 B3)。P0 は、止まっていれば常に resume する。P1 で、resume せずに新しいシフトにする条件が設定 `rotate:` で加わる (design-p1 §5.3〜5.4)
+- `per_task` 宛ての `send` は常に新しいシフトを起こす。`persistent` 宛てだけ再開する (§0 B3)。P0 は、止まっていれば常に resume する。P1 で、resume せずに新しいシフトにする条件が設定 `rotate:` で加わる (design-p1 §5.3〜5.4)。**per_task の宛先が生きている (前の task の会話が持ち込まれる疑い) ときは、§0 B3 自体は変えず、配送はそのまま行って警告を 1 行出すだけにとどめる** (#11 / D-019。attach 中かどうかを外から見分けられないため、design-p1 §5.2)
 
 ### 8.2 起動時に読むもの (上限つき)
 
@@ -422,6 +422,7 @@ SessionStart hook が、次を注入する。**何を読ませるかは設定** 
 | `memory` | 役割の memory (`roles/<role>/memory.md`。design-p1 §3) |
 | `knowledge` | チームの knowledge.md |
 | `board` (P1、opt-in) | 艦全体の進み具合 (kanban 風): state ごとの件数 + blocked→active→open の項目一覧。`mine` と重なっても省かない。`inject.limits.board_items` で件数に上限、超えた分は「…ほか N 件」(T-030、design-drift #4/#14、D-018) |
+| `fleet` (P1、opt-in) | 全艦の様子 (`yamato ships` 相当を 1 艦 1 行): 稼働中か・残り時間・captain の生死・赤い席・owner の判断待ち・今日のトークン。admiral (D-011、D-013) だけが使う想定。`inject.limits.fleet_items` で件数に上限、超えた分は「…ほか N 件 (`yamato ships` で見る)」(T-022) |
 
 - 役割のプロンプトは注入ではなく、`--agents` の JSON で渡す (§4.1)
 - 注入は **SessionStart hook 2 本**に分ける。記録の hook (ヘッダ・`handoff`・`log_tail`・`mine`・`inbox` と注記) と、知見の hook (`memory`・`knowledge`)。Claude Code は hook 1 本の出力を 10,000 文字まで受け取り、超えると本文の代わりに約 2KB のプレビューを渡す (検証 C Q1。判定は hook ごとで、文字数で数える)

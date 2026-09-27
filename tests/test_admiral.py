@@ -9,7 +9,7 @@ from contextlib import redirect_stdout
 from unittest import mock
 
 from tests.helpers import ShipTestCase
-from yamato import admiral, claude, cli, deadline, events, headless, inbox, report, roster, seat, ship
+from yamato import admiral, board, claude, cli, deadline, events, headless, inbox, report, roster, seat, ship
 from yamato.team import load_team
 from yamato.util import YamatoError, load_registry, yamato_home
 
@@ -298,9 +298,29 @@ class AdmiralTest(ShipTestCase):
         self.set_session("pm", pid=None, state="blocked")   # liveness is the pid, not state
         self.assertNotIn("!!!", self.run_cmd(seat.status, self.shipdir))
 
+    def test_status_flags_a_live_per_task_seat_without_an_active_item(self):
+        # design-drift #11 / D-019
+        self.cli("up", str(self.shipdir), "--for", "1h")
+        self.cli("send", str(self.shipdir), "impl", "T-001")   # impl comes up and stays alive
+        rc, out = self.cli("status", str(self.shipdir))
+        self.assertIn("!!! impl: per_task の席が生きているのに担当", out)
+
+    def test_status_does_not_flag_a_per_task_seat_with_an_active_item(self):
+        self.cli("up", str(self.shipdir), "--for", "1h")
+        self.cli("send", str(self.shipdir), "impl", "T-001")
+        board.Board(self.shipdir, self.team()).add("T-001", {"assignee": "impl", "state": "active"}, by="pm")
+        rc, out = self.cli("status", str(self.shipdir))
+        self.assertNotIn("!!!", out)
+
+    def test_ships_counts_a_live_per_task_orphan_as_red(self):
+        self.cli("up", str(self.shipdir), "--for", "1h")
+        self.cli("send", str(self.shipdir), "impl", "T-001")
+        rc, out = self.cli("ships")
+        self.assertIn("赤 1 (impl)", out)
+
     def test_a_stopped_seat_is_not_red(self):
         team = self.team()
-        self.assertEqual(admiral.red_flags(team, {"lastActive": 1}, None, time.time()), [])
+        self.assertEqual(admiral.red_flags(team, "pm", {"lastActive": 1}, None, time.time()), [])
 
     # --- ships ---
 
@@ -444,24 +464,8 @@ class AdmiralTest(ShipTestCase):
 
 
 # --- T-021: `yamato admiral` (attach/wake/stop, D-011) ------------------------------------
-# templates/admiral/ (T-023) is not this task's job, so a tiny fixture template stands in
-# for it here: only the shape (single persistent hub seat, time_limit: none) matters.
-ADMIRAL_TEAM_YAML = """\
-name: {{name}}
-hub: admiral
-workspace: .
-charter: charter.md
-time_limit: none
-roles:
-  admiral:
-    model: opus
-    shift: persistent
-    remote_control: true
-    rotate:
-      new_day: true
-settings:
-  remoteControlAtStartup: false
-"""
+# templates/admiral/ (T-023) is now the real thing (its own shape is tests/test_admiral_template.py's
+# job); these tests use it as-is and only exercise the `yamato admiral` command built on top of it.
 
 
 class AdmiralUpCommandTest(ShipTestCase):
@@ -474,15 +478,6 @@ class AdmiralUpCommandTest(ShipTestCase):
         p2 = mock.patch.object(seat, "_spawn_detached")
         self.spawn_mock = p2.start()
         self.addCleanup(p2.stop)
-        tdir = self.tmp / "extra-templates"
-        adm = tdir / "admiral"
-        (adm / "roles").mkdir(parents=True)
-        (adm / "team.yaml").write_text(ADMIRAL_TEAM_YAML)
-        (adm / "charter.md").write_text("# admiral\n")
-        (adm / "roles" / "admiral.md").write_text("admiral の役割プロンプト (テスト用)\n")
-        p = mock.patch.object(ship, "TEMPLATES", tdir)
-        p.start()
-        self.addCleanup(p.stop)
         # the admiral's workspace is `_admiral/` itself (template `workspace: .`): trust it
         # too, the same way ShipTestCase already trusts `self.workspace` for "t1"
         cc = json.loads((self.config / ".claude.json").read_text())

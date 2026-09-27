@@ -460,6 +460,32 @@ def _unwatched_deadline(shipdir: Path, team: dict, token: str) -> None:
             deadline.path(shipdir).unlink(missing_ok=True)
 
 
+def _warn_if_per_task_orphan(shipdir: Path, team: dict, seat: str) -> None:
+    """design-drift #11 / D-019: a live ``per_task`` seat should have been ``seat-stop``'d
+    when its task ended, so ``send`` finding one still alive is always worth a word --
+    whether or not it still has an ``active`` board item (the same task's continuation is
+    fine; nothing assigned means the previous task's conversation may leak into this one).
+
+    D-019's decision was to close such an orphan and start a fresh shift when it has no
+    active item -- *if* an ``attach``'d (owner at the terminal) seat could be told apart
+    from an idle one first. It cannot: ``claude agents --json`` carries no such field, and
+    ``/status`` (which does show it) is a slash command inside the session, unreachable from
+    here (docs/verify/verify-p0-c.md:135). So both cases only warn; nothing is stopped."""
+    if team["seats"].get(seat, {}).get("shift") != "per_task":
+        return
+    from . import board as board_mod
+
+    mine = [m["id"] for m in board_mod.Board(shipdir, team).items()
+           if m.get("assignee") == seat and m.get("state") == "active"]
+    if mine:
+        out(f"注意: 宛先 {seat} は per_task の席で、前の task ({', '.join(mine)}) の会話のまま生きている。"
+            "同じ task の続きでなければ確かめること。")
+    else:
+        out(f"注意: 宛先 {seat} は per_task の席で、担当 (active) の項目が無いのに生きている "
+            "(前の task の会話が持ち込まれる疑い)。attach 中かどうか確かめられないので自動では止めない。"
+            "必要なら本人に `yamato seat-stop --rotate` を促すか、`claude attach` で確かめること。")
+
+
 def send(shipdir: Path, seat: str, text: str, sender: str | None, cwd: str | None = None) -> int:
     team = current_team(shipdir)
     if not text.strip():
@@ -524,6 +550,7 @@ def send(shipdir: Path, seat: str, text: str, sender: str | None, cwd: str | Non
     if cwd and what in ("alive", "queued"):
         out(f"宛先 {seat} はシフト中なので、--cwd は次のシフトから効く")
     if what == "alive":
+        _warn_if_per_task_orphan(shipdir, team, seat)
         if sender in team["seats"]:
             add_pending(shipdir, sender, seat, entry["n"], name)
             out(f"宛先 {seat} は生きている。yamato は配送しない。SendMessage ツールで to=\"{name}\" に次の本文を届けること:")
@@ -775,6 +802,7 @@ def down(shipdir: Path, force: bool) -> int:
 
 def status(shipdir: Path) -> int:
     from . import admiral
+    from . import board as board_mod
 
     team = current_team(shipdir)
     listing = claude.agents()
@@ -786,6 +814,8 @@ def status(shipdir: Path) -> int:
     by = claude.by_session(listing)
     dl = deadline.read(shipdir)
     now = time.time()
+    active_assignees = {m.get("assignee") for m in board_mod.Board(shipdir, team).items()
+                        if m.get("state") == "active"}
     out(f"艦 {team['name']} ({shipdir})")
     out(f"  {deadline.describe(dl, now)}")
     if stopped:
@@ -819,7 +849,8 @@ def status(shipdir: Path) -> int:
         if failed:
             cols.append(f"[起動失敗 {fmt_time(failed['at'])} ({failed.get('how')}): {failed.get('reason')}]")
         out("  " + "  ".join(cols))
-        for flag in admiral.red_flags(team, rec, live, now):   # design-p1 §5.2
+        for flag in admiral.red_flags(team, seat, rec, live, now,   # design-p1 §5.2, #11
+                                      has_active=seat in active_assignees):
             out(f"  !!! {seat}: {flag} (claude attach {rec.get('shortId')} で確認)")
     unread = {s: len(inbox.unread(shipdir, s)) for s in team["seats"]}
     if any(unread.values()):

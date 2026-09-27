@@ -18,7 +18,7 @@
 | 艦を作る | `yamato ship create <name> --workspace <repo> [--template dev]`。trust は main repo (git root) で確かめる。通っていなければ owner に `cd <repo> && claude` で承認してもらう |
 | 出撃 | `yamato up <name> [--for 3h] [--seats impl,review]`。既定は captain だけが起きる (他の席は captain が send で起こす)。`--seats` で一緒に起こす |
 | 全艦を一望 | `yamato ships`。1 艦 1 行: 稼働中か・残り時間・captain の最終・赤い席の数・owner の判断待ち・今日の使用量・最新の日報 |
-| 1 艦を詳しく | `yamato status <name>`。赤い席は `!!!` の行で出る (権限の確認待ち、API エラー、生きているのに `watch.stale_after` (既定 20m) より長く動いていない) |
+| 1 艦を詳しく | `yamato status <name>`。赤い席は `!!!` の行で出る (権限の確認待ち、API エラー、生きているのに `watch.stale_after` (既定 20m) より長く動いていない、per_task の席が生きているのに active の担当が無い) |
 | 時間を延ばす | `yamato extend <name> 1h`。deadline を書き換えるだけ。過ぎていれば今から数える |
 | 帰投 | `yamato down <name>` (席は引き継ぎを書いて止まる。猶予を過ぎたら強制停止) |
 | 緊急停止 | `yamato halt <name>`。猶予なしで全席を強制停止し、日報の安全網 (事実だけの日報と通知) を通す |

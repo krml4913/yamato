@@ -1,0 +1,126 @@
+# yamato の艦の定義 (admiral ひな形。D-011/D-013)。owner にはどの艦にも属さない常駐の
+# Claude セッション 1 つを持たせる。`$YAMATO_HOME/_admiral/` に他の艦と同じ形で作る
+# (ship.create(..., register=False) で ships.json には載らず、`yamato ships` の一覧にも出ない。
+# 名前が `_` 始まりなので check_name も普通の艦の名前としては拒む。T-020)。
+# admiral は艦の中身 (task の割り振り・実装・レビュー・merge) には踏み込まない。これはコードでは縛らず、
+# roles/admiral.md の約束にする (mechanism-not-policy)
+name: {{name}}
+hub: admiral                 # captain に相当する、この艦でただ 1 つの役割
+workspace: .                 # 艦フォルダ自身 (repo なし。自動 worktree は作らない)
+charter: charter.md
+
+talk_default: admiral        # yamato talk _admiral で席を省いたときに attach する席
+
+time_limit: none             # D-013: admiral だけ時間の上限を持たない (§0 B4 の例外)。
+                              # deadline も watchdog も作らない。長く続いたら rotate (下) で入れ替える。
+                              # 一時的に上限を掛けたいときは `yamato admiral --for <span>` のように明示する (T-011 のしくみがそのまま効く)
+
+roles:
+  admiral:
+    model: opus               # D-013: 話し相手・判断の代筆・構成変更の質を優先する
+    shift: persistent
+    remote_control: true      # スマホから話せる (design-p1 §1.5)。owner はこの席にだけ Remote Control でつながる
+    # TODO (T-022 で全艦の要約を注入する部品ができたら足す。今は仮名 ships_summary): それまでは
+    # admiral 自身の記録 (handoff・作業ログ・inbox・memory・knowledge) と直近の日報だけを読む
+    inject: [handoff, log_tail, last_report, inbox, memory, knowledge]
+    description: owner の窓口。艦を作り・構成 (team.yaml・役割プロンプト・charter) を変え・出撃/延長/帰投/緊急停止させ、
+      全艦を一望し、owner の判断を代筆する。艦の中の仕事 (task の割り振り・実装・レビュー・merge) には踏み込まない (D-011)
+    rotate:                   # 常駐なので入れ替えの目安は dev ひな形の captain と同じにしておく
+      context: 30%
+      compaction: true
+      hours: 8h
+      idle: 1h
+      new_day: true
+
+# admiral が生きているか・詰まっていないかの目安 (design-p1 §5.2)。他の watch (captain_gap・orphan_after・
+# spin) は艦の board 運用が前提の目安なので、admiral (board を実質使わない) では既定のままにしておく
+watch:
+  stale_after: 20m
+
+seat_stop:
+  require_handoff: true
+  require_delivery: true
+
+# 権限 (D-011 Q2): auto。`~/yamato/**` (艦フォルダ全部・ships.json) は編集してよい (team 構成・roles・
+# charter の変更をやらせる)。WebFetch/WebSearch も使ってよい (owner の判断。他の役割にある B2 の分離は
+# admiral には掛けない)。`~/dev/yamato` (yamato 自身のリポジトリ) は読むだけ (Edit/Write を deny)。
+# pull は Bash で打つが、その checkout を使う艦が全部止まっているときだけ、という約束はコードでは縛らず
+# 役割プロンプトに書く (mechanism-not-policy)
+deny:
+  # 席の出入りは yamato を通す (自分を止めるのは seat-stop だけ)
+  - "Bash(claude stop*)"
+  - "Bash(claude rm*)"
+  - "Bash(claude --resume*)"
+  - "Edit(.claude/**)"
+  - "Write(.claude/**)"
+  # ~/dev/yamato (yamato 自身のリポジトリ) は読むだけ。実装・レビュー・merge は艦の中の仕事 (D-011)
+  - "Edit(~/dev/yamato/**)"
+  - "Write(~/dev/yamato/**)"
+  # yamato のコマンドだけが書く、この艦 (_admiral/) 自身の記録
+  - "Edit(/{{ship}}/team.yaml)"
+  - "Write(/{{ship}}/team.yaml)"
+  - "Edit(/{{ship}}/roster.json)"
+  - "Write(/{{ship}}/roster.json)"
+  - "Edit(/{{ship}}/usage.jsonl)"
+  - "Write(/{{ship}}/usage.jsonl)"
+  - "Edit(/{{ship}}/.runtime/**)"
+  - "Write(/{{ship}}/.runtime/**)"
+  - "Edit(/{{ship}}/seats/*/inbox.*)"
+  - "Write(/{{ship}}/seats/*/inbox.*)"
+  - "Edit(/{{ship}}/roles/*/memory.md)"
+  - "Write(/{{ship}}/roles/*/memory.md)"
+  - "Edit(/{{ship}}/roles/*/memory-archive.md)"
+  - "Write(/{{ship}}/roles/*/memory-archive.md)"
+  - "Edit(/{{ship}}/knowledge.md)"
+  - "Write(/{{ship}}/knowledge.md)"
+  # 他の艦の同じ記録も (~/yamato/** は編集可だが、これらは各艦の yamato のコマンドだけが書く場所)
+  - "Edit(~/yamato/*/.runtime/**)"
+  - "Write(~/yamato/*/.runtime/**)"
+  - "Edit(~/yamato/*/roster.json)"
+  - "Write(~/yamato/*/roster.json)"
+  - "Edit(~/yamato/*/usage.jsonl)"
+  - "Write(~/yamato/*/usage.jsonl)"
+  - "Edit(~/yamato/*/seats/*/inbox.*)"
+  - "Write(~/yamato/*/seats/*/inbox.*)"
+  - "Edit(~/yamato/*/roles/*/memory.md)"
+  - "Write(~/yamato/*/roles/*/memory.md)"
+  - "Edit(~/yamato/*/roles/*/memory-archive.md)"
+  - "Write(~/yamato/*/roles/*/memory-archive.md)"
+  - "Edit(~/yamato/*/knowledge.md)"
+  - "Write(~/yamato/*/knowledge.md)"
+
+settings:
+  remoteControlAtStartup: true    # admiral は起動時から Remote Control につなぐ (D-011。roles.admiral.remote_control と対で効く)
+
+memory:
+  applier: admiral
+  curate_every: 7d
+  curate_at: 30
+  max_duration: 15m
+  limits:
+    memory_lines: 80
+    memory_chars: 4000
+    knowledge_lines: 120
+    knowledge_chars: 5000
+
+inject:
+  limits:
+    handoff: [40, 2000]
+    log_tail: [20, 1200]
+    inbox_messages: 10
+    inbox_chars: 400
+    total_chars: 9500
+    last_report: [30, 1500]
+
+notify:
+  via: []
+  slack:
+    webhook_env: YAMATO_SLACK_WEBHOOK
+  decisions: digest
+
+# admiral 自身の日報は作らない (owner との会話がそのまま記録なので、日報の安全網は要らない)
+report:
+  daily: off
+
+# board・decisions・git は「艦」の仕組み (ship.create / load_team) が求める形式的な最小限で、admiral 自身が
+# これを使って task を割り振ったり merge したりするわけではない (D-011)。既定値のままでよいので書かない
