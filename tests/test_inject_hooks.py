@@ -359,9 +359,43 @@ class HookTest(ShipTestCase):
         self.assertEqual((code, d["hookEventName"]), (0, "PreToolUse"))
         self.assertNotIn("permissionDecision", d)   # the tool still runs: the seat has to wrap up
         self.assertIn("seat-stop", d["additionalContext"])
-        self.run_hook(hooks.pre_tool_use, {})
-        self.assertTrue(self.run_hook(hooks.stop, {})[1])   # the third and last
+        # a second tool call in the SAME turn (no Stop hook in between) does not repeat it
+        # (design-drift nit B): the shared budget's first slot is spent once, not per call
         self.assertEqual(self.run_hook(hooks.pre_tool_use, {})[1], "")
+        # the turn ends without the seat actually stopping: Stop spends the 2nd slot
+        self.assertTrue(self.run_hook(hooks.stop, {})[1])
+        # a new turn's first PreToolUse call notifies again: the third and last slot
+        self.assertTrue(self.run_hook(hooks.pre_tool_use, {})[1])
+        # further calls in that same turn, and the turn's own Stop, find the budget spent
+        self.assertEqual(self.run_hook(hooks.pre_tool_use, {})[1], "")
+        self.assertEqual(self.run_hook(hooks.stop, {})[1], "")
+
+    def test_pre_tool_use_does_not_repeat_within_the_same_turn(self):
+        # same condition as above, isolated: several tool calls in one turn (the seat's own
+        # wrap-up -- Write the handoff, then run other commands) must not spend more than
+        # one slot of the shared budget before the turn's Stop hook runs
+        self.past(300)
+        first = self.run_hook(hooks.pre_tool_use, {"tool_name": "Write"})[1]
+        self.assertIn("seat-stop", first)
+        for _ in range(3):   # still the same turn: no Stop hook has run yet
+            self.assertEqual(self.run_hook(hooks.pre_tool_use, {"tool_name": "Bash"})[1], "")
+        # the turn ends without the seat actually stopping: the shared budget's 2nd slot
+        self.assertTrue(self.run_hook(hooks.stop, {})[1])
+        # a new turn's first call gets the third and last slot
+        self.assertTrue(self.run_hook(hooks.pre_tool_use, {"tool_name": "Bash"})[1])
+        # the whole shift's budget is spent now, whatever calls follow
+        self.assertEqual(self.run_hook(hooks.pre_tool_use, {})[1], "")
+        self.assertEqual(self.run_hook(hooks.stop, {})[1], "")
+
+    def test_pre_tool_use_is_quiet_once_roster_shows_stopping(self):
+        # the seat starts wrapping up: Write(handoff.md) still gets the (first) notice...
+        self.past(300)
+        out = self.run_hook(hooks.pre_tool_use, {"tool_name": "Write"})[1]
+        self.assertIn("seat-stop", out)
+        # ...but once yamato seat-stop has been accepted (roster shows STOPPING), further
+        # tool calls in the wrap-up sequence get nothing more, even with budget still left
+        roster.mark_stopping(self.shipdir, "impl", handoff_written=True)
+        self.assertEqual(self.run_hook(hooks.pre_tool_use, {"tool_name": "Bash"})[1], "")
         self.assertEqual(self.run_hook(hooks.stop, {})[1], "")
 
     def test_pre_tool_use_denies_and_stops_the_seat_once_past_the_grace(self):
