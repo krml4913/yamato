@@ -40,7 +40,7 @@ def create(name: str, workspace: str | None, path: str | None, template: str, *,
         text = src.read_text(encoding="utf-8")
         if ws is not None:
             text = text.replace("{{workspace}}", str(ws))
-        dst.write_text(text.replace("{{name}}", name), encoding="utf-8")
+        dst.write_text(text.replace("{{name}}", name), encoding="utf-8", newline="\n")
 
     team = load_team(shipdir)  # the template must validate as written
     from .seat import ensure_seat_dirs

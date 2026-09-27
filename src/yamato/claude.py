@@ -14,7 +14,9 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -36,13 +38,29 @@ _COPY_RE = re.compile(r"started a copy(?: of that conversation)? as ([0-9a-f]{8}
 
 
 def claude_bin() -> str:
-    return os.environ.get("YAMATO_CLAUDE", "claude")
+    """The ``claude`` executable's path, resolved the way a shell would (``shutil.which``)
+    instead of left to ``subprocess``'s own search: an npm-installed ``claude.cmd`` is a
+    shim that ``subprocess.run([...], shell=False)`` cannot spawn directly on Windows
+    (W1, work/windows-research.md §2.1). Falls back to the bare name when ``which`` finds
+    nothing, so the usual "not found" error still fires from ``_run``."""
+    raw = os.environ.get("YAMATO_CLAUDE", "claude")
+    return shutil.which(raw) or raw
+
+
+def _claude_argv(args: list[str]) -> list[str]:
+    """``[claude_bin(), *args]``, routed through ``cmd /c`` when the resolved binary is a
+    ``.cmd`` / ``.bat`` shim (Windows only): those need a shell to run at all, so this is
+    the one place that shell is introduced, never for the rest of the command line."""
+    bin_path = claude_bin()
+    if sys.platform == "win32" and bin_path.lower().endswith((".cmd", ".bat")):
+        return ["cmd", "/c", bin_path, *args]
+    return [bin_path, *args]
 
 
 def _run(args: list[str], *, cwd: str | None = None, env: dict | None = None, timeout: int = 120):
     try:
-        return subprocess.run([claude_bin(), *args], cwd=cwd, env=env, capture_output=True,
-                              text=True, timeout=timeout)
+        return subprocess.run(_claude_argv(args), cwd=cwd, env=env, capture_output=True,
+                              text=True, encoding="utf-8", errors="replace", timeout=timeout)
     except FileNotFoundError:
         raise YamatoError(f"claude コマンドが見つかりません ({claude_bin()})") from None
     except subprocess.TimeoutExpired:
@@ -160,7 +178,7 @@ def _claude_json() -> Path:
 def git_root(path: Path) -> Path | None:
     try:
         cp = subprocess.run(["git", "-C", str(path), "rev-parse", "--show-toplevel"],
-                            capture_output=True, text=True, timeout=10)
+                            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10)
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return None
     return Path(cp.stdout.strip()).resolve() if cp.returncode == 0 and cp.stdout.strip() else None
@@ -171,7 +189,7 @@ def main_repo_root(path: Path) -> Path | None:
     worktree itself); None outside git."""
     try:
         cp = subprocess.run(["git", "-C", str(path), "rev-parse", "--path-format=absolute", "--git-common-dir"],
-                            capture_output=True, text=True, timeout=10)
+                            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10)
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return None
     common = Path(cp.stdout.strip()) if cp.returncode == 0 and cp.stdout.strip() else None
@@ -305,7 +323,7 @@ def headless_argv(*, session_id: str, name: str, role: str, agents_json: str, mo
     3 s wait); ``--add-dir`` eats trailing values, so the prompt goes after ``--``.
     """
     args = [
-        claude_bin(), "-p", "--session-id", session_id, "--name", name,
+        "-p", "--session-id", session_id, "--name", name,
         "--output-format", "stream-json", "--verbose",
         "--agent", role, "--agents", agents_json,
         "--model", model,
@@ -315,7 +333,7 @@ def headless_argv(*, session_id: str, name: str, role: str, agents_json: str, mo
     ]
     if max_budget_usd is not None:
         args += ["--max-budget-usd", str(max_budget_usd)]
-    return args + ["--add-dir", add_dir, "--", prompt]
+    return _claude_argv(args + ["--add-dir", add_dir, "--", prompt])
 
 
 def stop(short_id: str) -> bool:

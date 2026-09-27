@@ -795,7 +795,7 @@ def watchdog(shipdir: Path, token: str) -> int:
         pass
     except PermissionError:
         return 0
-    pidfile.write_text(f"{os.getpid()} {token}\n")
+    pidfile.write_text(f"{os.getpid()} {token}\n", encoding="utf-8", newline="\n")
     try:
         while True:
             dl = deadline.read(shipdir)

@@ -28,7 +28,8 @@ REASON_CHARS = 300                             # a failure's reason in ``data``:
 
 def git(args: list[str], cwd: Path, check: bool = True) -> subprocess.CompletedProcess:
     try:
-        cp = subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True, timeout=120)
+        cp = subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True,
+                            encoding="utf-8", errors="replace", timeout=120)
     except FileNotFoundError:
         raise YamatoError("git コマンドが見つかりません") from None
     except subprocess.TimeoutExpired:

@@ -160,7 +160,7 @@ def _read(path: Path) -> str:
 
 def _append(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "a", encoding="utf-8") as f:
+    with open(path, "a", encoding="utf-8", newline="\n") as f:
         f.write(text)
 
 

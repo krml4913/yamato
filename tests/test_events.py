@@ -177,8 +177,8 @@ class LastActiveHookTest(ShipTestCase):
 
     def test_user_prompt_submit_is_wired_and_silent(self):
         s = json.loads(runtime.settings_path(self.shipdir, "impl").read_text())
-        [cmd] = [h["command"] for grp in s["hooks"]["UserPromptSubmit"] for h in grp["hooks"]]
-        self.assertIn("hook user-prompt-submit", cmd)
+        [h] = [h for grp in s["hooks"]["UserPromptSubmit"] for h in grp["hooks"]]
+        self.assertEqual(h["args"][1:3], ["hook", "user-prompt-submit"])
         self.assertIn("user-prompt-submit", hooks.HOOKS)
         self.assertEqual(self.run_hook(hooks.user_prompt_submit, {"prompt": "hi"})[1], "")
 

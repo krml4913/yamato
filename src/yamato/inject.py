@@ -52,7 +52,7 @@ def cap_total(shipdir: Path, seat: str, kind: str, text: str, total: int) -> str
     path = Path(shipdir) / ".runtime" / f"inject-{seat}-{kind}.md"
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
+        path.write_text(text, encoding="utf-8", newline="\n")
         tail = f"\n…(注入の上限 {total} 文字で切った。全文は `{path}` を Read せよ)"
     except OSError:
         tail = f"\n…(注入の上限 {total} 文字で切った)"

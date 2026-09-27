@@ -45,7 +45,9 @@ def _run_session_start(settings, sid):
     env = dict(os.environ, CLAUDE_CODE_SESSION_ID=sid)
     for group in cfg.get("hooks", {}).get("SessionStart", []):
         for h in group.get("hooks", []):
-            subprocess.run(h["command"], shell=True, env=env, capture_output=True, text=True,
+            # exec form (`args` present): command + args, no shell; otherwise a shell string
+            argv, shell = ([h["command"], *h["args"]], False) if "args" in h else (h["command"], True)
+            subprocess.run(argv, shell=shell, env=env, capture_output=True, text=True,
                            input=json.dumps({"session_id": sid, "source": "startup"}))
 
 

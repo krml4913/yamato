@@ -9,9 +9,8 @@ import unittest
 from tests.helpers import ShipTestCase
 from tests.test_research import rule_matches
 from yamato import runtime
-from yamato.util import YAMATO_BIN
 
-MERGE_ALLOW = f"Bash({YAMATO_BIN} pr merge*)"
+MERGE_ALLOW = f"Bash({runtime.yamato_invocation()} pr merge*)"
 
 
 class DevTemplateTest(ShipTestCase):
@@ -66,13 +65,13 @@ class DevTemplateTest(ShipTestCase):
         self.assertIn("allow:\n      - \"Bash({{yamato}} pr merge*)\"",
                       (self.shipdir / "team.yaml").read_text(encoding="utf-8"))
         self.assertIn("{{yamato}} pr merge", raw)
-        commands = re.findall(r"`(" + re.escape(str(YAMATO_BIN)) + r" pr merge [^`]*)`", rendered)
+        commands = re.findall(r"`(" + re.escape(runtime.yamato_invocation()) + r" pr merge [^`]*)`", rendered)
         self.assertTrue(commands)
         for cmd in commands:
             with self.subTest(cmd=cmd):
                 self.assertTrue(rule_matches(rule, "Bash", cmd), cmd)
         # the concrete command a reviewer types
-        self.assertTrue(rule_matches(rule, "Bash", f"{YAMATO_BIN} pr merge {self.shipdir} T-001 --by reviewer"))
+        self.assertTrue(rule_matches(rule, "Bash", f"{runtime.yamato_invocation()} pr merge {self.shipdir} T-001 --by reviewer"))
         self.assertFalse(rule_matches(rule, "Bash", "gh pr merge 5"))
 
     def test_only_the_reviewer_merges_in_the_prompts(self):

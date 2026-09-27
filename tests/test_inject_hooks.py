@@ -259,9 +259,9 @@ class HookTest(ShipTestCase):
         self.assertIn("KNOW-X", data["additionalContext"])
         # two hooks with different commands (one command twice would be merged into one)
         settings = json.loads(runtime.settings_path(self.shipdir, "impl").read_text())
-        cmds = [h["command"] for g in settings["hooks"]["SessionStart"] for h in g["hooks"]]
+        cmds = [(h["command"], tuple(h["args"])) for g in settings["hooks"]["SessionStart"] for h in g["hooks"]]
         self.assertEqual(len(set(cmds)), 2)
-        self.assertTrue(any(" session-start-knowledge " in c for c in cmds))
+        self.assertTrue(any("session-start-knowledge" in args for _, args in cmds))
 
     def test_stop_hook_quiet_before_deadline(self):
         deadline.write(self.shipdir, limit=600, grace=60, token="t")
@@ -646,8 +646,8 @@ class HookTest(ShipTestCase):
 
     def test_pre_tool_use_hook_is_wired_and_skips_the_cli(self):
         settings = json.loads(runtime.settings_path(self.shipdir, "impl").read_text())
-        [cmd] = [h["command"] for g in settings["hooks"]["PreToolUse"] for h in g["hooks"]]
-        self.assertIn(" hook pre-tool-use ", cmd)
+        [h] = [h for g in settings["hooks"]["PreToolUse"] for h in g["hooks"]]
+        self.assertEqual(h["args"][1:3], ["hook", "pre-tool-use"])
         deadline.write(self.shipdir, limit=600, grace=60, token="t")
         cp = subprocess.run([sys.executable, "-X", "importtime", str(YAMATO_BIN), "hook", "pre-tool-use",
                              str(self.shipdir), "impl"], capture_output=True, text=True, stdin=subprocess.DEVNULL)

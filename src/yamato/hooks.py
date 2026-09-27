@@ -434,7 +434,7 @@ def wait_deadline(shipdir: Path, seat: str) -> int:
     except (FileNotFoundError, ValueError):
         pass
     pidfile.parent.mkdir(parents=True, exist_ok=True)
-    pidfile.write_text(mine + "\n")
+    pidfile.write_text(mine + "\n", encoding="utf-8", newline="\n")
     polls = 0
     try:
         while True:

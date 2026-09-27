@@ -14,7 +14,7 @@ from tests.helpers import ShipTestCase
 from yamato import board as bmod
 from yamato import events, headless, roster, runtime, seat, ship
 from yamato.team import load_team, validate
-from yamato.util import YAMATO_BIN, YamatoError
+from yamato.util import YamatoError
 
 EXTERNAL_SEATS = ("researcher-1", "researcher-2", "researcher-3", "fact-checker")
 
@@ -68,7 +68,7 @@ def decide(settings: dict, tool: str, arg: str | None = None, cwd: Path | None =
 def prompt_commands(prompt: str, seat_name: str) -> list[str]:
     """The yamato command lines a role prompt tells the seat to run, with the
     placeholders filled in the way the seat would."""
-    y = str(YAMATO_BIN)
+    y = runtime.yamato_invocation()
     out = []
     for span in re.findall(r"`([^`\n]+)`", prompt):
         if not span.startswith(y + " "):
@@ -154,7 +154,8 @@ class ResearchShipTest(ShipTestCase):
         for s in EXTERNAL_SEATS:
             role = self.rteam["seats"][s]["role"]
             cmds = prompt_commands(agents[role]["prompt"], s)
-            names = {c.split()[1] + (" " + c.split()[2] if c.split()[1] == "board" else "") for c in cmds}
+            rest = [c[len(runtime.yamato_invocation()):].split() for c in cmds]   # after the two-word command
+            names = {w[0] + (" " + w[1] if w[0] == "board" else "") for w in rest}
             self.assertLessEqual({"inbox", "board mine", "board show", "board note", "log", "memo", "seat-stop"}, names)
             # the headless shift's own first prompt tells the seat to run these too
             cmds += prompt_commands(headless.first_prompt(self.rdir, s), s)
@@ -176,9 +177,9 @@ class ResearchShipTest(ShipTestCase):
                   ("Write", self.rdir / "seats" / s / "inbox.jsonl"), ("Write", self.rdir / "roles/editor.md"),
                   ("Write", self.rdir / "seats" / other / "handoff.md"), ("Write", self.rdir / "reports/x.md"),
                   ("Read", Path.home() / ".ssh/id_ed25519"),
-                  ("Bash", f"{YAMATO_BIN} send {self.rdir} editor \"hi\" --from {s}"),
-                  ("Bash", f"{YAMATO_BIN} board set {self.rdir} T-001 state=done --by {s}"),
-                  ("Bash", f"{YAMATO_BIN} inbox {self.rdir} editor"),
+                  ("Bash", f"{runtime.yamato_invocation()} send {self.rdir} editor \"hi\" --from {s}"),
+                  ("Bash", f"{runtime.yamato_invocation()} board set {self.rdir} T-001 state=done --by {s}"),
+                  ("Bash", f"{runtime.yamato_invocation()} inbox {self.rdir} editor"),
                   ("Bash", "curl -s https://example.com"), ("Bash", "python3 -c 'print(1)'")]
             for tool, arg in ng:
                 with self.subTest(seat=s, tool=tool, arg=arg):

@@ -43,7 +43,7 @@ def run(args) -> int:
 
         text = layout.layout_for(args.ships, args.command)
         if args.output:
-            with open(args.output, "w", encoding="utf-8") as f:
+            with open(args.output, "w", encoding="utf-8", newline="\n") as f:
                 f.write(text)
         else:
             sys.stdout.write(text)

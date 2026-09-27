@@ -488,5 +488,5 @@ class ResearchTemplateTest(ShipTestCase):
         from tests.test_research import decide
 
         st = json.loads(runtime.settings_path(self.rdir, "researcher-1").read_text())
-        cmd = f'{YAMATO} memo "よい出典は公式の文書" --ship {self.rdir} --item T-1 --scope ship'
+        cmd = f'{runtime.yamato_invocation()} memo "よい出典は公式の文書" --ship {self.rdir} --item T-1 --scope ship'
         self.assertEqual(decide(st, "Bash", cmd, self.rdir), "allow")

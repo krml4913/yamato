@@ -331,7 +331,7 @@ class HookTest(_Base):
 
     def test_settings_have_the_pre_compact_hook(self):
         s = runtime.build_settings(self.shipdir, self.team(), "pm")
-        self.assertIn("pre-compact", s["hooks"]["PreCompact"][0]["hooks"][0]["command"])
+        self.assertIn("pre-compact", s["hooks"]["PreCompact"][0]["hooks"][0]["args"])
 
     def test_stop_hook_nudges_once_per_shift_on_context(self):
         path = self.transcript("p" * 36, _assistant(400_000))

@@ -14,6 +14,15 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE / "src"))
 sys.path.insert(0, str(_HERE / "vendor"))
 
+# Windows (Git Bash 経由の subprocess でも) は既定でロケールの文字コード (日本語なら
+# cp932) を使うので、SessionStart の日本語注入やツール入出力が化ける・例外になる
+# (W1、work/windows-research.md §2.2)。全コマンド・全 hook が通るここで一度だけ直す。
+for _stream in (sys.stdin, sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError, OSError):
+        pass
+
 
 def _run_quiet_on_broken_pipe(func) -> int:
     """Run ``func`` and turn a closed stdout (``yamato status | head``) into a

@@ -1,0 +1,10 @@
+# Windows (Git for Windows の既定 core.autocrlf=true) で checkout すると、LF 前提の
+# yamato 本体 (shebang 付き) やひな形のテキストが CRLF になって壊れる (W1、
+# work/windows-research.md §2.1)。checkout・commit のどちらでも LF に固定する。
+* text=auto eol=lf
+yamato text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.json* text eol=lf

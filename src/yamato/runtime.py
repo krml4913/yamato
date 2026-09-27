@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import shlex
+import sys
 from pathlib import Path
 
 from .team import DEFAULT_MODE, profile_of
@@ -34,12 +35,18 @@ def agents_path(shipdir: Path) -> Path:
     return runtime_dir(shipdir) / "agents.json"
 
 
-def _cmd(*parts: str) -> str:
-    return " ".join(shlex.quote(str(p)) for p in parts)
+def yamato_invocation() -> str:
+    """The two-word form of ``{{yamato}}``: the interpreter that is running this process,
+    plus the script, each shell-quoted. A seat's Bash tool can always run this (unlike the
+    bare script path), because it does not depend on the shebang being interpretable --
+    Windows Git Bash has no ``python3`` by default (W1, work/windows-research.md §2.1).
+    Used for both the role prompt text and the permission rules, so an allow rule always
+    matches what the prompt tells the seat to type."""
+    return f"{shlex.quote(sys.executable)} {shlex.quote(str(YAMATO_BIN))}"
 
 
 def render_prompt(text: str, shipdir: Path, team: dict) -> str:
-    return (text.replace("{{yamato}}", str(YAMATO_BIN))
+    return (text.replace("{{yamato}}", yamato_invocation())
                 .replace("{{ship}}", str(shipdir))
                 .replace("{{ship_name}}", team["name"])
                 .replace("{{hub}}", team["hub"]))
@@ -49,9 +56,10 @@ def render_rule(rule: str, shipdir: Path, seat: str) -> str:
     """A permission rule of team.yaml: ``{{ship}}`` / ``{{yamato}}`` / ``{{seat}}`` are filled in.
 
     Absolute paths are written as ``/{{ship}}/...`` so the rule starts with ``//``
-    (verify-p1-d V1). No ``$VAR`` is expanded here or by Claude Code."""
+    (verify-p1-d V1). No ``$VAR`` is expanded here or by Claude Code. ``{{yamato}}`` is the
+    same two-word form ``render_prompt`` uses (see ``yamato_invocation``)."""
     return (rule.replace("{{ship}}", str(Path(shipdir)))
-                .replace("{{yamato}}", str(YAMATO_BIN))
+                .replace("{{yamato}}", yamato_invocation())
                 .replace("{{seat}}", seat))
 
 
@@ -87,7 +95,7 @@ def _merge(base: dict, extra: dict) -> dict:
 
 def build_settings(shipdir: Path, team: dict, seat: str) -> dict:
     ship = str(Path(shipdir))
-    y = str(YAMATO_BIN)
+    y = yamato_invocation()
     # `{{ship}}` in a rule is the ship folder (so a template can protect its records), `{{seat}}` this seat
     deny = [render_rule(r, shipdir, seat) for r in team.get("deny") or []]
     allow = [f"Bash({y} seat-stop:*)"]
@@ -97,7 +105,11 @@ def build_settings(shipdir: Path, team: dict, seat: str) -> dict:
         deny += [r for r in (render_rule(x, shipdir, seat) for x in profile["deny"]) if r not in deny]
 
     def hook(*args: str) -> dict:
-        return {"type": "command", "command": _cmd(y, "hook", *args, ship, seat)}
+        # exec form (command + args), not a shell string: Claude Code spawns shell-form
+        # hooks via Git Bash on Windows, and the script's shebang cannot run there without
+        # a `python3` on PATH (W1, work/windows-research.md §2.1). `sys.executable` is a
+        # real executable on every OS, which exec form requires on Windows.
+        return {"type": "command", "command": sys.executable, "args": [str(YAMATO_BIN), "hook", *args, ship, seat]}
 
     mech = {
         "crossSessionInbound": "accept",
