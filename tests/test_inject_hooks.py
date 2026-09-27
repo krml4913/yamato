@@ -109,6 +109,35 @@ class InjectTest(ShipTestCase):
         self.assertIn("board kanban", text)
         self.assertNotIn("done one", text)
 
+    def test_fleet_part_is_opt_in_and_lists_every_ship(self):
+        """T-022: the `fleet` part (admiral's own; opt-in like `board`) is a one-line-per-ship
+        summary, the same shape as `yamato ships` (admiral.ship_line), not just this ship."""
+        from yamato import ship
+
+        text, _ = self.build()
+        self.assertNotIn("fleet (全艦の様子", text)   # not in the default parts
+        ship.create("t2", str(self.workspace), None, "dev")
+        self.t["roles"]["impl"]["inject"] = [*self.t["inject"]["parts"], "fleet"]
+        text, _ = self.build()
+        self.assertIn(f"## fleet (全艦の様子。全文は `{YAMATO_BIN} ships`)", text)
+        self.assertIn("t1", text)
+        self.assertIn("t2", text)
+        self.assertIn("停止中", text)   # neither ship was `up`
+
+    def test_fleet_part_capped(self):
+        """Past `fleet_items`, the rest is a count pointing at the uncapped `yamato ships`,
+        not a line cut mid-way (完了条件 2: 艦の数が多いときの上限)."""
+        from yamato import ship
+
+        for name in ("t2", "t3"):
+            ship.create(name, str(self.workspace), None, "dev")
+        self.t["roles"]["impl"]["inject"] = [*self.t["inject"]["parts"], "fleet"]
+        text, _ = self.build(fleet_items=1)
+        self.assertIn("t1", text)
+        self.assertNotIn("t2", text)
+        self.assertNotIn("t3", text)
+        self.assertIn(f"…ほか 2 件 (`{YAMATO_BIN} ships` で見る)", text)
+
     def test_inbox_capped_and_cursor_only_over_full_messages(self):
         for i in range(12):
             inbox.append(self.shipdir, "impl", "pm", f"msg{i}")

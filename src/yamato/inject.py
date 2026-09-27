@@ -8,6 +8,7 @@ at ``total_chars``. What is cut says which file to Read for the rest.
 """
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from . import board as board_mod
@@ -26,6 +27,7 @@ LIMITS = {
     "total_chars": 9500,       # per hook: Claude Code takes 10,000 chars from one (verify-p0-c Q1)
     "last_report": (30, 1500), # the previous daily report's 3 sections (design-p1 §2.3)
     "board_items": 20,         # the `board` part's overview (T-030); over this, "…ほか N 件"
+    "fleet_items": 20,         # the `fleet` part (T-022); over this, "全文は `yamato ships`"
 }
 
 
@@ -117,6 +119,25 @@ def _orphans(shipdir: Path, team: dict, max_items: int, y: str) -> str:
             + "\n割り当て直すか、同じ席に send して起こし直す")
 
 
+def _fleet(limit: int, y: str) -> str:
+    """The `fleet` part (T-022, admiral's own): one line per ship, the same as `yamato
+    ships`, capped at ``limit``; over that, the rest points at the uncapped command
+    instead of being cut mid-line (design-drift D, D-013: admiral 用の全艦の要約)."""
+    from . import admiral, claude
+
+    title = f"## fleet (全艦の様子。全文は `{y} ships`)"
+    found = admiral.all_ships()
+    if not found:
+        return f"{title}\n(艦がありません)"
+    by = claude.by_session(claude.agents())
+    now = time.time()
+    names = list(found.items())
+    lines = [admiral.ship_line(name, path, by, now) for name, path in names[:limit]]
+    if len(names) > limit:
+        lines.append(f"…ほか {len(names) - limit} 件 (`{y} ships` で見る)")
+    return f"{title}\n" + "\n".join(lines)
+
+
 def _limits(team: dict, limits: dict | None) -> dict:
     return {**LIMITS, **((team.get("inject") or {}).get("limits") or {}), **(limits or {})}
 
@@ -176,6 +197,9 @@ def build(shipdir: Path, team: dict, seat: str, source: str = "startup",
 
     if "board" in want:
         parts.append(_board(shipdir, team, lim["board_items"], y))
+
+    if "fleet" in want:
+        parts.append(_fleet(lim["fleet_items"], y))
 
     # the applier's role gets `memory status` on its first start of the day (design-p1 §3.4)
     notice = memory.applier_notice(shipdir, team, seat)
