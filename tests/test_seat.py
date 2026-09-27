@@ -8,7 +8,7 @@ from contextlib import redirect_stdout
 from unittest import mock
 
 from tests.helpers import ShipTestCase
-from yamato import deadline, events, roster, runtime, seat
+from yamato import deadline, events, inbox, roster, runtime, seat
 from yamato.util import YamatoError
 
 
@@ -183,6 +183,31 @@ class SeatTest(_SeatBase):
         out = self.run_cmd(seat.send, self.shipdir, "pm", "hello", "owner")
         self.assertIn("起動していない", out)
         self.assertEqual(self.fake()["calls"], [])
+
+    def test_send_from_omitted_uses_the_calling_seat(self):
+        """#7: --from を省くと呼び出し元のセッション (roster.seat_of_session) を送り手にする。"""
+        sid = "c" * 36
+        roster.start_shift(self.shipdir, "impl", session_id=sid, short_id=sid[:8], session_name="t1.impl", how="new")
+        with mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": sid}):
+            self.run_cmd(seat.send, self.shipdir, "pm", "hello", None)
+        [entry] = inbox.entries(self.shipdir, "pm")
+        self.assertEqual(entry["from"], "impl")
+
+    def test_send_from_omitted_and_caller_unknown_defaults_to_owner(self):
+        """呼び出し元が席のセッションでなければ、今までどおり owner になる。"""
+        self.run_cmd(seat.send, self.shipdir, "pm", "hello", None)
+        [entry] = inbox.entries(self.shipdir, "pm")
+        self.assertEqual(entry["from"], "owner")
+
+    def test_send_from_explicit_mismatch_warns_but_keeps_the_explicit_sender(self):
+        """--from と呼び出し元が食い違えば警告するだけで、記録は --from を使う (拒否しない)。"""
+        sid = "d" * 36
+        roster.start_shift(self.shipdir, "impl", session_id=sid, short_id=sid[:8], session_name="t1.impl", how="new")
+        with mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": sid}):
+            out = self.run_cmd(seat.send, self.shipdir, "pm", "hello", "owner")
+        self.assertIn("食い違う", out)
+        [entry] = inbox.entries(self.shipdir, "pm")
+        self.assertEqual(entry["from"], "owner")
 
     def test_concurrent_sends_to_a_stopped_seat_launch_it_once(self):
         """Review B1: two senders racing must not start the seat twice."""

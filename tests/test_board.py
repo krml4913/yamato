@@ -1,7 +1,13 @@
+import io
+import os
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
+from tests.helpers import ShipTestCase
+from yamato import cli, roster
 from yamato.board import Board, dumps, loads, parse_assignments
 from yamato.util import YamatoError
 
@@ -124,6 +130,54 @@ class BoardTest(unittest.TestCase):
         self.assertEqual(parse_assignments(["a=1", "b=x=y", "c="]), {"a": "1", "b": "x=y", "c": ""})
         with self.assertRaises(YamatoError):
             parse_assignments(["novalue"])
+
+
+class BoardByCliTest(ShipTestCase):
+    """#12: board add / board set の --by は省くと呼び出し元の席になる (board note と同じ判定)。"""
+
+    def run_cli(self, *argv):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = cli.main(list(argv))
+        return rc, buf.getvalue()
+
+    def test_add_by_omitted_uses_the_calling_seat(self):
+        sid = "a" * 36
+        roster.start_shift(self.shipdir, "impl", session_id=sid, short_id=sid[:8], session_name="t1.impl", how="new")
+        with mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": sid}):
+            rc, _ = self.run_cli("board", "add", str(self.shipdir), "x")
+        self.assertEqual(rc, 0)
+        _, body, _ = Board(self.shipdir, self.team()).read("T-001")
+        self.assertIn("impl: 作成", body)
+
+    def test_add_by_omitted_and_caller_unknown_leaves_unresolved(self):
+        """呼び出し元が席のセッションでなければ、今までどおり (by なし)。"""
+        rc, _ = self.run_cli("board", "add", str(self.shipdir), "x")
+        self.assertEqual(rc, 0)
+        _, body, _ = Board(self.shipdir, self.team()).read("T-001")
+        self.assertIn("?: 作成", body)
+
+    def test_set_by_omitted_uses_the_calling_seat(self):
+        Board(self.shipdir, self.team()).add("x")
+        sid = "b" * 36
+        roster.start_shift(self.shipdir, "impl", session_id=sid, short_id=sid[:8], session_name="t1.impl", how="new")
+        with mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": sid}):
+            rc, _ = self.run_cli("board", "set", str(self.shipdir), "T-001", "--note", "進めた")
+        self.assertEqual(rc, 0)
+        _, body, _ = Board(self.shipdir, self.team()).read("T-001")
+        self.assertIn("impl: 進めた", body)
+
+    def test_by_explicit_mismatch_warns_but_keeps_the_explicit_value(self):
+        """--by と呼び出し元が食い違えば警告するだけで、記録は --by を使う (拒否しない)。"""
+        Board(self.shipdir, self.team()).add("x")
+        sid = "c" * 36
+        roster.start_shift(self.shipdir, "impl", session_id=sid, short_id=sid[:8], session_name="t1.impl", how="new")
+        with mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": sid}):
+            rc, out = self.run_cli("board", "set", str(self.shipdir), "T-001", "--note", "レビュー", "--by", "pm")
+        self.assertEqual(rc, 0)
+        self.assertIn("食い違う", out)
+        _, body, _ = Board(self.shipdir, self.team()).read("T-001")
+        self.assertIn("pm: レビュー", body)
 
 
 if __name__ == "__main__":

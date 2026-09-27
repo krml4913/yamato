@@ -50,7 +50,7 @@ def _parser(hook_only: bool = False) -> argparse.ArgumentParser:
     se.add_argument("ship")
     se.add_argument("seat", help="席の名前、または owner (人間の受信箱 + notify)")
     se.add_argument("message")
-    se.add_argument("--from", dest="sender", default="owner", help="送り手の席名 (既定 owner)")
+    se.add_argument("--from", dest="sender", help="送り手の席名 (既定: 呼び出し元の席。分からなければ owner)")
     se.add_argument("--cwd", help="宛先の次のシフトをこの dir (例: 項目の worktree) を cwd にして起動する。"
                                   "per_task / headless の席で使える (bgIsolation: none)")
 
@@ -151,6 +151,20 @@ def _hook(args) -> int:
         return 1
 
 
+def _resolve_by(shipdir: Path, by: str | None) -> str | None:
+    """``--by`` の既定は呼び出し元の席 (board note / decide / worktree / pr と同じ判定:
+    ``roster.seat_of_session($CLAUDE_CODE_SESSION_ID)``)。席でなければ今までどおり (None)。
+    ``--by`` を明示して呼び出し元と食い違えば警告だけする (拒否はしない)。"""
+    from . import roster
+
+    caller = roster.seat_of_session(shipdir, os.environ.get("CLAUDE_CODE_SESSION_ID"))
+    if by is None:
+        return caller
+    if caller and by != caller:
+        print(f"注意: --by {by} と呼び出し元の席 {caller} が食い違う (記録は --by の {by} を使う)")
+    return by
+
+
 def _board(args) -> int:
     from . import board as bmod
     from .seat import current_team
@@ -158,16 +172,16 @@ def _board(args) -> int:
     shipdir = resolve_ship(args.ship)
     brd = bmod.Board(shipdir, current_team(shipdir))
     if args.board_cmd == "add":
-        meta = brd.add(args.title, bmod.parse_assignments(args.fields), body=args.body, by=args.by)
+        by = _resolve_by(shipdir, args.by)
+        meta = brd.add(args.title, bmod.parse_assignments(args.fields), body=args.body, by=by)
         print(f"作成: {bmod.format_item(meta)}")
     elif args.board_cmd == "set":
-        meta = brd.set(args.id, bmod.parse_assignments(args.fields), note=args.note, by=args.by)
+        by = _resolve_by(shipdir, args.by)
+        meta = brd.set(args.id, bmod.parse_assignments(args.fields), note=args.note, by=by)
         where = " (archive へ移動)" if meta.get("state") == "done" else ""
         print(f"更新: {bmod.format_item(meta)}{where}")
     elif args.board_cmd == "note":
-        from . import roster
-
-        by = args.by or roster.seat_of_session(shipdir, os.environ.get("CLAUDE_CODE_SESSION_ID"))
+        by = _resolve_by(shipdir, args.by)
         meta = brd.note(args.id, args.text, by=by)
         print(f"追記: {meta['id']} {meta.get('title')}")
     elif args.board_cmd == "show":

@@ -387,10 +387,15 @@ def _unwatched_deadline(shipdir: Path, team: dict, token: str) -> None:
             deadline.path(shipdir).unlink(missing_ok=True)
 
 
-def send(shipdir: Path, seat: str, text: str, sender: str, cwd: str | None = None) -> int:
+def send(shipdir: Path, seat: str, text: str, sender: str | None, cwd: str | None = None) -> int:
     team = current_team(shipdir)
     if not text.strip():
         raise YamatoError("本文が空です")
+    caller = roster.seat_of_session(shipdir, os.environ.get("CLAUDE_CODE_SESSION_ID"))
+    if sender is None:
+        sender = caller or OWNER
+    elif caller and sender != caller:
+        out(f"注意: --from {sender} と呼び出し元の席 {caller} が食い違う (記録は --from の {sender} を使う)")
     _check_may_send(shipdir, team, sender)
     if seat == OWNER:
         if cwd:
