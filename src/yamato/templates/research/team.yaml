@@ -18,7 +18,7 @@ roles:
     shift: persistent
     trust: clean
     remote_control: true     # この席だけ --remote-control を付けて起こす (スマホから話せる席を captain に絞る)
-    inject: [handoff, log_tail, mine, last_report, inbox, memory, knowledge]
+    inject: [handoff, log_tail, mine, last_report, board, inbox, memory, knowledge]   # board: 艦全体の進み具合 (kanban 風、T-030)
     description: captain。owner の問いを項目に分けて調査を割り振り、確認を経た成果を報告書にまとめる。Web は読まない
   researcher:
     model: sonnet
@@ -148,6 +148,7 @@ inject:
     inbox_chars: 400
     total_chars: 9500
     last_report: [30, 1500]
+    board_items: 20            # 注入の部品 board (kanban 風) の項目数の上限 (T-030)
 
 # owner 宛ての通知経路 (design-p1 §2.4)。書き方は dev のひな形と同じ
 notify:

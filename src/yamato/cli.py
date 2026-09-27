@@ -97,6 +97,13 @@ def _parser(hook_only: bool = False) -> argparse.ArgumentParser:
     bm = bs.add_parser("mine", help="席の担当 (done 以外)")
     bm.add_argument("ship")
     bm.add_argument("seat")
+    bt = bs.add_parser("tree", help="parent を辿ってインデントで出す (T-030)")
+    bt.add_argument("ship")
+    bt.add_argument("id", nargs="?", help="この項目の下だけ (省略時は全体)")
+    bt.add_argument("--all", action="store_true", help="archive も含める")
+    bk = bs.add_parser("kanban", help="列ごとに見出し + 件数 + 項目 (T-030)")
+    bk.add_argument("ship")
+    bk.add_argument("--all", action="store_true", help="archive (done) も含める")
 
     ss = sub.add_parser("seat-stop", help="(席が使う) 引き継ぎを確認してシフトを終える")
     ss.add_argument("ship")
@@ -204,6 +211,19 @@ def _board(args) -> int:
     elif args.board_cmd == "mine":
         items = brd.mine(args.seat)
         print("\n".join(bmod.format_item(m) for m in items) if items else "(担当なし)")
+    elif args.board_cmd == "tree":
+        from . import board_view
+
+        items = brd.items(include_archive=args.all)
+        if args.id and not any(m["id"] == args.id for m in items) and brd.exists(args.id):
+            raise YamatoError(f"{args.id} は今の一覧にない (archive にあるなら --all を付ける)")
+        lines = board_view.tree_lines(items, args.id)
+        print("\n".join(lines) if lines else "(項目なし)")
+    elif args.board_cmd == "kanban":
+        from . import board_view
+
+        items = brd.items(include_archive=args.all)
+        print("\n".join(board_view.kanban_lines(brd.team, items, include_done=args.all)))
     return 0
 
 

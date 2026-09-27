@@ -16,13 +16,13 @@ TOP_KEYS = {"name", "hub", "workspace", "charter", "roles", "time_limit", "grace
             "settings", "seat_stop", "env_unset", "inject", "notify", "git", "report", "decisions",
             "watch", "talk_default", "profiles", "memory", "last_call", "context_windows"}
 # what SessionStart can inject (design §8.2); the header is always there
-INJECT_PARTS = ("handoff", "log_tail", "mine", "inbox", "memory", "knowledge", "last_report", "orphans")
+INJECT_PARTS = ("handoff", "log_tail", "mine", "inbox", "memory", "knowledge", "last_report", "orphans", "board")
 # what a ship that names no parts gets: the captain's report excerpt (design-p1 §2.3) is opt-in,
-# the orphaned items (§5.6) go to the captain only
-DEFAULT_INJECT_PARTS = tuple(p for p in INJECT_PARTS if p not in ("last_report", "orphans"))
+# the orphaned items (§5.6) go to the captain only, and the board overview (T-030) is opt-in too
+DEFAULT_INJECT_PARTS = tuple(p for p in INJECT_PARTS if p not in ("last_report", "orphans", "board"))
 # the role's memory and knowledge.md are cut at `memory.limits` (the limits `memory apply` keeps to)
 INJECT_LIMIT_KEYS = ("handoff", "log_tail", "mine_items", "inbox_messages", "inbox_chars", "total_chars",
-                     "last_report")
+                     "last_report", "board_items")
 RESERVED_SEATS = ("owner",)   # the human's inbox; not a seat
 SEAT_STOP_DEFAULTS = {"require_handoff": True, "require_delivery": True}
 ROLE_KEYS = {"model", "shift", "count", "description", "inject", "max_duration", "max_budget_usd", "report_to",

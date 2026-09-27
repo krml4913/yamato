@@ -89,6 +89,26 @@ class InjectTest(ShipTestCase):
         self.assertNotIn("task5", text)
         self.assertIn("ほか 25 件", text)
 
+    def test_board_part_is_opt_in_and_capped(self):
+        """T-030: the `board` part is not in a role's inject unless named (opt-in, DEFAULT
+        excludes it); when named, it lists the whole ship (not just `impl`'s own), capped
+        by `board_items` and ordered blocked -> active -> open."""
+        b = board.Board(self.shipdir, self.t)
+        b.add("open one", {"assignee": "pm", "state": "open"})
+        b.add("blocked one", {"state": "blocked"})
+        b.add("done one", {"state": "done"})   # never counted or shown
+        text, _ = self.build()
+        self.assertNotIn("board (艦全体", text)   # not in the default parts
+        self.t["roles"]["impl"]["inject"] = [*self.t["inject"]["parts"], "board"]
+        text, _ = self.build(board_items=1)
+        self.assertIn("## board (艦全体の進み具合)", text)
+        self.assertIn("blocked 1 / active 0 / open 1", text)
+        self.assertIn("T-002 [blocked]", text)   # blocked comes first...
+        self.assertNotIn("T-001 [open]", text)   # ...and the open one is past the cap of 1
+        self.assertIn("ほか 1 件 (`", text)
+        self.assertIn("board kanban", text)
+        self.assertNotIn("done one", text)
+
     def test_inbox_capped_and_cursor_only_over_full_messages(self):
         for i in range(12):
             inbox.append(self.shipdir, "impl", "pm", f"msg{i}")
