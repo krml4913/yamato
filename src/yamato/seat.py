@@ -384,6 +384,59 @@ def spawn_watchdog(shipdir: Path, token: str) -> None:
     _spawn_detached([sys.executable, str(YAMATO_BIN), "_watchdog", str(shipdir), token])
 
 
+def retired_seats(shipdir: Path, team: dict) -> list[dict]:
+    """T-014 (design-drift E): seats the roster knows that team.yaml no longer has -- ``count``
+    moved between 1 and 2+ renames a role's seats (``impl`` -> ``impl-1``..``impl-n``). What is
+    left behind: the seat's board items (not ``done``) and unread inbox mail. Detection only;
+    moving them is the captain's call (mechanism-not-policy)."""
+    from . import board as board_mod
+
+    gone = [s for s in roster.load(shipdir)["seats"] if s not in team["seats"]]
+    if not gone:
+        return []
+    items = board_mod.Board(shipdir, team).items()
+    found = []
+    for s in gone:
+        tasks = [m["id"] for m in items if m.get("assignee") == s and m.get("state") != "done"]
+        found.append({"seat": s, "tasks": tasks, "unread": len(inbox.unread(shipdir, s)),
+                      "handoff": (inbox.seat_dir(shipdir, s) / "handoff.md").is_file()})
+    return found
+
+
+def notify_retired_seats(shipdir: Path, team: dict) -> list[dict]:
+    """Tell the captain (inbox, from ``yamato``) about retired seats that still hold tasks or
+    unread mail. Said once per state: the same list is not repeated on the next ``up``; a
+    change in it (the captain moved some) says it again. Returns the seats that were reported."""
+    from .headless import REPORTER
+
+    reported = []
+    for r in retired_seats(shipdir, team):
+        if not r["tasks"] and not r["unread"]:
+            continue
+        sig = f"{','.join(r['tasks'])}|{r['unread']}"
+        if roster.seat(shipdir, r["seat"]).get("retiredNotified") == sig:
+            continue
+        reported.append(r)
+    if not reported:
+        return []
+    lines = ["team.yaml に無い席の記録が残っている (count の変更で席の名前が変わった疑い)。"
+             "未読を移す・task を振り直すのは captain の判断:"]
+    for r in reported:
+        lines.append(f"- {r['seat']}: 担当の task {', '.join(r['tasks']) if r['tasks'] else 'なし'}"
+                     f" / 未読 {r['unread']} 件" + (" / handoff あり" if r["handoff"] else ""))
+    lines.append(f"読む: `{YAMATO_BIN} inbox {shipdir} <席>`、task: `{YAMATO_BIN} board mine {shipdir} <席>`、"
+                 f"振り直し: `{YAMATO_BIN} board set {shipdir} <id> assignee=<席>`")
+    text = "\n".join(lines)
+    hub = team["hub"]
+    entry = inbox.append(shipdir, hub, REPORTER, text)
+    _send_event(shipdir, hub, REPORTER, entry)
+    for r in reported:
+        roster.update(shipdir, r["seat"], retiredNotified=f"{','.join(r['tasks'])}|{r['unread']}")
+    for line in lines[1:-1]:
+        out(f"注意: {line[2:]} (captain の inbox に知らせた)")
+    return reported
+
+
 # --- commands ----------------------------------------------------------------
 
 def up(shipdir: Path, for_: str | None) -> int:
@@ -424,6 +477,13 @@ def up(shipdir: Path, for_: str | None) -> int:
     else:
         deadline.clear(shipdir)
     hub = team["hub"]
+    # before the captain wakes: its startup injection then already has the notice in its inbox.
+    # best-effort (レビュー指摘): 知らせは安全網であって up を止める理由にしない。board の項目が
+    # 壊れている・inbox が読めないなどで例外が出ても、注意を出すだけで up 自体は進める。
+    try:
+        notify_retired_seats(shipdir, team)
+    except Exception as exc:
+        out(f"注意: 古い席の確かめに失敗 ({exc})")
     try:
         what, rec = wake(shipdir, team, hub, reason="up")
     except BaseException:

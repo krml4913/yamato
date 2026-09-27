@@ -547,6 +547,14 @@ captain が生きていて動いているのに進まない (同じ指示の送�
 
 席が作業の途中で落ちると、項目は `active` のまま残る (DA I4)。captain の起動時の注入に「孤児」の一覧を出す: `state: active` で、担当の席の最後のシフトが「引き継ぎなし終了」か、止まってから 30 分以上たっているもの。captain は割り当て直すか、同じ席を起こし直す。
 
+### 5.7 count の変更で席の名前が変わったとき (design-drift E, T-014)
+
+team.yaml の `count` を変える (1 ↔ 2 以上) と役割の席の名前が変わる (`impl` ↔ `impl-1..n`)。古い名前の記録 (roster・board・inbox) はファイルに残るが、新しい team.yaml のどの席にも属さなくなる。
+
+- `yamato up` は毎回、roster が知っている席のうち今の team.yaml に無いものを探し、その席の `done` でない担当 task と未読 inbox が残っていれば captain の inbox に知らせる (`from: yamato`)。何も残っていない席は知らせない
+- 同じ内容 (担当 task の集合 + 未読件数) は 1 回だけ知らせる。前回と変わっていれば (未読が増えた、task が動いたなど) もう一度知らせる
+- **移す・振り直すのは captain の判断** (mechanism-not-policy)。コードは検知と知らせまで。既存コマンド (`board set <id> assignee=<席>`、`inbox` を読んで新しい席に `send` し直す) で足りるので、専用の道具は足さない
+
 ---
 
 ## 6. admiral (窓口) の最小仕様
