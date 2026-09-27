@@ -265,17 +265,58 @@ def _inbox_wake_path(shipdir: Path, seat: str) -> Path:
     return Path(shipdir) / ".runtime" / f"inbox-wake-{seat}.json"
 
 
+def _inbox_stat(path: Path) -> list | None:
+    try:
+        st = path.stat()
+    except FileNotFoundError:
+        return None
+    return [st.st_mtime_ns, st.st_size]
+
+
 def take_inbox_wake(shipdir: Path, seat: str, seats) -> list[dict]:
     """Unread inbox entries from outside the seats (owner, yamato's fixed texts, ...),
     each returned once. A seat sender delivers by SendMessage itself (§0 B1), so its
-    entries are left alone: waking for them too would wake the seat twice."""
-    path = _inbox_wake_path(shipdir, seat)
+    entries are left alone: waking for them too would wake the seat twice.
+
+    Polled every ``WAIT_POLL`` seconds by the idle watcher (#9): most polls find
+    inbox.jsonl untouched since the last one, so its mtime/size are compared without
+    the ship lock first (shared with ``inbox.append``, so nothing can change it
+    unseen while we look), and the lock is only taken when they differ. Once inside,
+    only the bytes appended since the last poll are read (seek), not the whole file."""
+    ipath = inbox.path(shipdir, seat)
+    wake_path = _inbox_wake_path(shipdir, seat)
+    sig = _inbox_stat(ipath)
+    state = read_json(wake_path, {}) or {}
+    if state.get("sig") == sig:
+        return []   # inbox.jsonl はロックなしで見た限り前回と変わっていない
     with ship_lock(shipdir):
-        woken = (read_json(path, {}) or {}).get("n", 0)
-        news = [e for e in inbox.unread(shipdir, seat)
-                if e.get("n", 0) > woken and e.get("from") not in seats]
+        sig = _inbox_stat(ipath)   # ロックの中で確定させる (append と競らない)
+        offset = state.get("offset", 0)
+        size = sig[1] if sig else 0
+        if size < offset:
+            offset = 0   # 想定外の縮小 → 読み直す
+        new_text = ""
+        if ipath.exists():
+            with open(ipath, "r", encoding="utf-8") as f:
+                f.seek(offset)
+                new_text = f.read()
+                offset = f.tell()
+        cursor = inbox.cursor(shipdir, seat)
+        pending = [e for e in state.get("pending", []) if e.get("n", 0) > cursor]
+        for line in new_text.splitlines():
+            if not line.strip():
+                continue
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue  # a torn line never blocks the rest (inbox.entries does the same)
+            if e.get("n", 0) > cursor:
+                pending.append(e)
+        woken = state.get("n", 0)
+        news = [e for e in pending if e.get("n", 0) > woken and e.get("from") not in seats]
         if news:
-            write_json(path, {"n": max(e["n"] for e in news)})
+            woken = max(woken, max(e["n"] for e in news))
+        write_json(wake_path, {"n": woken, "sig": sig, "offset": offset, "pending": pending})
         return news
 
 

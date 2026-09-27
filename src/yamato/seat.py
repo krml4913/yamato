@@ -230,7 +230,13 @@ def wake(shipdir: Path, team: dict, seat: str, reason: str = "send") -> tuple[st
 
 
 def finish_shift(shipdir: Path, seat: str, *, reason: str, forced: bool = False) -> dict | None:
-    """Close the seat's current shift in the roster once, with its usage line."""
+    """Close the seat's current shift in the roster once, with its usage line.
+
+    The usage line is built by parsing the session transcript (``usage.build``),
+    which can be slow on a long shift; #10 has that run with the ship lock released,
+    so it never holds up another seat's board/inbox write. Only the roster update
+    and the ``usage.jsonl`` append happen inside a lock. Between the two locked
+    sections the shift is checked again in case someone else already closed it."""
     with ship_lock(shipdir):
         rec = roster.seat(shipdir, seat)
         if not rec or rec.get("state") == roster.OFF:
@@ -241,11 +247,19 @@ def finish_shift(shipdir: Path, seat: str, *, reason: str, forced: bool = False)
             note = roster.NO_HANDOFF_NOTE if not written else "強制停止 (引き継ぎは書かれていた)"
         elif not written:
             note = roster.NO_HANDOFF_NOTE
-        line = None
-        if rec.get("sessionId") and rec.get("shiftStartedAt"):
-            line = usage.record(shipdir, seat, session_id=rec["sessionId"], shift_no=rec.get("shiftNo"),
-                                since=rec["shiftStartedAt"])
+        session_id, shift_no, since = rec.get("sessionId"), rec.get("shiftNo"), rec.get("shiftStartedAt")
+
+    line = None
+    if session_id and since:
+        line = usage.build(seat, session_id=session_id, shift_no=shift_no, since=since)
+
+    with ship_lock(shipdir):
+        rec = roster.seat(shipdir, seat)
+        if not rec or rec.get("state") == roster.OFF or rec.get("shiftNo") != shift_no:
+            return None   # someone else closed this same shift meanwhile: the transcript read above is wasted, not wrong
         ended = roster.end_shift(shipdir, seat, reason=reason, handoff_written=written, note=note)
+        if line:
+            usage.append(shipdir, line)
     append_log(shipdir, seat, f"シフト終了 #{ended.get('shiftNo')} ({reason})" + (f" {note}" if note else ""))
     if line:
         append_log(shipdir, seat, usage.summary(line))

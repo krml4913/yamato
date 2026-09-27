@@ -19,6 +19,12 @@ def _inbox(shipdir: Path, seat: str) -> Path:
     return seat_dir(shipdir, seat) / "inbox.jsonl"
 
 
+def path(shipdir: Path, seat: str) -> Path:
+    """The inbox.jsonl path, for a caller (the idle watcher, #9) that wants to
+    ``stat``/seek it directly instead of going through ``entries``/``unread``."""
+    return _inbox(shipdir, seat)
+
+
 def _cursor(shipdir: Path, seat: str) -> Path:
     return seat_dir(shipdir, seat) / "inbox.cursor"
 

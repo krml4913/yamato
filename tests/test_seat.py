@@ -533,6 +533,63 @@ class SeatTest(_SeatBase):
         rec = roster.seat(self.shipdir, "pm")
         self.assertEqual((rec["state"], rec["endReason"], rec["note"]), (roster.OFF, "exited", "引き継ぎなしで終了"))
 
+    # --- #10: finish_shift parses the transcript with the ship lock released ---
+
+    def test_finish_shift_builds_usage_outside_the_lock(self):
+        import contextlib
+
+        from yamato import usage
+
+        roster.start_shift(self.shipdir, "impl", session_id="s" * 36, short_id="ssssssss",
+                           session_name="t1.impl", how="new")
+        (self.shipdir / "seats" / "impl" / "handoff.md").write_text("引き継ぎ")
+        order = []
+        real_lock = seat.ship_lock
+
+        @contextlib.contextmanager
+        def spy(shipdir):
+            order.append("lock-enter")
+            with real_lock(shipdir):
+                yield
+            order.append("lock-exit")
+
+        def fake_build(seat_name, **kw):
+            order.append("build")
+            return {"ts": 1, "seat": seat_name, "shiftNo": kw["shift_no"], "sessionId": kw["session_id"],
+                    "startedAt": kw["since"], "endedAt": 1, "input_tokens": 0, "output_tokens": 0,
+                    "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "total_tokens": 0,
+                    "messages": 0, "models": []}
+
+        with mock.patch.object(seat, "ship_lock", spy), mock.patch.object(usage, "build", fake_build):
+            ended = seat.finish_shift(self.shipdir, "impl", reason="seat-stop")
+        # 2つの短いロック区間の間で build (transcript の読み込み) をしている: ロックの中で読まない
+        self.assertEqual(order, ["lock-enter", "lock-exit", "build", "lock-enter", "lock-exit"])
+        self.assertEqual(ended["state"], roster.OFF)
+        self.assertTrue((self.shipdir / "usage.jsonl").is_file())
+
+    def test_finish_shift_skips_the_write_if_someone_else_already_closed_it(self):
+        from yamato import usage
+
+        roster.start_shift(self.shipdir, "impl", session_id="s" * 36, short_id="ssssssss",
+                           session_name="t1.impl", how="new")
+        (self.shipdir / "seats" / "impl" / "handoff.md").write_text("引き継ぎ")
+        real_build = usage.build
+        raced = []
+
+        def racing_build(seat_name, **kw):
+            # ロックを離している間に、別のプロセスが同じシフトを先に終えたとする
+            if not raced:
+                raced.append(1)
+                seat.finish_shift(self.shipdir, "impl", reason="race-winner")
+            return real_build(seat_name, **kw)
+
+        with mock.patch.object(usage, "build", racing_build):
+            ended = seat.finish_shift(self.shipdir, "impl", reason="race-loser")
+        self.assertIsNone(ended)   # 二重に終業させない
+        lines = (self.shipdir / "usage.jsonl").read_text().splitlines()
+        self.assertEqual(len(lines), 1)   # usage の行も二重に書かない
+        self.assertEqual(roster.seat(self.shipdir, "impl")["endReason"], "race-winner")
+
     def test_status_flags_permission_prompt(self):
         self.set_fake_mode(waitingFor="permission prompt")
         self.up()

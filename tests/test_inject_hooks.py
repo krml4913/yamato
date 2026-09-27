@@ -244,6 +244,73 @@ class HookTest(ShipTestCase):
         self.assertIn("seat-stop", err)
         self.assertNotIn("未読", err)
 
+    # --- #9: take_inbox_wake skips the ship lock when inbox.jsonl has not changed ---
+
+    def _spy_lock(self):
+        from yamato import util
+
+        seen = []
+        real = util.ship_lock
+
+        def spy(shipdir):
+            seen.append(shipdir)
+            return real(shipdir)
+
+        return seen, mock.patch.object(hooks, "ship_lock", spy)
+
+    def test_take_inbox_wake_skips_the_lock_when_unchanged(self):
+        seats = {"pm", "impl"}
+        inbox.append(self.shipdir, "impl", "owner", "1件目")
+        seen, patch = self._spy_lock()
+        with patch:
+            news = hooks.take_inbox_wake(self.shipdir, "impl", seats)
+            self.assertEqual([e["text"] for e in news], ["1件目"])
+            self.assertEqual(len(seen), 1)   # 変化があった: ロックを取った
+            # 何も変わっていない2回目: ロックを取らずに空を返す
+            self.assertEqual(hooks.take_inbox_wake(self.shipdir, "impl", seats), [])
+            self.assertEqual(len(seen), 1)
+
+    def test_take_inbox_wake_reads_only_the_new_tail_after_a_change(self):
+        seats = {"pm", "impl"}
+        inbox.append(self.shipdir, "impl", "owner", "1件目")
+        first = hooks.take_inbox_wake(self.shipdir, "impl", seats)
+        self.assertEqual(len(first), 1)
+        ipath = inbox.path(self.shipdir, "impl")
+        offset_after_first = json.loads((self.shipdir / ".runtime" / "inbox-wake-impl.json").read_text())["offset"]
+        self.assertEqual(offset_after_first, ipath.stat().st_size)
+        inbox.append(self.shipdir, "impl", "owner", "2件目")
+        # 前回までの範囲をもう一度パースしていないことを確かめる: 追記後のバイトだけ読む
+        real_open = open
+        seen_offsets = []
+
+        def spying_open(path, *a, **k):
+            f = real_open(path, *a, **k)
+            if str(path) == str(ipath) and a[:1] == ("r",):
+                real_seek = f.seek
+
+                def seek(pos, *sa):
+                    seen_offsets.append(pos)
+                    return real_seek(pos, *sa)
+                f.seek = seek
+            return f
+
+        with mock.patch("builtins.open", spying_open):
+            second = hooks.take_inbox_wake(self.shipdir, "impl", seats)
+        self.assertEqual([e["text"] for e in second], ["2件目"])
+        self.assertEqual(seen_offsets, [offset_after_first])   # 先頭からではなく前回の続きから
+
+    def test_take_inbox_wake_drops_pending_once_the_seat_reads_it(self):
+        # a message that arrives while another seat sender's news is pending stays
+        # cached until read; once mark_read passes it, the cache does not grow forever
+        seats = {"pm", "impl"}
+        inbox.append(self.shipdir, "impl", "owner", "1件目")
+        hooks.take_inbox_wake(self.shipdir, "impl", seats)
+        inbox.mark_read(self.shipdir, "impl", 1)
+        inbox.append(self.shipdir, "impl", "owner", "2件目")
+        hooks.take_inbox_wake(self.shipdir, "impl", seats)
+        pending = json.loads((self.shipdir / ".runtime" / "inbox-wake-impl.json").read_text())["pending"]
+        self.assertEqual([e["n"] for e in pending], [2])   # 読まれた #1 はキャッシュから落ちている
+
     # --- the time limit inside a long turn (§0 B4) ---
 
     def past(self, grace_left: float):
