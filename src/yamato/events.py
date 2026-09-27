@@ -39,6 +39,8 @@ CAPTAIN_GAP = "captain_gap"                 # the captain has been stopped for l
 ROTATE_SUGGESTED = "rotate_suggested"       # the Stop hook nudged a live seat to seat-stop --rotate
 ROTATE_REQUESTED = "rotate_requested"       # seat-stop --rotate set the mark
 LAST_CALL = "last_call"                     # the captain was told the last call has passed
+RESTOP_FAILED = "restop_failed"             # T-012: spawning a seat-stop's delayed stop itself failed
+STOPPING_STUCK = "stopping_stuck"           # T-012: `stopping` past STOPPING_STUCK_AFTER; forced again
 
 SUMMARY_CHARS = 200
 

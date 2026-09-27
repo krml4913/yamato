@@ -39,6 +39,8 @@ yamato が書くのは次の kind。定数は `src/yamato/events.py` (`notify_fa
 | `shift_start` | roster のシフト開始 (new / resume / headless) | 席 | ― | ― | `shiftNo`、`how`、`sessionId` |
 | `shift_end` | roster のシフト終了 | 席 | ― | ― | `shiftNo`、`reason` (`seat-stop` / `exited` / `down-force` / `grace-exceeded`。headless はほかに `max-duration` / `failed` / `wrapper-signal` (ラッパーが SIGTERM・SIGINT を受けて `-p` に転送した) / `wrapper-lost` (ラッパーが居ないのに `-p` が残っていたのを reconcile が止めた))、`handoffWritten`、`note` (「引き継ぎなしで終了」など) |
 | `force_stop` | `down --force`・猶予超えの強制停止 (このあと `shift_end` も出る) | 席 | ― | ― | `reason`、`shiftNo`、`sessionId` |
+| `restop_failed` | `seat-stop` の遅延 stop (`sh -c 'sleep ...; claude stop ...'`) の**起動自体**が失敗した (T-012。稀。作業ログにも残す) | 席 | ― | ― | `sessionId`、`forced` |
+| `stopping_stuck` | `status` / watchdog が、`stopping` のまま `seat.STOPPING_STUCK_AFTER` (既定 5 分) を超えて生きている席を見つけ、遅延 stop を打ち直した (T-012。よくある原因: worktree を cwd にした遅延 stop が、その worktree の `worktree rm` で cwd ごと消えて動かなかった) | 席 | ― | ― | `stopRequestedAt`、`sessionId` |
 | `shift_failed` | headless のシフトの異常 (design-p1 §4.2 の 4、§4.4。このあと `shift_end` も出る) | 席 | ― | ― | `shiftNo`、`sessionId`、`exitCode`、`failures` (理由の文)、`is_error`、`api_error_status`、`terminal_reason` |
 | `launch_failed` | bg の席の起動・resume のあと、`claude agents --json` で起きていなかったとき (`state: failed`・pid なし。`claude --bg` は exit 0 のまま。検証 C Q5)。シフトは始めない (`shift_start` は出ない)。日報の「異常」に載る | 席 | ― | ― | `how` (`new` / `resume`)、`sessionId`、`reason` |
 | `permission_denied` | PermissionRequest の deny hook (`source: dialog`)、PermissionDenied hook (`source: auto`、classifier の拒否) | 席 | ― | ― | `source`、`tool`、`reason` (auto のみ) |
