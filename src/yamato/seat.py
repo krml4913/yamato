@@ -477,8 +477,13 @@ def up(shipdir: Path, for_: str | None) -> int:
     else:
         deadline.clear(shipdir)
     hub = team["hub"]
-    # before the captain wakes: its startup injection then already has the notice in its inbox
-    notify_retired_seats(shipdir, team)
+    # before the captain wakes: its startup injection then already has the notice in its inbox.
+    # best-effort (レビュー指摘): 知らせは安全網であって up を止める理由にしない。board の項目が
+    # 壊れている・inbox が読めないなどで例外が出ても、注意を出すだけで up 自体は進める。
+    try:
+        notify_retired_seats(shipdir, team)
+    except Exception as exc:
+        out(f"注意: 古い席の確かめに失敗 ({exc})")
     try:
         what, rec = wake(shipdir, team, hub, reason="up")
     except BaseException:

@@ -115,6 +115,16 @@ class SeatTest(_SeatBase):
         self.up()
         self.assertEqual(self._notices(), [])
 
+    def test_a_broken_board_item_does_not_stop_up(self):
+        # レビュー指摘 (T-014 差し戻し): 知らせは安全網。board が壊れていても up は captain を
+        # 起こす (知らせだけ諦めて注意を出す)。
+        self._retire()
+        (self.shipdir / "board" / "items" / "T-999.md").write_text("frontmatter がない壊れた項目")
+        out = self.up()
+        self.assertIn("古い席の確かめに失敗", out)
+        self.assertTrue(self.bg_calls() or self.resume_calls())
+        self.assertEqual(self._notices(), [])
+
     # --- up ---
 
     def test_up_launches_hub_with_the_verified_recipe(self):
