@@ -54,6 +54,67 @@ class _SeatBase(ShipTestCase):
 
 
 class SeatTest(_SeatBase):
+    # --- T-014: count の変更で席の名前が変わったとき ---
+
+    def _retire(self, name="impl-1", tasks=("T-001",), unread=2):
+        """A seat the roster knows (a shift once ran) that team.yaml no longer has."""
+        roster.update(self.shipdir, name, state=roster.OFF, sessionId="00000000-0000-0000-0000-00000000000" + name[-1])
+        for t in tasks:
+            self._add_item(t, name, "active")
+        for i in range(unread):
+            inbox.append(self.shipdir, name, "pm", f"未読 {i}")
+
+    def _add_item(self, item_id, assignee, state):
+        # written while the seat was still in team.yaml (count was 2 then)
+        team = self.team()
+        team["seats"] = {**team["seats"], assignee: team["seats"]["impl"]}
+        board.Board(self.shipdir, team).add(item_id, {"assignee": assignee, "state": state}, by="pm")
+
+    def _notices(self):
+        return [e for e in inbox.entries(self.shipdir, "pm") if e["from"] == "yamato"]
+
+    def test_up_tells_the_captain_about_a_seat_team_yaml_no_longer_has(self):
+        self._retire()
+        out = self.up()
+        [n] = self._notices()
+        self.assertIn("impl-1", n["text"])
+        self.assertIn("T-001", n["text"])
+        self.assertIn("未読 2 件", n["text"])
+        self.assertIn("impl-1", out)
+        # nothing is moved: the captain decides
+        self.assertEqual(len(inbox.unread(self.shipdir, "impl-1")), 2)
+        [item] = [m for m in board.Board(self.shipdir, self.team()).items() if m["id"] == "T-001"]
+        self.assertEqual(item["assignee"], "impl-1")
+
+    def test_the_same_retired_seat_is_not_told_twice(self):
+        self._retire()
+        self.up()
+        self.up()
+        self.assertEqual(len(self._notices()), 1)
+
+    def test_a_changed_retired_seat_is_told_again(self):
+        self._retire()
+        self.up()
+        inbox.append(self.shipdir, "impl-1", "pm", "もう 1 通")
+        self.up()
+        self.assertEqual(len(self._notices()), 2)
+        self.assertIn("未読 3 件", self._notices()[1]["text"])
+
+    def test_a_retired_seat_with_nothing_left_is_not_told(self):
+        self._retire(tasks=(), unread=0)
+        self.up()
+        self.assertEqual(self._notices(), [])
+
+    def test_a_done_task_of_a_retired_seat_does_not_count(self):
+        self._retire(tasks=(), unread=0)
+        self._add_item("T-002", "impl-1", "done")
+        self.up()
+        self.assertEqual(self._notices(), [])
+
+    def test_no_retired_seat_no_notice(self):
+        self.up()
+        self.assertEqual(self._notices(), [])
+
     # --- up ---
 
     def test_up_launches_hub_with_the_verified_recipe(self):

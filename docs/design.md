@@ -155,7 +155,7 @@ owner (人間)
 | 概念 | 実体 |
 |---|---|
 | 役割 (role) | 役割プロンプト `<ship>/roles/<role>.md` (ひな形から写す)。yamato がこれを `--agents` の JSON にして席に渡す。作業対象の repo の `.claude/agents/` には置かない。model・shift・count は team.yaml |
-| 席 (seat) | 役割を担う名前付き background session。名前は `<ship>.<seat>`。`count: n` の役割は席 `<role>-1..n` になる。席の「今のシフト」は roster.json が正本 (名前からは探さない、§10) |
+| 席 (seat) | 役割を担う名前付き background session。名前は `<ship>.<seat>`。`count: n` の役割は席 `<role>-1..n` になる。席の「今のシフト」は roster.json が正本 (名前からは探さない、§10)。`count` を変えて席の名前が変わったとき、古い席に担当の task か未読が残っていれば `up` が captain に知らせる (移すのは captain。design-p1 §5.7) |
 | シフト | 席のセッション 1 回分。起動 → 記録を読む → 働く → 引き継ぎを書く → 終わる |
 | 会話 | 記録 (inbox) に残してから、生きている席へは送り手が Claude Code の `SendMessage` で届ける (§7) |
 | 覗く・入る | Claude Code の `claude agents` と `claude attach`。表示は zellij でまとめる (§10) |
