@@ -1,7 +1,7 @@
 """Every call into Claude Code lives here (design §14: absorb CLI changes in one place).
 
-The launch / resume / stop recipes follow docs/verify-p0-a.md and
-docs/verify-p0-b.md exactly:
+The launch / resume / stop recipes follow docs/verify/verify-p0-a.md and
+docs/verify/verify-p0-b.md exactly:
 - liveness is ``pid != null`` (``state`` labels what the seat asks of a human, verify-p0-c Q5)
 - ``claude --bg`` exits 0 even when the worker dies before init: a launch or resume
   counts only once the listing shows a pid and no ``state: failed`` (``started_failure``)

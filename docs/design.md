@@ -2,14 +2,14 @@
 
 - 作成: 2026-09-25 / leader (main セッション)。user との相談 (redesign-consult.md) の合意を清書したもの (v1)
 - 改訂: 2026-09-26 v2 / driver (task-design-md-revise)。P0 の実装 (main、PR #4) と、owner の方針「仕組みは道具・記録・安全網だけ、運用の方針は強制しない」に合わせて、§0 以外の本文を直した。**§0 の決定の中身は変えていない**
-- 改訂: 2026-09-26 v3 / driver (task-verify-c-apply)。検証 C (`verify-p0-c.md`) の結果を本文に反映した (下の「改訂の要約 (v3)」)。**§0 は変えていない**
+- 改訂: 2026-09-26 v3 / driver (task-verify-c-apply)。検証 C (`verify/verify-p0-c.md`) の結果を本文に反映した (下の「改訂の要約 (v3)」)。**§0 は変えていない**
 - 位置づけ: yamato の基本設計の正本。**§0 が最新の決定で、本文 (§1 以降) は §0 と P0 の実装に合わせてある**。P1 で足すものの詳細は `design-p1.md` (v4)。P0 の使い方は README
-- 根拠資料: `research-claude-primitives.md` (Claude Code 調査, fact-check 済) / `review-da-v0.md` (DA レビュー。§0 では旧名 `da-yamato-design-v0.md`) / `verify-p0-a.md`・`verify-p0-b.md` (P0 の実機検証) / `e2e-p0.md` (P0 実装の E2E) / `verify-p1-d.md` (P1 の要検証) / `policy-audit.md` (方針の洗い出し) / `design-p1.md` / bmweb 記事「AIエージェントに記憶・作業記録を引き継がせる方式の調査」
+- 根拠資料: `_archive/research-claude-primitives.md` (Claude Code 調査, fact-check 済) / `_archive/review-da-v0.md` (DA レビュー。§0 では旧名 `da-yamato-design-v0.md`) / `verify/verify-p0-a.md`・`verify/verify-p0-b.md` (P0 の実機検証) / `e2e/e2e-p0.md` (P0 実装の E2E) / `verify/verify-p1-d.md` (P1 の要検証) / `_archive/policy-audit.md` (方針の洗い出し) / `design-p1.md` / bmweb 記事「AIエージェントに記憶・作業記録を引き継がせる方式の調査」
 - 名前: **yamato** (2026-09-25 決定)。本文中の「本システム」は yamato を指す
 
 ## 改訂の要約 (v3, 2026-09-26)
 
-検証 C (`verify-p0-c.md`) の結果を、§0 以外の本文に反映した。
+検証 C (`verify/verify-p0-c.md`) の結果を、§0 以外の本文に反映した。
 
 - **起動レシピの注記** (§4.1): 起動側の環境変数は bg の席に届かない (Q2。席の環境は daemon とユーザー設定の `env` から来る)。消す手段は settings の `env` に空で書くことで、e2e-p1 の D (#24) で対応済み。Remote Control に繋がった席は attach なしでも 1 時間で止まらない (Q3)。ひな形は captain 以外 `remoteControlAtStartup: false`
 - **起動の確かめ** (§4.1): `claude --bg` は worker が起動前に落ちても exit 0。起動のあとに `claude agents --json` で `state == failed`・pid なしを見て、失敗として扱う (Q5)
@@ -20,7 +20,7 @@
 
 v1 は P0 の実装より前に書いた。v2 では次の 3 点を直した。§0 は v1 のまま、本文を §0 に合わせた。
 
-1. **方針の移し先を書いた**。yamato のコードが持つのは道具・記録の整合性・安全網だけで、誰が何をいつどう進めるかは、team.yaml の設定・ひな形の既定値・役割プロンプトに置いて艦ごとに変える。分け方は §2.1。`design-p1.md` §0.3「design.md から方針に移すもの」の 15 項目は、各節に次のとおり反映した (番号は `policy-audit.md` の表と対応)
+1. **方針の移し先を書いた**。yamato のコードが持つのは道具・記録の整合性・安全網だけで、誰が何をいつどう進めるかは、team.yaml の設定・ひな形の既定値・役割プロンプトに置いて艦ごとに変える。分け方は §2.1。`design-p1.md` §0.3「design.md から方針に移すもの」の 15 項目は、各節に次のとおり反映した (番号は `_archive/policy-audit.md` の表と対応)
 
    | design-p1 §0.3 の項目 | 移し先 | v2 の反映先 |
    |---|---|---|
@@ -131,7 +131,7 @@ fleet からの方針転換:
 - **ひな形の既定値**: 設定と同じだが、「開発艦のひな形ではこう書いてある」ことを指す (deny リスト、`env_unset`、`decisions` の表など)
 - **役割プロンプト**: yamato が値を読まない、エージェントの振る舞いの約束 (git の流れ、worktree を誰がいつ使うか、何を decision にするか、秘密情報を書かない、など)
 
-判定の問い: 「別の PJ でこれが邪魔にならないか」。邪魔になりうるなら方針。本文の各節は、方針にあたる箇所に移し先を書いた。洗い出しの全体と、コードに残る強制の一覧は `policy-audit.md` (§4)。
+判定の問い: 「別の PJ でこれが邪魔にならないか」。邪魔になりうるなら方針。本文の各節は、方針にあたる箇所に移し先を書いた。洗い出しの全体と、コードに残る強制の一覧は `_archive/policy-audit.md` (§4)。
 
 ## 3. 全体像
 
@@ -548,7 +548,7 @@ grace: 20m            # 終了時刻のあと、キリのいいところまで�
 - PreToolUse hook はツール呼び出しのたびに走るので軽くする。`yamato` の入口が CLI を読み込む前に `yamato.pretool` を呼び、`.runtime/deadline` の JSON 1 つだけを読んで、終了時刻の前ならすぐ抜ける (標準ライブラリだけ。過ぎていれば `hooks.pre_tool_use` に渡す)
 - `yamato down` を手で打てば、その時点で終業の段階から始まる。`down --force` は猶予なしで強制停止する。P1 で `ship extend` (deadline を延ばす) と `ship halt` (緊急停止) が加わる
 - PC がスリープするとタイマーは遅れる。スリープ中はチームも止まっているので、実害はない
-- 実機の E2E では、idle の captain を watcher が終了時刻に起こして終業させたこと、`down --force` で強制停止できることを確かめた。Stop hook の block による終業指示と、watchdog による猶予切れの自動停止は、実機では観測できず (全席が先に自分で止まった)、単体テストでだけ確認している (`e2e-p0.md`)。のちに、watchdog を殺した状態で猶予を過ぎても長いターンを続ける席を、PreToolUse hook が止めることを実機で確かめた (`e2e-time-limit.md`)
+- 実機の E2E では、idle の captain を watcher が終了時刻に起こして終業させたこと、`down --force` で強制停止できることを確かめた。Stop hook の block による終業指示と、watchdog による猶予切れの自動停止は、実機では観測できず (全席が先に自分で止まった)、単体テストでだけ確認している (`e2e/e2e-p0.md`)。のちに、watchdog を殺した状態で猶予を過ぎても長いターンを続ける席を、PreToolUse hook が止めることを実機で確かめた (`e2e/e2e-time-limit.md`)
 
 ## 13. コマンド
 
@@ -611,7 +611,7 @@ design-p1 には、別の名前で書かれている箇所がある (`ship up / 
 
 ## 16. 作る順番
 
-1. **P0 記録と起動** (完了。main、PR #4): 艦フォルダ、`team.yaml`、board コマンド、席の起動 (`claude --bg` + SessionStart hook)、`send`、シフトの終わり (`seat-stop`)、時間の上限、使用量の記録。P0 は検証から始め (verify-p0-a / b)、E2E で owner の依頼 1 件を無人で通した (`e2e-p0.md`)。zellij の表示層は P2 の先行として入っている (PR #2)
+1. **P0 記録と起動** (完了。main、PR #4): 艦フォルダ、`team.yaml`、board コマンド、席の起動 (`claude --bg` + SessionStart hook)、`send`、シフトの終わり (`seat-stop`)、時間の上限、使用量の記録。P0 は検証から始め (verify-p0-a / b)、E2E で owner の依頼 1 件を無人で通した (`e2e/e2e-p0.md`)。zellij の表示層は P2 の先行として入っている (PR #2)
 2. **P1 チームとして回す**: 順番は design-p1 §10。(1) `events.jsonl` と `last_active` (2) 判断 `decide` (3) `run-headless` と `shift: headless` (4) 日報と通知 (5) captain の入れ替えと `send` の再開の規則 (6) admiral の CLI (7) 最終受付 (8) memory の棚卸し (9) `yamato worktree` と `pr open/merge`、開発艦のひな形に git の流れ (10) 調査艦のひな形と `trust:` のプロファイル
 3. **P2 表示**: zellij の表示層の `yamato` への組み込み
 4. **P3 運用**: 使用量と監査ログの集計 (日報の使用量の節は P1 で先に入る)
