@@ -25,6 +25,10 @@ SEAT_FILES = ("memory-inbox.md",)   # the memory itself is the role's: roles/<ro
 OWNER = inbox.OWNER
 WATCHDOG_POLL = 30
 WATCHDOG_MIN_SLEEP = 1.0   # the shortest watchdog sleep (tests shorten it)
+# T-012: a seat still `stopping` this long after seat-stop accepted it almost certainly means
+# its delayed stop never ran (its cwd was a worktree that got removed, say) -- status/watchdog
+# force it again past this age, and do not retry more often than this either
+STOPPING_STUCK_AFTER = 5 * 60
 
 
 def out(msg: str = "") -> None:
@@ -284,6 +288,37 @@ def reconcile(shipdir: Path, team: dict, listing: list[dict]) -> None:
         finish_shift(shipdir, seat, reason=reason)
 
 
+def restop_stuck(shipdir: Path, team: dict, listing: list[dict], now: float | None = None) -> list[str]:
+    """T-012: a seat that has been ``stopping`` for longer than ``STOPPING_STUCK_AFTER`` is
+    still alive (call this after ``reconcile``, which already closes a stopping seat whose
+    process died) -- its delayed stop almost certainly never ran. Force it again, at most
+    once per ``STOPPING_STUCK_AFTER`` window, and record why. Returns the seats acted on."""
+    now = time.time() if now is None else now
+    by = claude.by_session(listing)
+    acted = []
+    for seat, rec in roster.load(shipdir)["seats"].items():
+        if seat not in team["seats"] or rec.get("state") != roster.STOPPING:
+            continue
+        started = rec.get("stopRequestedAt")
+        if not started or now - started < STOPPING_STUCK_AFTER:
+            continue
+        last_attempt = rec.get("restopAttemptAt")
+        if last_attempt and now - last_attempt < STOPPING_STUCK_AFTER:
+            continue
+        if not claude.is_alive(by.get(rec.get("sessionId"))):
+            continue   # dead: reconcile() above already closed it (or is about to)
+        sid = rec["sessionId"]
+        minutes = int((now - started) / 60)
+        roster.update(shipdir, seat, restopAttemptAt=now)
+        append_log(shipdir, seat, f"stopping のまま {minutes} 分: 止め直した (T-012)")
+        events.emit(shipdir, events.STOPPING_STUCK, seat=seat, now=now,
+                    summary=f"stopping のまま {minutes} 分。止め直した",
+                    data={"stopRequestedAt": started, "sessionId": sid})
+        spawn_delayed_stop(shipdir, seat, sid, 0)
+        acted.append(seat)
+    return acted
+
+
 def _headless_running(shipdir: Path, team: dict, seat: str) -> bool:
     """A headless seat is on shift while its wrapper holds the seat (it closes the shift itself)."""
     if team["seats"][seat]["shift"] != "headless":
@@ -340,9 +375,9 @@ def enforce(shipdir: Path, team: dict) -> list[str]:
     return force_stop_all(shipdir, team, reason="grace-exceeded")
 
 
-def _spawn_detached(args: list[str]) -> None:
+def _spawn_detached(args: list[str], cwd: str | None = None) -> None:
     subprocess.Popen(["nohup", *args], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                     stderr=subprocess.DEVNULL, start_new_session=True, env=claude.seat_env())
+                     stderr=subprocess.DEVNULL, start_new_session=True, env=claude.seat_env(), cwd=cwd)
 
 
 def spawn_watchdog(shipdir: Path, token: str) -> None:
@@ -365,7 +400,7 @@ def up(shipdir: Path, for_: str | None) -> int:
         out(f"注意: {unsure}")
     now = time.time()
     limit = parse_duration(for_) if for_ else team["time_limit"]
-    if for_ is None:
+    if for_ is None and limit is not None:
         # D-015: 艦がすでに稼働中なら、--for なしの up (よくあるのは up --seats で席を
         # 足すためだけの呼び出し) で締切を縮めない。--for を明示したときは今までどおり
         # その値で上書きする (縮める意図を尊重)。
@@ -374,17 +409,32 @@ def up(shipdir: Path, for_: str | None) -> int:
             limit = max(limit, current["deadline"] - now)
     listing = claude.agents()
     reconcile(shipdir, team, listing)
-    token = uuid.uuid4().hex[:12]
-    dl = deadline.write(shipdir, limit=limit, grace=team["grace"], token=token, last_call=last_call_conf(team),
-                        now=now)
+    # time_limit: none は admiral だけの例外 (D-013, §0 B4): deadline を書かず、watchdog も
+    # 立てない。deadline ファイルが無いままなので、hooks 側の終業の促し・強制停止は働かない
+    # (deadline.phase(None) は NOT_UP のまま; hooks.py / seat.enforce はそれを「上限にまだ
+    # 掛かっていない」として扱う)。--for を明示すればその艦にも一時的に上限を掛けられる。
+    # そのあと --for なしで戻ってきたときは、その古い deadline を消す (レビュー指摘): 残した
+    # ままだと phase が NOT_UP に戻らず、期限切れの締切のまま Stop hook / enforce が働いてしまう
+    token = None
+    dl = None
+    if limit is not None:
+        token = uuid.uuid4().hex[:12]
+        dl = deadline.write(shipdir, limit=limit, grace=team["grace"], token=token, last_call=last_call_conf(team),
+                            now=now)
+    else:
+        deadline.clear(shipdir)
     hub = team["hub"]
     try:
         what, rec = wake(shipdir, team, hub, reason="up")
     except BaseException:
-        _unwatched_deadline(shipdir, team, token)
+        if dl is not None:
+            _unwatched_deadline(shipdir, team, token)
         raise
-    spawn_watchdog(shipdir, token)
-    out(f"艦 {team['name']} を起動: deadline {fmt_time(dl['deadline'])} (稼働 {fmt_span(limit)}, 猶予 {fmt_span(team['grace'])})")
+    if dl is not None:
+        spawn_watchdog(shipdir, token)
+        out(f"艦 {team['name']} を起動: deadline {fmt_time(dl['deadline'])} (稼働 {fmt_span(limit)}, 猶予 {fmt_span(team['grace'])})")
+    else:
+        out(f"艦 {team['name']} を起動: 稼働時間の上限なし")
     label = {"alive": "すでに動いている", "resumed": "resume した", "started": "新しいシフトを起動した",
              "spawned": "headless のシフトを起動した (run-headless)", "queued": "headless のシフト中"}[what]
     out(f"  captain 席 {hub}: {label}" + (f" (session {rec['sessionId']})" if what != "spawned" else ""))
@@ -624,11 +674,21 @@ def seat_stop(shipdir: Path, seat: str, after: int, delivered: bool = False, rot
 def spawn_delayed_stop(shipdir: Path, seat: str, sid: str, after: int, forced: bool = False) -> None:
     """Stop the seat's own session ``after`` seconds from now, then close its shift
     (verify-p0-a Q3 b: the current turn and its Stop hook finish first). ``forced``: the
-    seat's hooks past the grace period (§0 B4), not a ``seat-stop``."""
+    seat's hooks past the grace period (§0 B4), not a ``seat-stop``.
+
+    T-012: run with the ship folder as ``cwd``, never the caller's (a worktree that a
+    `worktree rm` can remove out from under the sleeping shell before it wakes -- the whole
+    script then fails to even start, and the seat never actually stops). The ship folder
+    only goes away with the ship itself, unlike ``worktrees/<item>/`` inside it."""
     script = (f"sleep {int(after)}; {shlex.quote(claude.claude_bin())} stop {sid[:8]}; "
               f"{shlex.quote(sys.executable)} {shlex.quote(str(YAMATO_BIN))} _shift-ended "
               f"{shlex.quote(str(shipdir))} {shlex.quote(seat)} {sid}" + (" --forced" if forced else ""))
-    _spawn_detached(["sh", "-c", script])
+    try:
+        _spawn_detached(["sh", "-c", script], cwd=str(shipdir))
+    except OSError as e:
+        append_log(shipdir, seat, f"seat-stop: 遅延 stop を起動できなかった ({e})")
+        events.emit(shipdir, events.RESTOP_FAILED, seat=seat,
+                    summary=f"遅延 stop を起動できなかった: {e}", data={"sessionId": sid, "forced": forced})
 
 
 def shift_ended(shipdir: Path, seat: str, sid: str, forced: bool = False) -> int:
@@ -678,6 +738,8 @@ def watchdog(shipdir: Path, token: str) -> int:
             if not dl or dl.get("token") != token:
                 return 0
             now = time.time()
+            if any(r.get("state") == roster.STOPPING for r in roster.load(shipdir)["seats"].values()):
+                restop_stuck(shipdir, current_team(shipdir), claude.agents(), now=now)   # T-012
             if now >= dl["graceUntil"]:
                 team = current_team(shipdir)
                 stopped = enforce(shipdir, team)
@@ -744,6 +806,7 @@ def status(shipdir: Path) -> int:
     stopped = enforce(shipdir, team)
     if stopped:
         listing = claude.agents()
+    restopped = restop_stuck(shipdir, team, listing)   # T-012
     by = claude.by_session(listing)
     dl = deadline.read(shipdir)
     now = time.time()
@@ -753,6 +816,8 @@ def status(shipdir: Path) -> int:
     out(f"  {deadline.describe(dl, now)}")
     if stopped:
         out(f"  猶予を過ぎても動いていた席を強制停止した: {', '.join(stopped)}")
+    if restopped:
+        out(f"  stopping のまま長い席を止め直した: {', '.join(restopped)}")
     for seat, spec in team["seats"].items():
         rec = roster.seat(shipdir, seat)
         live = by.get(rec.get("sessionId"))

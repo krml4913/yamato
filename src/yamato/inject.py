@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from . import board as board_mod
-from . import deadline, inbox, memory, roster
+from . import board_view, deadline, inbox, memory, roster
 from .team import inject_parts
 from .util import YAMATO_BIN, today
 
@@ -25,6 +25,7 @@ LIMITS = {
     "inbox_chars": 400,        # per message
     "total_chars": 9500,       # per hook: Claude Code takes 10,000 chars from one (verify-p0-c Q1)
     "last_report": (30, 1500), # the previous daily report's 3 sections (design-p1 §2.3)
+    "board_items": 20,         # the `board` part's overview (T-030); over this, "…ほか N 件"
 }
 
 
@@ -92,6 +93,14 @@ def _last_report(shipdir: Path, limit: tuple[int, int]) -> str:
     text = report.excerpt(_read(path)).replace("\n## ", "\n### ")
     text = text.replace("## ", "### ", 1) if text.startswith("## ") else (text or "(3 節が見つからない)")
     return f"## 前回の日報 ({path.stem}。全文: {path})\n{cap_text(text, *limit, source=str(path))}"
+
+
+def _board(shipdir: Path, team: dict, limit: int, y: str) -> str:
+    """The `board` part (T-030, design-drift #4/#14): a whole-ship overview (opt-in), not
+    just what the captain's own `mine` shows. Decisions are out (`decide list` covers those)."""
+    items = board_mod.Board(shipdir, team).items()
+    lines = board_view.inject_lines(items, limit, f"{y} board kanban {shipdir}")
+    return "## board (艦全体の進み具合)\n" + "\n".join(lines)
 
 
 def _orphans(shipdir: Path, team: dict, max_items: int, y: str) -> str:
@@ -164,6 +173,9 @@ def build(shipdir: Path, team: dict, seat: str, source: str = "startup",
 
     if "last_report" in want:
         parts.append(_last_report(shipdir, lim["last_report"]))
+
+    if "board" in want:
+        parts.append(_board(shipdir, team, lim["board_items"], y))
 
     # the applier's role gets `memory status` on its first start of the day (design-p1 §3.4)
     notice = memory.applier_notice(shipdir, team, seat)

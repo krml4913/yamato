@@ -89,6 +89,13 @@ class TeamTest(unittest.TestCase):
             validate(base(time_limit=0), Path("/ship"))
         self.assertEqual(validate(base(grace=0), Path("/ship"))["grace"], 0)
 
+    def test_time_limit_none_is_the_admiral_only_exception(self):
+        # D-013 (T-020): time_limit: none は上限を持たない艦を表す。既定・数値指定は変わらない
+        self.assertIsNone(validate(base(time_limit="none"), Path("/ship"))["time_limit"])
+        self.assertIsNone(validate(base(time_limit="NONE"), Path("/ship"))["time_limit"])
+        self.assertEqual(validate(base(), Path("/ship"))["time_limit"], 3 * 3600)
+        self.assertEqual(validate(base(time_limit="20m"), Path("/ship"))["time_limit"], 1200)
+
     def test_duplicate_seat_names(self):
         with self.assertRaises(YamatoError):
             expand_seats({"a-1": {"model": "sonnet", "shift": "per_task", "count": 1},

@@ -93,6 +93,39 @@ def take_wrapup_notice(shipdir: Path, seat: str, shift_no) -> bool:
         return True
 
 
+def take_pre_tool_use_notice(shipdir: Path, seat: str, shift_no) -> bool:
+    """PreToolUse's own share of the wrap-up budget (design-drift nit B): a turn that makes
+    several tool calls (the seat's own wrap-up -- ``Write`` the handoff, then ``yamato
+    seat-stop``) fires PreToolUse once per call, but should only be nudged once per turn --
+    otherwise the whole shift's budget (``MAX_WRAPUP_NOTICES``) is spent on a single
+    compliant turn before a genuinely idle/non-compliant one ever gets nudged. The Stop hook
+    marks the end of every turn and clears ``turnNotified`` (``_reset_turn_notice``), so the
+    next turn's first PreToolUse call can nudge again -- still inside the shared, per-shift
+    count that ``take_wrapup_notice`` (Stop) also spends from."""
+    path = _notice_path(shipdir, seat)
+    with ship_lock(shipdir):
+        rec = read_json(path, {}) or {}
+        if rec.get("shiftNo") != shift_no:
+            rec = {"shiftNo": shift_no, "count": 0}
+        if rec.get("turnNotified") or rec["count"] >= MAX_WRAPUP_NOTICES:
+            return False
+        rec["count"] += 1
+        rec["turnNotified"] = True
+        write_json(path, rec)
+        return True
+
+
+def _reset_turn_notice(shipdir: Path, seat: str, shift_no) -> None:
+    """Every Stop hook call marks the end of a turn: let the next turn's first
+    PreToolUse call notify again (``take_pre_tool_use_notice``)."""
+    path = _notice_path(shipdir, seat)
+    with ship_lock(shipdir):
+        rec = read_json(path, {}) or {}
+        if rec.get("shiftNo") == shift_no and rec.get("turnNotified"):
+            rec["turnNotified"] = False
+            write_json(path, rec)
+
+
 def _needs_wrapup(shipdir: Path, seat: str) -> tuple[bool, dict]:
     rec = roster.seat(shipdir, seat)
     if rec.get("state") in (roster.STOPPING, roster.OFF):
@@ -174,13 +207,15 @@ def stop(shipdir: Path, seat: str) -> int:
     """Past the deadline, block the end of the turn with the wrap-up order (§0 B4);
     past the grace period too, let the turn end and stop the seat. Otherwise, once
     each: the captain's last-call notice (design-p1 §9) and the nudge to rotate
-    (§5.4). At most one block per turn end."""
+    (§5.4). At most one block per turn end. Also marks the turn's end for
+    PreToolUse's own notice (``_reset_turn_notice``, design-drift nit B)."""
     data = _stdin_json()
     _touch(shipdir, seat)
     if deadline.phase(deadline.read(shipdir)) == deadline.FORCE:
         force_stop_self(shipdir, seat, data.get("session_id"), "Stop hook")
         return 0
     need, rec = _needs_wrapup(shipdir, seat)
+    _reset_turn_notice(shipdir, seat, rec.get("shiftNo"))   # this turn is ending either way
     if data.get("stop_hook_active"):
         return 0
     if need:
@@ -204,6 +239,11 @@ def pre_tool_use(shipdir: Path, seat: str) -> int:
     reaches its Stop hook. Past the deadline the tool runs with the wrap-up order beside it
     (counted with the Stop hook's); past the grace period it is denied and the seat stopped.
 
+    At most one notice per turn (design-drift nit B): the seat's own wrap-up (``Write`` the
+    handoff, then ``yamato seat-stop``) is several tool calls in the same turn, so only the
+    first gets the notice (``take_pre_tool_use_notice``); once ``roster`` shows ``STOPPING``
+    (``seat-stop`` accepted), ``_needs_wrapup`` is already false and nothing more is said.
+
     The ``yamato`` entry runs ``pretool.main`` first, which returns while the ship is running
     without importing this module."""
     data = _stdin_json()
@@ -219,7 +259,7 @@ def pre_tool_use(shipdir: Path, seat: str) -> int:
     if phase != deadline.OVER:
         return 0
     need, rec = _needs_wrapup(shipdir, seat)
-    if need and take_wrapup_notice(shipdir, seat, rec.get("shiftNo")):
+    if need and take_pre_tool_use_notice(shipdir, seat, rec.get("shiftNo")):
         append_log(shipdir, seat, "PreToolUse hook: 稼働時間の上限 → 終業を指示")
         _emit({"hookSpecificOutput": {"hookEventName": "PreToolUse",
                                       "additionalContext": _wrapup_message(shipdir, seat)}})

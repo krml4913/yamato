@@ -9,8 +9,8 @@ from contextlib import redirect_stdout
 from unittest import mock
 
 from tests.helpers import ShipTestCase
-from yamato import admiral, board, claude, cli, deadline, events, headless, inbox, report, roster, seat
-from yamato.util import YamatoError
+from yamato import admiral, board, claude, cli, deadline, events, headless, inbox, report, roster, seat, ship
+from yamato.util import YamatoError, load_registry, yamato_home
 
 
 class AdmiralTest(ShipTestCase):
@@ -21,7 +21,7 @@ class AdmiralTest(ShipTestCase):
         p.start()
         self.addCleanup(p.stop)
         p2 = mock.patch.object(seat, "_spawn_detached")
-        p2.start()
+        self.spawn_mock = p2.start()
         self.addCleanup(p2.stop)
 
     def run_cmd(self, fn, *args, **kw):
@@ -212,6 +212,33 @@ class AdmiralTest(ShipTestCase):
             t.join(5)
         self.assertFalse(t.is_alive())
 
+    def test_watchdog_forces_a_stuck_stopping_seat(self):
+        """T-012: the watchdog's own loop notices a seat stuck `stopping` too, not just
+        `status` -- it does not need a human to run `status` for the fix to kick in."""
+        self.run_cmd(seat.up, self.shipdir, "20m")
+        rec = roster.seat(self.shipdir, "pm")
+        roster.mark_stopping(self.shipdir, "pm", handoff_written=True,
+                             now=time.time() - 999999)   # long past any STOPPING_STUCK_AFTER
+        dl = deadline.read(self.shipdir)
+        # STOPPING_STUCK_AFTER stays at its real (several-minute) default: `ago` above already
+        # clears it on the very first poll, and the default is comfortably longer than this
+        # test's whole run, so the "not too often" guard reliably keeps this to one retry
+        with mock.patch.object(seat, "WATCHDOG_POLL", 0.02), mock.patch.object(seat, "WATCHDOG_MIN_SLEEP", 0.01):
+            t = threading.Thread(target=seat.watchdog, args=(self.shipdir, dl["token"]))
+            t.start()
+            time.sleep(0.2)                        # several polls
+            self.assertTrue(t.is_alive())           # still watching the (unchanged) deadline
+            self.spawn_mock.assert_called()
+            [(args, kwargs)] = [(c.args[0], c.kwargs) for c in self.spawn_mock.call_args_list]
+            self.assertEqual(kwargs.get("cwd"), str(self.shipdir))
+            self.assertIn("sleep 0; ", args[2])
+            self.assertTrue(roster.seat(self.shipdir, "pm")["restopAttemptAt"])
+            [ev] = events.read(self.shipdir, kinds=events.STOPPING_STUCK)
+            self.assertEqual(ev["seat"], "pm")
+            deadline.write_raw(self.shipdir, {**deadline.read(self.shipdir), "token": "other"})   # let it exit
+            t.join(5)
+        self.assertFalse(t.is_alive())
+
     # --- halt ---
 
     def test_halt_stops_everything_without_grace_and_runs_the_report_safety_net(self):
@@ -326,6 +353,29 @@ class AdmiralTest(ShipTestCase):
         self.assertTrue(l2.startswith("t2"))
         self.assertIn("停止中", l2)
         self.assertIn("日報 -", l2)
+
+    # --- T-020: a ship folder created without registering it (the admiral's _admiral/) ---
+
+    def test_ships_excludes_a_folder_created_without_registering(self):
+        admdir, _ = ship.create("admiral", str(self.workspace), str(yamato_home() / "_admiral"),
+                                "dev", register=False)
+        self.assertEqual(admdir, yamato_home() / "_admiral")
+        # 同じ形の艦フォルダはできる (team.yaml、席の log/inbox) が、登録も一覧もされない
+        self.assertTrue((admdir / "team.yaml").is_file())
+        self.assertTrue((admdir / "seats" / "pm" / "log").is_dir())
+        self.assertTrue((admdir / "seats" / "pm" / "inbox.jsonl").is_file())
+        self.assertNotIn("admiral", load_registry())
+        found = admiral.all_ships()
+        self.assertIn("t1", found)
+        self.assertNotIn("_admiral", found)
+        self.assertNotIn("admiral", found)
+        rc, out = self.cli("ships")
+        self.assertEqual(rc, 0)
+        self.assertNotIn("_admiral", out)
+        # still reachable directly by its folder name (resolve_ship's plain fallback)
+        rc, out = self.cli("status", "_admiral")
+        self.assertEqual(rc, 0)
+        self.assertIn("pm", out)
 
     # --- talk ---
 

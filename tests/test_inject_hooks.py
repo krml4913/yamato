@@ -89,6 +89,26 @@ class InjectTest(ShipTestCase):
         self.assertNotIn("task5", text)
         self.assertIn("ほか 25 件", text)
 
+    def test_board_part_is_opt_in_and_capped(self):
+        """T-030: the `board` part is not in a role's inject unless named (opt-in, DEFAULT
+        excludes it); when named, it lists the whole ship (not just `impl`'s own), capped
+        by `board_items` and ordered blocked -> active -> open."""
+        b = board.Board(self.shipdir, self.t)
+        b.add("open one", {"assignee": "pm", "state": "open"})
+        b.add("blocked one", {"state": "blocked"})
+        b.add("done one", {"state": "done"})   # never counted or shown
+        text, _ = self.build()
+        self.assertNotIn("board (艦全体", text)   # not in the default parts
+        self.t["roles"]["impl"]["inject"] = [*self.t["inject"]["parts"], "board"]
+        text, _ = self.build(board_items=1)
+        self.assertIn("## board (艦全体の進み具合)", text)
+        self.assertIn("blocked 1 / active 0 / open 1", text)
+        self.assertIn("T-002 [blocked]", text)   # blocked comes first...
+        self.assertNotIn("T-001 [open]", text)   # ...and the open one is past the cap of 1
+        self.assertIn("ほか 1 件 (`", text)
+        self.assertIn("board kanban", text)
+        self.assertNotIn("done one", text)
+
     def test_inbox_capped_and_cursor_only_over_full_messages(self):
         for i in range(12):
             inbox.append(self.shipdir, "impl", "pm", f"msg{i}")
@@ -149,6 +169,15 @@ class HookTest(ShipTestCase):
         runtime.generate(self.shipdir, self.team())
         roster.start_shift(self.shipdir, "impl", session_id="s" * 36, short_id="ssssssss",
                            session_name="t1.impl", how="new")
+
+    def test_stop_and_pre_tool_use_are_quiet_with_no_deadline_at_all(self):
+        # T-020 / D-013: the admiral's permanent state is no ``.runtime/deadline`` ever
+        # written (``time_limit: none``), so ``deadline.phase`` stays NOT_UP forever and
+        # none of §0 B4's wrap-up / force-stop fires, the same as before any ``up``.
+        self.assertIsNone(deadline.read(self.shipdir))
+        self.assertEqual(self.run_hook(hooks.stop, {})[1], "")
+        self.assertEqual(self.run_hook(hooks.pre_tool_use, {"tool_name": "Bash"}), (0, "", ""))
+        self.assertEqual(seat.enforce(self.shipdir, self.team()), [])
 
     def test_session_start_emits_context_and_marks_read(self):
         inbox.append(self.shipdir, "impl", "pm", "hello")
@@ -330,9 +359,43 @@ class HookTest(ShipTestCase):
         self.assertEqual((code, d["hookEventName"]), (0, "PreToolUse"))
         self.assertNotIn("permissionDecision", d)   # the tool still runs: the seat has to wrap up
         self.assertIn("seat-stop", d["additionalContext"])
-        self.run_hook(hooks.pre_tool_use, {})
-        self.assertTrue(self.run_hook(hooks.stop, {})[1])   # the third and last
+        # a second tool call in the SAME turn (no Stop hook in between) does not repeat it
+        # (design-drift nit B): the shared budget's first slot is spent once, not per call
         self.assertEqual(self.run_hook(hooks.pre_tool_use, {})[1], "")
+        # the turn ends without the seat actually stopping: Stop spends the 2nd slot
+        self.assertTrue(self.run_hook(hooks.stop, {})[1])
+        # a new turn's first PreToolUse call notifies again: the third and last slot
+        self.assertTrue(self.run_hook(hooks.pre_tool_use, {})[1])
+        # further calls in that same turn, and the turn's own Stop, find the budget spent
+        self.assertEqual(self.run_hook(hooks.pre_tool_use, {})[1], "")
+        self.assertEqual(self.run_hook(hooks.stop, {})[1], "")
+
+    def test_pre_tool_use_does_not_repeat_within_the_same_turn(self):
+        # same condition as above, isolated: several tool calls in one turn (the seat's own
+        # wrap-up -- Write the handoff, then run other commands) must not spend more than
+        # one slot of the shared budget before the turn's Stop hook runs
+        self.past(300)
+        first = self.run_hook(hooks.pre_tool_use, {"tool_name": "Write"})[1]
+        self.assertIn("seat-stop", first)
+        for _ in range(3):   # still the same turn: no Stop hook has run yet
+            self.assertEqual(self.run_hook(hooks.pre_tool_use, {"tool_name": "Bash"})[1], "")
+        # the turn ends without the seat actually stopping: the shared budget's 2nd slot
+        self.assertTrue(self.run_hook(hooks.stop, {})[1])
+        # a new turn's first call gets the third and last slot
+        self.assertTrue(self.run_hook(hooks.pre_tool_use, {"tool_name": "Bash"})[1])
+        # the whole shift's budget is spent now, whatever calls follow
+        self.assertEqual(self.run_hook(hooks.pre_tool_use, {})[1], "")
+        self.assertEqual(self.run_hook(hooks.stop, {})[1], "")
+
+    def test_pre_tool_use_is_quiet_once_roster_shows_stopping(self):
+        # the seat starts wrapping up: Write(handoff.md) still gets the (first) notice...
+        self.past(300)
+        out = self.run_hook(hooks.pre_tool_use, {"tool_name": "Write"})[1]
+        self.assertIn("seat-stop", out)
+        # ...but once yamato seat-stop has been accepted (roster shows STOPPING), further
+        # tool calls in the wrap-up sequence get nothing more, even with budget still left
+        roster.mark_stopping(self.shipdir, "impl", handoff_written=True)
+        self.assertEqual(self.run_hook(hooks.pre_tool_use, {"tool_name": "Bash"})[1], "")
         self.assertEqual(self.run_hook(hooks.stop, {})[1], "")
 
     def test_pre_tool_use_denies_and_stops_the_seat_once_past_the_grace(self):

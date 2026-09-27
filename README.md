@@ -45,7 +45,7 @@ zellij --session yamato-view --new-session-with-layout ~/yamato/view.kdl
 | `ship create <name> [--workspace <path>] [--path <dir>] [--template dev\|research]` | ひな形から艦フォルダを作る。`dev` (開発艦) は `--workspace` (作業対象の repo) が要る。`research` (調査艦) は repo なしで、艦フォルダ自身が席の作業ディレクトリ (下の「調査艦」) |
 | `up <ship> [--for 3h] [--seats <seat,...>]` | `.runtime/` を作り直し、deadline を書き、captain の席を起動 (persistent なら resume)。`--seats` の席も一緒に起こす |
 | `down <ship> [--force]` | 終業 / 強制停止 |
-| `status [<ship>]` | 席ごとの状態。赤い席は `!!! <席>: ...` と出る (権限の確認待ち・API エラー (`state: failed`)・生きているのに `watch.stale_after` (既定 20m) より長く動いていない・per_task の席が生きているのに active の担当が無い) |
+| `status [<ship>]` | 席ごとの状態。赤い席は `!!! <席>: ...` と出る (権限の確認待ち・API エラー (`state: failed`)・生きているのに `watch.stale_after` (既定 20m) より長く動いていない・per_task の席が生きているのに active の担当が無い)。`stopping` のまま 5 分を超えた席は止め直す (T-012) |
 | `ships` | (admiral) 全艦を 1 行ずつ: 稼働中か・残り時間・captain の最終・赤い席の数・owner の判断待ちの数・今日の使用量・最新の日報の日付 |
 | `extend <ship> <期間>` | (admiral) deadline を延ばす (データの書き換えだけ。過ぎていれば今から数える) |
 | `halt <ship>` | (admiral) 緊急停止。猶予なしで全席を強制停止し、日報の安全網を通す |
@@ -53,6 +53,8 @@ zellij --session yamato-view --new-session-with-layout ~/yamato/view.kdl
 | `send <ship> <seat\|owner> "<msg>" [--from <seat>] [--cwd <path>]` | inbox に記録 → 宛先が生きていれば何もしない (送り手が席なら SendMessage で届ける。送り手が席でない (owner・yamato の定型文など) ときは、宛先の席の Stop hook の watcher が数秒で idle の席を起こす) / 止まった persistent は resume。ただし役割の `rotate:` の条件 (入れ替えの印・前のシフトの文脈量・止まってからの時間・日付の変わり目) に当たれば resume せず新しいシフト (design-p1 §5.3) / per_task と未起動は新しいシフト。per_task の席が生きているのに active の担当が無い場合は配送はそのまま行い、警告を 1 行出すだけで止めない (#11 / D-019。attach 中かどうかを外から見分けられないため)。`--cwd` は次のシフトをその dir (項目の worktree など) で `bgIsolation: none` で起動する (per_task / headless。main repo が trust 済みなら worktree は trust 不要)。同じ送り手→宛先の送りすぎ・同じ本文の連続は events に残して警告するだけ (`watch.spin`)。最終受付のあとの captain の send は本文の先頭に「(終了まで X 分。片付く範囲で)」が付く。`--from` の席か呼び出した席の trust のプロファイルが `send: false` なら断る |
 | `inbox <ship> <seat> [--all]` | 未読を全文で表示して既読にする |
 | `board add\|set\|show\|list\|mine` | board の操作。frontmatter はコマンド経由でのみ変わり、値を検証する。done は `board/archive/` へ |
+| `board tree <ship> [<id>] [--all]` | parent を辿ってインデントで出す (T-030)。既定は done 以外 (done でも、done 以外の子孫を持つ親は出す)。`<id>` を渡すとその下だけ (root 自身は状態にかかわらず出す)。`--all` で archive も含む。parent が見つからない項目は最上段。decision (`D-NNN`) は対象外 |
+| `board kanban <ship> [--all]` | 列ごとに見出し + 件数 + 項目 (T-030)。列は `board.columns` があればその順・その名前、無ければ state の順 (open/active/blocked)。done は既定で出さず、`--all` で archive (done) も出す |
 | `board note <ship> <item> "<text>" [--by <seat>]` | 項目の本文 (`## 経緯` の上) に追記し、経緯に 1 行残す。frontmatter (state・assignee など) は変えない。外を読む役割 (調査艦の researcher・fact-checker) が使う |
 | `log <ship> <seat> "<text>"` | 席の作業ログに 1 行 |
 | `worktree add <ship> <item> [--branch <b>] [--base <ref>] [--path <dir>]` | 項目の作業場所を `git worktree add` で作り、パスを出す (既にあればそのパス。何度呼んでもよい)。場所の既定は艦フォルダの `worktrees/<item>/`、ブランチは `--branch` → 項目の `branch` → `yamato/<ship>/<item>`、起点は `origin/<git.base>` (fetch してから。無ければ `<git.base>`)。項目に `worktree` と `branch` を書く |

@@ -9,7 +9,11 @@ from .util import YamatoError, check_name, register_ship, yamato_home
 TEMPLATES = Path(__file__).resolve().parent / "templates"
 
 
-def create(name: str, workspace: str | None, path: str | None, template: str) -> tuple[Path, list[str]]:
+def create(name: str, workspace: str | None, path: str | None, template: str, *,
+           register: bool = True) -> tuple[Path, list[str]]:
+    """``register=False``: build the folder (same shape as any ship) without adding it to
+    ``ships.json`` (T-020: the admiral's ``_admiral/`` stays out of ``ships`` / the registry;
+    it is still found by ``resolve_ship`` through the plain ``$YAMATO_HOME/<name>`` fallback)."""
     check_name("艦", name)
     tdir = TEMPLATES / template
     if not tdir.is_dir():
@@ -42,7 +46,8 @@ def create(name: str, workspace: str | None, path: str | None, template: str) ->
     from .seat import ensure_seat_dirs
 
     ensure_seat_dirs(shipdir, team)
-    register_ship(name, shipdir)
+    if register:
+        register_ship(name, shipdir)
     warnings = list(team.get("warnings") or [])
     from .claude import is_trusted, unknown_trust_message, untrusted_message
 

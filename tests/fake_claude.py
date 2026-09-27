@@ -10,12 +10,15 @@ Run as a script (``$YAMATO_CLAUDE``), or in-process through ``main()``:
 tests.helpers routes ``yamato.claude._run`` here so a test does not pay a
 python start-up per ``claude agents`` (``-p`` always runs as a real process).
 """
-import fcntl
 import json
 import os
 import sys
 import time
 import uuid
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from yamato.util import lock_file, unlock_file   # noqa: E402 (path set up above)
 
 
 def main(argv, *, cwd=None, env=None, out=None, err=None) -> int:
@@ -34,7 +37,7 @@ def main(argv, *, cwd=None, env=None, out=None, err=None) -> int:
             pass
     # serialise whole invocations so parallel callers in a test do not lose writes
     with open(path + ".lock", "a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+        lock_file(lock)
         try:
             with open(path) as f:
                 st = json.load(f)
@@ -47,7 +50,7 @@ def main(argv, *, cwd=None, env=None, out=None, err=None) -> int:
                             "stdin_is_devnull": os.path.samestat(os.fstat(0), os.stat(os.devnull))})
         if "-p" in argv:
             _save(path, st)
-            fcntl.flock(lock, fcntl.LOCK_UN)   # a -p runs for a while: let other calls in
+            unlock_file(lock)   # a -p runs for a while: let other calls in
             sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "fake_claude_lib"))
             import print_mode
             return print_mode.run(argv, st.get("mode", {}))

@@ -430,8 +430,9 @@ def show(kind: str, shipdir, *, template: str | None = None, span: str | None = 
 
         team = load_team(shipdir)
         limit = parse_duration(span) if span else team["time_limit"]
-        until = time.strftime("%m-%d %H:%M", time.localtime(time.time() + limit)) if kind == "up" else None
-        text = render(kind, name=team["name"], template=template, captain=team["hub"], span=fmt_span(limit),
+        until = time.strftime("%m-%d %H:%M", time.localtime(time.time() + limit)) if kind == "up" and limit else None
+        text = render(kind, name=team["name"], template=template, captain=team["hub"],
+                      span="上限なし" if limit is None else fmt_span(limit),
                       until=until, columns=shutil.get_terminal_size().columns,
                       color="NO_COLOR" not in os.environ, encoding=getattr(stream, "encoding", None))
         if text:

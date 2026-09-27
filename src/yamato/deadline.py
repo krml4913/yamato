@@ -73,6 +73,14 @@ def write_raw(shipdir: Path, data: dict) -> None:
         write_json(path(shipdir), data)
 
 
+def clear(shipdir: Path) -> None:
+    """Remove the deadline file, if any (T-020: a ``time_limit: none`` ship's ``up`` must
+    not leave behind a stale deadline from an earlier ``--for``; without this, ``phase``
+    would keep reading that old, possibly-expired deadline instead of ``NOT_UP``)."""
+    with ship_lock(shipdir):
+        path(shipdir).unlink(missing_ok=True)
+
+
 def end_now(shipdir: Path, now: float | None = None) -> dict | None:
     """Manual ``down``: the deadline becomes now, the grace period starts."""
     now = now or time.time()
