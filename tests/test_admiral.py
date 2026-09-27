@@ -10,6 +10,7 @@ from unittest import mock
 
 from tests.helpers import ShipTestCase
 from yamato import admiral, board, claude, cli, deadline, events, headless, inbox, report, roster, seat, ship
+from yamato.team import load_team
 from yamato.util import YamatoError, load_registry, yamato_home
 
 
@@ -460,6 +461,205 @@ class AdmiralTest(ShipTestCase):
         wt = self.tmp / "wt"
         subprocess.run([*git, "-C", str(repo), "worktree", "add", "-q", str(wt)], check=True)
         self.assertIn(f"cd {repo.resolve()} && claude", claude.untrusted_message(wt))
+
+
+# --- T-021: `yamato admiral` (attach/wake/stop, D-011) ------------------------------------
+# templates/admiral/ (T-023) is now the real thing (its own shape is tests/test_admiral_template.py's
+# job); these tests use it as-is and only exercise the `yamato admiral` command built on top of it.
+
+
+class AdmiralUpCommandTest(ShipTestCase):
+    def setUp(self):
+        super().setUp()
+        self.watchdogs = []
+        p = mock.patch.object(seat, "spawn_watchdog", side_effect=lambda d, t: self.watchdogs.append(t))
+        p.start()
+        self.addCleanup(p.stop)
+        p2 = mock.patch.object(seat, "_spawn_detached")
+        self.spawn_mock = p2.start()
+        self.addCleanup(p2.stop)
+        # the admiral's workspace is `_admiral/` itself (template `workspace: .`): trust it
+        # too, the same way ShipTestCase already trusts `self.workspace` for "t1"
+        cc = json.loads((self.config / ".claude.json").read_text())
+        cc["projects"][str(self.admdir())] = {"hasTrustDialogAccepted": True}
+        (self.config / ".claude.json").write_text(json.dumps(cc))
+
+    def admdir(self):
+        return yamato_home() / "_admiral"
+
+    def run_cmd(self, fn, *args, **kw):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            fn(*args, **kw)
+        return buf.getvalue()
+
+    def cli(self, *argv):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = cli.main(list(argv))
+        return rc, buf.getvalue()
+
+    def alive_seat(self, shipdir, name):
+        sid = roster.seat(shipdir, name).get("sessionId")
+        return claude.is_alive(claude.find(sid)) if sid else False
+
+    def stop_admiral(self, admdir):
+        sid = roster.seat(admdir, "admiral")["sessionId"]
+        st = self.fake()
+        for s in st["sessions"]:
+            if s["sessionId"] == sid:
+                s["pid"] = None
+        self.fake_state.write_text(json.dumps(st))
+
+    # --- ensure_admiral: built once, unregistered ---
+
+    def test_ensure_admiral_builds_an_unregistered_ship_once(self):
+        path = admiral.ensure_admiral()
+        self.assertEqual(path, self.admdir())
+        self.assertTrue((path / "team.yaml").is_file())
+        self.assertTrue((path / "roles" / "admiral.md").is_file())
+        self.assertNotIn("yamato", load_registry())
+        self.assertNotIn("_admiral", load_registry())
+        found = admiral.all_ships()
+        self.assertIn("t1", found)
+        self.assertNotIn("_admiral", found)
+        # team.yaml's `name` came from ensure_admiral, not the caller: session_name() reads
+        # "yamato.admiral" (the spec'd session name) off it
+        self.assertEqual(load_team(path)["name"], "yamato")
+        self.assertEqual(seat.session_name(load_team(path), "admiral"), "yamato.admiral")
+        # idempotent: already there, so a second call must not try (ship.create) to rebuild it
+        with mock.patch.object(ship, "create") as create:
+            self.assertEqual(admiral.ensure_admiral(), path)
+        create.assert_not_called()
+
+    # --- attach / wake ---
+
+    def test_admiral_wakes_and_attaches_with_remote_control_and_model(self):
+        calls = []
+        out = self.run_cmd(admiral.admiral_talk, execvp=lambda f, a: calls.append(a))
+        admdir = self.admdir()
+        rec = roster.seat(admdir, "admiral")
+        self.assertEqual(rec["state"], roster.ON_SHIFT)
+        self.assertEqual(calls, [[claude.claude_bin(), "attach", rec["shortId"]]])
+        self.assertIn("claude attach", out)
+        launched = [c for c in self.fake()["calls"] if "--bg" in c["argv"]][-1]["argv"]
+        self.assertIn("--remote-control", launched)
+        self.assertEqual(launched[launched.index("--model") + 1], "opus")
+        self.assertEqual(launched[launched.index("--name") + 1], "yamato.admiral")
+
+    def test_admiral_attaches_to_the_already_alive_session_without_relaunching(self):
+        self.run_cmd(admiral.admiral_talk, execvp=lambda f, a: None)
+        admdir = self.admdir()
+        before = roster.seat(admdir, "admiral")["sessionId"]
+        calls = []
+        self.run_cmd(admiral.admiral_talk, execvp=lambda f, a: calls.append(a))
+        self.assertEqual(roster.seat(admdir, "admiral")["sessionId"], before)
+        self.assertEqual(len([c for c in self.fake()["calls"] if "--bg" in c["argv"]]), 1)
+        self.assertEqual(calls, [[claude.claude_bin(), "attach", roster.seat(admdir, "admiral")["shortId"]]])
+
+    def test_admiral_wakes_a_stopped_seat_even_with_no_deadline_ever(self):
+        # D-013: there is no `up` for the admiral, so talk()'s usual "艦は稼働時間の外" gate
+        # (only in bounds while a deadline says RUNNING) must not apply to it (T-021)
+        self.run_cmd(admiral.admiral_talk, execvp=lambda f, a: None)
+        admdir = self.admdir()
+        self.assertIsNone(deadline.read(admdir))
+        self.stop_admiral(admdir)
+        calls = []
+        self.run_cmd(admiral.admiral_talk, execvp=lambda f, a: calls.append(a))
+        resumes = [c for c in self.fake()["calls"] if "--resume" in c["argv"]]
+        self.assertTrue(resumes)
+        self.assertEqual(calls[0][1], "attach")
+
+    # --- stop (--stop / --force) ---
+
+    def test_admiral_stop_before_it_ever_existed_is_a_clear_error(self):
+        with self.assertRaises(YamatoError):
+            self.run_cmd(admiral.admiral_stop, False)
+
+    def test_admiral_stop_without_a_live_session_is_a_no_op(self):
+        admiral.ensure_admiral()
+        out = self.run_cmd(admiral.admiral_stop, False)
+        self.assertIn("すでに止まっている", out)
+
+    def test_admiral_stop_sends_the_note_and_does_not_block(self):
+        self.run_cmd(admiral.admiral_talk, execvp=lambda f, a: None)
+        admdir = self.admdir()
+        out = self.run_cmd(admiral.admiral_stop, False)
+        self.assertIn("引き継ぎ", inbox.unread(admdir, "admiral")[-1]["text"])
+        self.assertIn("--force", out)
+        self.assertTrue(self.alive_seat(admdir, "admiral"))
+
+    def test_admiral_stop_force_waits_then_accepts_a_voluntary_seat_stop(self):
+        self.run_cmd(admiral.admiral_talk, execvp=lambda f, a: None)
+        admdir = self.admdir()
+        sid = roster.seat(admdir, "admiral")["sessionId"]
+
+        def voluntary_stop(_sid, timeout):
+            self.stop_admiral(admdir)
+            return True
+
+        with mock.patch.object(claude, "wait_gone", side_effect=voluntary_stop) as wg:
+            out = self.run_cmd(admiral.admiral_stop, True)
+        wg.assert_called_once_with(sid, timeout=admiral.ADMIRAL_STOP_WAIT)
+        self.assertIn("自分で終業した", out)
+
+    def test_admiral_stop_force_stops_it_when_it_does_not_stop_itself(self):
+        self.run_cmd(admiral.admiral_talk, execvp=lambda f, a: None)
+        admdir = self.admdir()
+        with mock.patch.object(claude, "wait_gone", return_value=False):
+            out = self.run_cmd(admiral.admiral_stop, True)
+        self.assertIn("強制停止した: admiral", out)
+        self.assertFalse(self.alive_seat(admdir, "admiral"))
+        self.assertIn("force_stop", (admdir / "events.jsonl").read_text())
+
+    # --- rotate: 艦の席と同じ roles.<role>.rotate が効く (T-021 の完了条件 4) ---
+
+    def test_rotate_marks_a_stopped_admiral_for_a_fresh_shift(self):
+        self.run_cmd(admiral.admiral_talk, execvp=lambda f, a: None)
+        admdir = self.admdir()
+        self.stop_admiral(admdir)
+        rc, out = self.cli("rotate", str(admdir), "admiral")
+        self.assertEqual(rc, 0)
+        self.assertTrue(roster.seat(admdir, "admiral").get("rotateRequested"))
+
+    # --- seat-stop: 艦の席と同じに使える (T-021 の完了条件 3) ---
+
+    def test_seat_stop_works_on_the_admiral_like_any_seat(self):
+        self.run_cmd(admiral.admiral_talk, execvp=lambda f, a: None)
+        admdir = self.admdir()
+        sid = roster.seat(admdir, "admiral")["sessionId"]
+        (admdir / "seats" / "admiral" / "handoff.md").write_text("引き継ぎ\n")
+        with mock.patch.dict("os.environ", {"CLAUDE_CODE_SESSION_ID": sid}):
+            rc, out = self.cli("seat-stop", str(admdir), "admiral", "--delivered")
+        self.assertEqual(rc, 0)
+        self.assertIn("終業を受け付けた", out)
+        self.assertEqual(roster.seat(admdir, "admiral")["state"], roster.STOPPING)
+
+    # --- CLI wiring (`yamato admiral` / `--stop` / `--force`) ---
+    # admiral_talk / admiral_stop are exercised directly above; here only cli.py's own
+    # dispatch and the --force-needs---stop guard (execvp is never safe to actually call)
+
+    def test_cli_admiral_bare_calls_admiral_talk(self):
+        with mock.patch.object(admiral, "admiral_talk", return_value=0) as at:
+            rc, _ = self.cli("admiral")
+        self.assertEqual(rc, 0)
+        at.assert_called_once_with()
+
+    def test_cli_admiral_stop_calls_admiral_stop(self):
+        with mock.patch.object(admiral, "admiral_stop", return_value=0) as astop:
+            rc, _ = self.cli("admiral", "--stop")
+        self.assertEqual(rc, 0)
+        astop.assert_called_once_with(False)
+
+    def test_cli_admiral_stop_force_calls_admiral_stop_with_force(self):
+        with mock.patch.object(admiral, "admiral_stop", return_value=0) as astop:
+            rc, _ = self.cli("admiral", "--stop", "--force")
+        self.assertEqual(rc, 0)
+        astop.assert_called_once_with(True)
+
+    def test_cli_admiral_force_without_stop_is_refused(self):
+        rc, _ = self.cli("admiral", "--force")
+        self.assertEqual(rc, 1)
 
 
 if __name__ == "__main__":

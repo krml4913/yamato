@@ -296,6 +296,32 @@ class HookTest(ShipTestCase):
     def test_wait_deadline_exits_when_not_up(self):
         self.assertEqual(self.run_hook(hooks.wait_deadline, {})[0], 0)
 
+    # --- T-021: time_limit: none (D-013, the admiral) never has a deadline to read at all,
+    # not just "not up yet" -- the watcher must still notice an outside sender's message ---
+
+    def _make_no_time_limit(self):
+        ty = self.shipdir / "team.yaml"
+        ty.write_text(ty.read_text().replace("time_limit: 3h", "time_limit: none"))
+        runtime.generate(self.shipdir, self.team())
+
+    def test_wait_deadline_wakes_for_inbox_with_no_deadline_at_all(self):
+        self._make_no_time_limit()
+        self.assertIsNone(deadline.read(self.shipdir))
+        inbox.append(self.shipdir, "impl", "owner", "hello")
+        code, _, err = self.run_hook(hooks.wait_deadline, {})
+        self.assertEqual(code, 2)
+        self.assertIn("1 件、owner から", err)
+
+    def test_wait_deadline_without_a_deadline_keeps_polling_when_the_inbox_is_quiet(self):
+        self._make_no_time_limit()
+
+        def stop_seat(_):
+            roster.mark_stopping(self.shipdir, "impl", handoff_written=True)
+
+        with mock.patch.object(hooks.time, "sleep", side_effect=stop_seat) as sleep:
+            self.assertEqual(self.run_hook(hooks.wait_deadline, {})[0], 0)
+        sleep.assert_called_once_with(hooks.WAIT_POLL)
+
     def test_wait_deadline_wakes_for_inbox_from_outside_the_seats(self):
         # e2e-p1 C: the owner's / yamato's entries have no sender to SendMessage them
         deadline.write(self.shipdir, limit=600, grace=60, token="t")

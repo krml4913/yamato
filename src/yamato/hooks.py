@@ -371,12 +371,20 @@ def wait_deadline(shipdir: Path, seat: str) -> int:
 
     Exit 2 with the message on stderr wakes the seat (verify-p0-a Q4). A
     pidfile keeps one watcher per seat, since every turn end spawns another.
-    """
+
+    A ship with ``time_limit: none`` (D-013, the admiral only, T-020) never has a
+    deadline to read. This used to make the watcher return at once and never look at
+    the inbox either, so an idle admiral could not be woken by ``yamato send`` /
+    ``yamato admiral --stop`` (T-021). It now keeps polling for an outside sender's
+    unread message forever when there is no deadline at all (nothing here ever force-stops
+    such a ship: only a normal deadline does that)."""
     data = _stdin_json()
     try:
-        seats = set(runtime_team(shipdir)["seats"])
+        team = runtime_team(shipdir)
+        seats = set(team["seats"])
+        no_limit = team.get("time_limit") is None
     except (OSError, YamatoError, KeyError, TypeError):
-        seats = set()   # every sender then counts as outside: a wake too many, never one too few
+        seats, no_limit = set(), False   # every sender then counts as outside: a wake too many, never one too few
     pidfile = Path(shipdir) / ".runtime" / f"wait-{seat}.pid"
     try:
         other = int(pidfile.read_text().strip())
@@ -389,28 +397,32 @@ def wait_deadline(shipdir: Path, seat: str) -> int:
     try:
         while True:
             dl = deadline.read(shipdir)
-            if dl is None:
+            if dl is None and not no_limit:
                 return 0
             need, rec = _needs_wrapup(shipdir, seat)
             if rec.get("state") in (roster.STOPPING, roster.OFF):
                 return 0
             phase = deadline.phase(dl)
-            if phase == deadline.FORCE:
-                # an idle seat past the grace period: stopped here if the watchdog is gone (§0 B4)
-                force_stop_self(shipdir, seat, data.get("session_id"), "deadline watcher")
-                return 0
-            if need and take_wrapup_notice(shipdir, seat, rec.get("shiftNo")):
-                append_log(shipdir, seat, "deadline watcher: 稼働時間の上限 → 終業を指示")
-                sys.stderr.write(_wrapup_message(shipdir, seat) + "\n")
-                return 2
-            # notices used up: keep watching until the grace period ends
-            news = take_inbox_wake(shipdir, seat, seats) if phase == deadline.RUNNING else []
+            if dl is not None:
+                if phase == deadline.FORCE:
+                    # an idle seat past the grace period: stopped here if the watchdog is gone (§0 B4)
+                    force_stop_self(shipdir, seat, data.get("session_id"), "deadline watcher")
+                    return 0
+                if need and take_wrapup_notice(shipdir, seat, rec.get("shiftNo")):
+                    append_log(shipdir, seat, "deadline watcher: 稼働時間の上限 → 終業を指示")
+                    sys.stderr.write(_wrapup_message(shipdir, seat) + "\n")
+                    return 2
+            # notices used up (or no deadline at all): keep watching for an outside sender
+            news = take_inbox_wake(shipdir, seat, seats) if (dl is None or phase == deadline.RUNNING) else []
             if news:
                 append_log(shipdir, seat, f"inbox watcher: 席の外からの未読 {len(news)} 件 (#{news[-1]['n']} まで) → 起こす")
                 sys.stderr.write(_inbox_wake_message(shipdir, seat, news) + "\n")
                 return 2
-            until = dl["deadline"] if phase == deadline.RUNNING else dl["graceUntil"]
-            time.sleep(max(1.0, min(WAIT_POLL, until - time.time())))
+            if dl is None:
+                time.sleep(WAIT_POLL)
+            else:
+                until = dl["deadline"] if phase == deadline.RUNNING else dl["graceUntil"]
+                time.sleep(max(1.0, min(WAIT_POLL, until - time.time())))
     finally:
         try:
             if pidfile.read_text().strip() == str(os.getpid()):
