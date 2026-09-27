@@ -294,6 +294,14 @@ def main(argv: list[str] | None = None) -> int:
             return _inbox(args)
         if args.cmd == "status":
             return _status(args)
+        if args.cmd == "admiral":
+            from . import admiral
+
+            if args.force and not args.stop:
+                raise YamatoError("--force は --stop と一緒に使う")
+            if args.stop:
+                return admiral.admiral_stop(args.force)
+            return admiral.admiral_talk()
         if args.cmd in ("extend", "halt", "ships", "talk"):
             from . import admiral
 
