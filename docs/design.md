@@ -422,6 +422,7 @@ SessionStart hook が、次を注入する。**何を読ませるかは設定** 
 | `memory` | 役割の memory (`roles/<role>/memory.md`。design-p1 §3) |
 | `knowledge` | チームの knowledge.md |
 | `board` (P1、opt-in) | 艦全体の進み具合 (kanban 風): state ごとの件数 + blocked→active→open の項目一覧。`mine` と重なっても省かない。`inject.limits.board_items` で件数に上限、超えた分は「…ほか N 件」(T-030、design-drift #4/#14、D-018) |
+| `fleet` (P1、opt-in) | 全艦の様子 (`yamato ships` 相当を 1 艦 1 行): 稼働中か・残り時間・captain の生死・赤い席・owner の判断待ち・今日のトークン。admiral (D-011、D-013) だけが使う想定。`inject.limits.fleet_items` で件数に上限、超えた分は「…ほか N 件 (`yamato ships` で見る)」(T-022) |
 
 - 役割のプロンプトは注入ではなく、`--agents` の JSON で渡す (§4.1)
 - 注入は **SessionStart hook 2 本**に分ける。記録の hook (ヘッダ・`handoff`・`log_tail`・`mine`・`inbox` と注記) と、知見の hook (`memory`・`knowledge`)。Claude Code は hook 1 本の出力を 10,000 文字まで受け取り、超えると本文の代わりに約 2KB のプレビューを渡す (検証 C Q1。判定は hook ごとで、文字数で数える)
