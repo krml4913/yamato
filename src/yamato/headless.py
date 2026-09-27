@@ -394,7 +394,8 @@ def _usage_line(seat: str, role: str, sid: str, no: int, started: float, ended: 
         # SIGTERM leaves no result line: count the transcript, deduplicated by message.id (V4, V9)
         t = usage.count(claude.transcript_paths(sid), started, ended)
         tokens = {k: t[k] for k in usage.KEYS}
-        extra = {"messages": t["messages"], "models": t["models"], "source": "transcript"}
+        extra = {"messages": t["messages"], "models": t["models"], "source": "transcript",
+                 **({} if t["read"] else {"unknown": True})}
     return {
         "ts": ended, "seat": seat, "shiftNo": no, "sessionId": sid, "startedAt": started, "endedAt": ended,
         **tokens, **extra, "total_tokens": sum(tokens.values()),
@@ -462,6 +463,8 @@ def _close(shipdir: Path, team: dict, seat: str, *, sid: str, no: int, started: 
 
 def _summary(line: dict) -> str:
     cost = line.get("total_cost_usd")
+    if line.get("unknown"):
+        return f"使用量 shift#{line['shiftNo']}: 分からない (result の行が無く、transcript も読めなかった)"
     return (f"使用量 shift#{line['shiftNo']} ({line['source']}): in={line['input_tokens']} out={line['output_tokens']} "
             f"cache_write={line['cache_creation_input_tokens']} cache_read={line['cache_read_input_tokens']} "
             f"(計 {line['total_tokens']}, {line['messages']} messages, turns={line.get('num_turns')}, "

@@ -183,6 +183,7 @@ owner (人間)
 - hook のコマンドには、艦の場所と席名を**引数として埋め込む**。環境変数では渡さない。Claude Code の常駐 daemon が環境変数を焼き付ける問題があるため (fleet #315 の教訓)
 - 作業対象の repo 自身の CLAUDE.md と設定は、そのまま効く (上乗せになる)。プロジェクトの規律はそちらが担う
 - 席の作業ディレクトリは、Claude Code の workspace trust を事前に通しておく必要がある (bg の席は trust を対話で通せない。trust は git root ごと)。`ship create` は通っていなければ警告し、`up` は手順を出して止まる。yamato は trust を自動で承認しない
+  - trust の確かめ方: 本当の判定は、`claude --bg` の出力の `Workspace not trusted` で行う (起動を失敗扱いにして手順を出す)。起動の前にも `~/.claude.json` の `projects[<git root>].hasTrustDialogAccepted` を見るが、これは Claude Code の内部のファイルで、安定したインターフェースではない (§4)。そのため結果は「trust 済み / trust されていない / 分からない」の 3 値にする。ファイルが無い・読めない・形が違うときは「分からない」で、警告を出して起動し、claude の出力で判定する。起動の前に断るのは、はっきり「trust されていない」ときだけ (`up`・新しいシフト・`send --cwd`。`ship create` は警告だけ)
 - 艦フォルダの既定の場所: `~/yamato/<ship>/` (`$YAMATO_HOME`)。`ship create --path` で任意の場所にも作れる。艦の一覧は `<YAMATO_HOME>/ships.json` に登録する
 - 艦フォルダが workspace の repo の中にあるチームと、repo のないチームは、yamato が `bgIsolation: none` にする。自動 worktree に書かれた記録が元の場所に残らないため (検証 B Q4。技術的な制約)
 
@@ -249,7 +250,7 @@ P1 で足す項目 (詳細は design-p1 §0.4。値を書かなければひな�
 
 | | コードが固定 (安全網・技術的な制約) | team.yaml / ひな形の既定値 | 役割プロンプト |
 |---|---|---|---|
-| 権限 | auto モード、`crossSessionInbound: accept`、hook の配線 (PermissionRequest の全 deny を含む。ダイアログで止まらない)、`seat-stop` の allow | `deny` の中身 (頼まれていない push・PR・merge、履歴の破壊、席の出入り、作業 repo の `.claude/**`、yamato の記録の書き換え)、`settings` | どこまでやってよいか |
+| 権限 | auto モード、`crossSessionInbound: accept`、hook の配線 (PermissionRequest の全 deny を含む。ダイアログで止まらない。猶予を過ぎた席のツールを止める PreToolUse も含む)、`seat-stop` の allow | `deny` の中身 (頼まれていない push・PR・merge、履歴の破壊、席の出入り、作業 repo の `.claude/**`、yamato の記録の書き換え)、`settings` | どこまでやってよいか |
 | 環境 | 呼び出し元のセッションの識別子を席に渡さない | `env_unset` (席に gh の権限を渡さない。gh を使わせる艦は消してよい) | ― |
 | 隔離 | repo のない艦、艦フォルダが repo の中にある艦は `bgIsolation: none` (I3) | `settings.worktree.bgIsolation` (ひな形は none)。P1: 役割ごとの `isolation:` と `yamato worktree` | worktree を誰がいつ使うか |
 | git | (何も強制しない) | `deny` の `git push*` など。P1: `git:` (`merge_requires` など) | タスク = ブランチ、push・PR・merge の担当 |
@@ -431,7 +432,7 @@ SessionStart hook が、次を注入する。**何を読ませるかは設定** 
 
 - 終業の手順は役割プロンプトに書く: 引き継ぎを Write で上書きし、作業ログに 1 行足し、`yamato seat-stop <ship> <seat>` を実行して、そのターンを一言で終える
 - **`seat-stop`** (席が使う道具): 自分の席のセッションかを確かめ (`CLAUDE_CODE_SESSION_ID` を roster と照合。席の取り違えを防ぐ整合性の検査で、権限の判定には使わない)、`handoff.md` が今回のシフトで更新されているか (`seat_stop.require_handoff`)、送り手として届けるはずの送信が読まれているか (`seat_stop.require_delivery`) を確かめる。通れば roster を `stopping` にし、遅延 stop (10 秒後に `claude stop`) を仕掛ける。直接 stop すると最後のターンが transcript に残らず、resume した席が自分を止め直そうとするため (検証 A Q3)
-- 席が止まると、roster のシフトを閉じて、使用量を `usage.jsonl` に 1 行書く (transcript から数える。シフトの間の assistant のトークン数)
+- 席が止まると、roster のシフトを閉じて、使用量を `usage.jsonl` に 1 行書く (transcript から数える。シフトの間の assistant のトークン数)。transcript の場所 (`~/.claude/projects/**/<sessionId>.jsonl`) は Claude Code の内部の形なので、見つからない・読めないときは 0 ではなく「分からない」(`"unknown": true`) と記録し、日報にもそう出す。`status` の「最終」も同じ場所の mtime を足しに見るだけで、読めなければ hook の `lastActive` とシフトの時刻で出す
 - **Stop hook は応答のたびに動くため、引き継ぎの強制には使わない**。P0 の Stop hook は、時間の上限を過ぎたときに終業を指示するだけ (§12.1)。日雇いの席が引き継ぎを書かずに終わろうとしたときの安全網 (Stop hook) は、P1 で設定 `handoff_guard:` (既定 on) として足す。短い headless の仕事には重いので、外せるようにする (design-p1 §0.4)
 - 会話ログ (transcript) をチームフォルダに保存する SessionEnd hook は、未実装 (Claude Code 側では 30 日で消える)。design-p1 §1.5 の代筆の追跡がこれを前提にしているので、P1 で決める (§15)
 
@@ -490,7 +491,7 @@ zellij セッション
 - **`claude attach` はフルの sessionId を受け付けない** (短い id を渡す)。照合はフルの id で行い、attach には短い id を使う
 - 同じ席を 2 つのペインで開くと、入力欄が共有される (片方に打った下書きが、もう片方にも出る)
 - attach していれば、約 1 時間で止められるルールの対象から外れる (検証 C Q3。Remote Control なしの条件で 75 分生存、attach なしの対照は 60 分で停止)。**zellij で窓を開いている席は常駐する**。ターンは消費しないが、メモリは食う
-- 席の作業ディレクトリは、事前に Claude Code の workspace trust を通しておく必要がある (`ship create` が警告し、`up` が止まる。§4.1)
+- 席の作業ディレクトリは、事前に Claude Code の workspace trust を通しておく必要がある (`ship create` が警告し、`up` が止まる。`~/.claude.json` から確かめられないときは、起動して claude の出力で判定する。§4.1)
 - attach はペインのフォアグラウンドで動かす (macOS ではバックグラウンドで動かすと落ちる)
 
 ## 11. admiral (窓口)
@@ -533,15 +534,22 @@ grace: 20m            # 終了時刻のあと、キリのいいところまで�
 | 終了時刻 + 猶予 (強制停止) | まだ生きている席を `claude stop` で止める。止められた席は roster に「引き継ぎなしで終了」と記録する (引き継ぎが書かれていれば「強制停止 (引き継ぎは書かれていた)」)。次に起動したとき、その席は handoff に加えて作業ログの末尾も読む (`log_tail`) |
 
 - **終了時刻はプロセスではなくデータ**で持つ (`.runtime/deadline`。§0 B4)。`yamato up` が書く。終業の指示は、席の状態に応じて次の経路で届く
-  - 作業中の席: ターンの終わりに Stop hook が終業を指示する (block。1 シフトあたり数回まで)
-  - 待機中の席: Stop hook で起動した非同期の watcher (asyncRewake) が、終了時刻に席を起こして指示する
+  - 作業中の席: ターンの終わりに Stop hook が終業を指示する (block)。1 つのターンの中でツールを呼び続ける席には、PreToolUse hook が、ツールは通したうえで終業の指示を添える (`additionalContext`)。Stop と PreToolUse を合わせて 1 シフトあたり数回まで (`MAX_WRAPUP_NOTICES`)
+  - 待機中の席: Stop hook で起動した非同期の watcher (asyncRewake) が、終了時刻に席を起こして指示する。指示の回数を使い切ったあとも、猶予が切れるまで見張る
   - 同じ watcher (1 席 1 本) が inbox も数秒おきに見て、送り手が席でない未読が増えたら「inbox に未読がある。`yamato inbox` で読め」と席を起こす (§0 B1。同じ未読では 1 回だけ。終了時刻を過ぎたら起こさない)
   - `send`: 終業のあとは宛先を起こさず記録だけして、送り手が席なら終業を指示する
   - 新しいシフトの SessionStart の注入にも、終業の指示が載る
-- 一度きりのタイマー (watchdog) は `up` と `down` が切り離して起動する。終了時刻 + 猶予に、生きている席を強制停止する補助で、消えても上限は効く (`send` / `status` / hook が毎回 deadline を確かめ、猶予を過ぎていれば強制停止する)。常駐のデーモンは作らない
+- 一度きりのタイマー (watchdog) は `up` と `down` が切り離して起動する。終了時刻 + 猶予に、生きている席を強制停止する補助で、消えても上限は効く (`send` / `status` と席の hook が毎回 deadline を確かめ、猶予を過ぎていれば強制停止する)。常駐のデーモンは作らない
+- 猶予を過ぎたときの席の hook (watchdog が消えていても席が止まるための経路):
+  - PreToolUse hook: ツールを **deny** し (理由に「間もなく止める。一言でターンを終えよ」)、席自身の遅延 stop を仕掛ける。遅延 stop は `seat-stop` と同じ仕組み (切り離した `sh -c "sleep 5; claude stop <id>; yamato _shift-ended ... --forced"`) で、1 シフトに 1 回 (`.runtime/force-stop-<seat>.json`。persistent の席は resume しても sessionId が同じなので、シフト番号で見る。止まらずに hook を呼び続けていれば 60 秒後にもう一度)
+  - Stop hook: 終業の指示 (block) ではなく、ターンを終わらせて同じ遅延 stop を仕掛ける
+  - 待機中の席: 上の watcher が、猶予が切れたところで同じ遅延 stop を仕掛ける
+  - 止まったあと `_shift-ended --forced` がシフトを「強制停止」として閉じ、events に `force_stop` を残す。生きている席が無くなれば日報の安全網も走らせる (watchdog がしていたこと)
+  - headless の席は、ラッパー (`run-headless`) が時間切れを持って `claude -p` を止めるので、hook はツールの deny だけをして遅延 stop は仕掛けない
+- PreToolUse hook はツール呼び出しのたびに走るので軽くする。`yamato` の入口が CLI を読み込む前に `yamato.pretool` を呼び、`.runtime/deadline` の JSON 1 つだけを読んで、終了時刻の前ならすぐ抜ける (標準ライブラリだけ。過ぎていれば `hooks.pre_tool_use` に渡す)
 - `yamato down` を手で打てば、その時点で終業の段階から始まる。`down --force` は猶予なしで強制停止する。P1 で `ship extend` (deadline を延ばす) と `ship halt` (緊急停止) が加わる
 - PC がスリープするとタイマーは遅れる。スリープ中はチームも止まっているので、実害はない
-- 実機の E2E では、idle の captain を watcher が終了時刻に起こして終業させたこと、`down --force` で強制停止できることを確かめた。Stop hook の block による終業指示と、watchdog による猶予切れの自動停止は、実機では観測できず (全席が先に自分で止まった)、単体テストでだけ確認している (`e2e-p0.md`)
+- 実機の E2E では、idle の captain を watcher が終了時刻に起こして終業させたこと、`down --force` で強制停止できることを確かめた。Stop hook の block による終業指示と、watchdog による猶予切れの自動停止は、実機では観測できず (全席が先に自分で止まった)、単体テストでだけ確認している (`e2e-p0.md`)。のちに、watchdog を殺した状態で猶予を過ぎても長いターンを続ける席を、PreToolUse hook が止めることを実機で確かめた (`e2e-time-limit.md`)
 
 ## 13. コマンド
 
@@ -549,7 +557,7 @@ grace: 20m            # 終了時刻のあと、キリのいいところまで�
 
 | コマンド | 内容 |
 |---|---|
-| `ship create <name> --workspace <path> [--path <dir>] [--template dev]` | ひな形から艦フォルダを作り、艦の登録簿に載せる。workspace が trust されていなければ警告する |
+| `ship create <name> --workspace <path> [--path <dir>] [--template dev]` | ひな形から艦フォルダを作り、艦の登録簿に載せる。workspace が trust されていなければ (確かめられなければ、その旨を) 警告する |
 | `up <ship> [--for 3h]` / `down <ship> [--force]` | 起動 (稼働時間つき。`.runtime/` の作り直し、deadline、captain の席の起動) / 終業 (`--force` で即時に強制停止) |
 | `status [<ship>]` | 席ごとの状態 (生存、最後に動いた時刻、権限の確認で止まっている「詰まり」)、deadline までの残り、未読 inbox |
 | `send <ship> <seat\|owner> "<msg>" [--from <seat>]` | メッセージを送る (§7) |

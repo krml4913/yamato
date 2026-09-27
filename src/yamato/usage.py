@@ -27,13 +27,17 @@ def _epoch(ts: str | None) -> float | None:
 
 
 def count(paths: list[Path], since: float, until: float | None = None) -> dict:
+    """``read``: how many transcripts could be read. 0 means the usage is unknown (the
+    transcripts live in Claude Code's internal layout), not that nothing was used."""
     per_msg: dict = {}
     models: set = set()
+    read = 0
     for p in paths:
         try:
             lines = p.read_text(encoding="utf-8").splitlines()
-        except FileNotFoundError:
+        except (OSError, UnicodeDecodeError):
             continue
+        read += 1
         for line in lines:
             try:
                 e = json.loads(line)
@@ -51,6 +55,7 @@ def count(paths: list[Path], since: float, until: float | None = None) -> dict:
     totals = {k: sum(int(u.get(k) or 0) for u in per_msg.values()) for k in KEYS}
     totals["messages"] = len(per_msg)
     totals["models"] = sorted(models)
+    totals["read"] = read
     return totals
 
 
@@ -58,11 +63,14 @@ def record(shipdir: Path, seat: str, *, session_id: str, shift_no: int | None,
            since: float, until: float | None = None) -> dict:
     until = until or time.time()
     totals = count(claude.transcript_paths(session_id), since, until)
+    read = totals.pop("read")
     line = {
         "ts": until, "seat": seat, "shiftNo": shift_no, "sessionId": session_id,
         "startedAt": since, "endedAt": until, **totals,
         "total_tokens": sum(totals[k] for k in KEYS),
     }
+    if not read:
+        line["unknown"] = True
     append(shipdir, line)
     return line
 
@@ -74,6 +82,8 @@ def append(shipdir: Path, line: dict) -> None:
 
 
 def summary(line: dict) -> str:
+    if line.get("unknown"):
+        return f"使用量 shift#{line.get('shiftNo')}: 分からない (transcript を読めなかった)"
     return (f"使用量 shift#{line.get('shiftNo')}: in={line['input_tokens']} out={line['output_tokens']} "
             f"cache_write={line['cache_creation_input_tokens']} cache_read={line['cache_read_input_tokens']} "
             f"(計 {line['total_tokens']}, {line['messages']} messages)")

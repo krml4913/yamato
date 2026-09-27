@@ -21,7 +21,8 @@ Claude Code の background session の上に薄く乗る。agent-fleet の後継
 ./yamato ship create dev --workspace ~/dev/myapp --template dev
 #    → team.yaml (役割・model・shift・count・time_limit・grace・deny)、charter.md、roles/<role>.md を確認・編集する
 
-# 2. workspace を Claude Code に trust させておく (git repo なら repo の root で。yamato は自動承認しない)
+# 2. workspace を Claude Code に trust させておく (git repo なら repo の root で。yamato は自動承認しない。
+#    ~/.claude.json から確かめられないときは警告して起動し、claude が断れば手順を出して止まる)
 cd ~/dev/myapp && claude    # trust のダイアログで承認して終了
 
 # 3. 依頼を送って起動する (captain の席だけが起動し、必要な席は captain が send で起こす)
