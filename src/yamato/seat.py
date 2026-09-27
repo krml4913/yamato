@@ -377,13 +377,17 @@ def up(shipdir: Path, for_: str | None) -> int:
     # time_limit: none は admiral だけの例外 (D-013, §0 B4): deadline を書かず、watchdog も
     # 立てない。deadline ファイルが無いままなので、hooks 側の終業の促し・強制停止は働かない
     # (deadline.phase(None) は NOT_UP のまま; hooks.py / seat.enforce はそれを「上限にまだ
-    # 掛かっていない」として扱う)。--for を明示すればその艦でも一時的に上限を掛けられる
+    # 掛かっていない」として扱う)。--for を明示すればその艦にも一時的に上限を掛けられる。
+    # そのあと --for なしで戻ってきたときは、その古い deadline を消す (レビュー指摘): 残した
+    # ままだと phase が NOT_UP に戻らず、期限切れの締切のまま Stop hook / enforce が働いてしまう
     token = None
     dl = None
     if limit is not None:
         token = uuid.uuid4().hex[:12]
         dl = deadline.write(shipdir, limit=limit, grace=team["grace"], token=token, last_call=last_call_conf(team),
                             now=now)
+    else:
+        deadline.clear(shipdir)
     hub = team["hub"]
     try:
         what, rec = wake(shipdir, team, hub, reason="up")

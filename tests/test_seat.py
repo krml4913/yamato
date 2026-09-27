@@ -95,6 +95,19 @@ class SeatTest(_SeatBase):
         self.assertAlmostEqual(dl["deadline"] - dl["upAt"], 1200, delta=1)
         self.assertTrue(seat.spawn_watchdog.called)
 
+    def test_up_with_time_limit_none_clears_a_stale_deadline_from_an_earlier_for(self):
+        # review: an explicit --for leaves a deadline behind; a later plain `up` (no --for)
+        # must clear it, or the old (possibly expired) deadline keeps driving phase/enforce
+        ty = self.shipdir / "team.yaml"
+        ty.write_text(ty.read_text().replace("time_limit: 3h", "time_limit: none"))
+        self.run_cmd(seat.up, self.shipdir, "20m")
+        self.assertIsNotNone(deadline.read(self.shipdir))
+        self.run_cmd(seat.down, self.shipdir, False)   # deadline.end_now: the old file still exists (expired)
+        out = self.run_cmd(seat.up, self.shipdir, None)
+        self.assertIn("稼働時間の上限なし", out)
+        self.assertIsNone(deadline.read(self.shipdir))
+        self.assertEqual(seat.enforce(self.shipdir, self.team()), [])
+
     def test_launch_adopts_the_session_when_the_output_has_no_id(self):
         self.set_fake_mode(noid=True)
         self.up()
