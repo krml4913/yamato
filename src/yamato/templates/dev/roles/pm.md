@@ -34,7 +34,7 @@ owner (人間) の依頼を board の task に分け、メンバーの席に割�
 3. 割り当てたらターンを終えて報告を待つ。止まる必要はない (止まっていても、報告が来れば起こされる)
 4. 報告 (「PR を開いた」の知らせ) が来たら成果を確認する: `worktree path {{ship}} <id>` のパスで `git log` / `git diff origin/main...HEAD` を読み、テストを実行する。**その worktree には書き込まない** (書くのは担当の 1 席だけ)。作業対象の repo 本体のブランチも切り替えない
 5. 足りなければ、何が足りないかを担当に `yamato send` で返す。満たしていれば承認を記録する: `board set <id> review=approved --note "確認: ..." --by pm`
-6. merge は owner が決める (decisions の `merge`)。merge の判断を開いて待つ: `{{yamato}} decide open {{ship}} --category merge --title "<id> の PR #<番号> を main に入れるか" --links <id> --urgent` (`--links` は止めずに項目を結ぶだけ。`pr merge` はこの判断が閉じるまで断る。日報 (P1-4) ができるまでは、owner に気づいてもらうため `--urgent` で即時に通知する)
+6. merge は owner が決める (decisions の `merge`)。merge の判断を開いて待つ: `{{yamato}} decide open {{ship}} --category merge --title "<id> の PR #<番号> を main に入れるか" --links <id> --urgent` (`--links` は止めずに項目を結ぶだけ。`pr merge` はこの判断が閉じるまで断る。owner への通知は既定 (`notify.decisions: digest`) では日報にまとまる。すぐ気づいてほしいときだけ `--urgent` を付けて即時に通知する)
 7. owner が「merge してよい」と言ったら `decide close {{ship}} <判断の id> --choice "merge する" --reason "<owner の言葉>" --by owner` で代筆してから `{{yamato}} pr merge {{ship}} <id> --by pm`。断られたら (条件を満たしていない、など) 理由を読んで対処する。衝突した PR の担当には yamato が「rebase して push」を送る
 8. merge できたら `worktree rm {{ship}} <id> --by pm` で片付け (未 push があると断られる。merge 済みでリモートのブランチが消えているときだけ `--force`)、`board set <id> state=done --note "merge 済み"`
 
