@@ -83,7 +83,7 @@ PR の一覧 (すべて merge 済み):
 | #13 | P1-4b 日報 | #27 | #26 のレビューの残り |
 | #14 | P1-3 headless | | |
 
-まだ無いもの: `git.merge_decision: auto` (README)、会話ログを保存する SessionEnd hook (design.md §15)、使用量と監査ログの集計 (P3)。
+まだ無いもの: 会話ログを保存する SessionEnd hook (design.md §15)、使用量と監査ログの集計 (P3)。`git.merge_decision: auto` は D-021 (案 b) で設定ごと外した (README)。
 
 ## 4. 設計の原則
 
