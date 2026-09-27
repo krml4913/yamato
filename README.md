@@ -146,5 +146,6 @@ unit test は速く保つ (遅いと開発の速さにそのまま響く)。全�
 - [events.md](docs/events.md) — events.jsonl の行の形式と読み方、lastActive
 - [dogfood-knowledge.md](docs/dogfood-knowledge.md) — dogfooding の艦の knowledge.md のひな形
 - [verify/](docs/verify/) — Claude Code の挙動の実機検証 (起動レシピの根拠): verify-p0-a / b / c、verify-p1-d
+- [verify-win-plan](docs/verify/verify-win-plan.md) — Windows + Git Bash の実機検証 (W0) の手順書。道具は `tools/verify_win/`
 - [e2e/](docs/e2e/) — 本物の claude で通した E2E の記録: e2e-p0 / e2e-p1 / e2e-headless / e2e-time-limit
 - [_archive/](docs/_archive/) — 初期の検討の記録 (正本ではない)。中身は [_archive/README.md](docs/_archive/README.md)
