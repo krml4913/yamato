@@ -721,6 +721,8 @@ def status(shipdir: Path) -> int:
             cols.append(f"waitingFor={waiting}")
         if rec.get("note"):
             cols.append(f"[{rec['note']}]")
+        if rec.get("rotateRequested"):   # T-024: seat-stop --rotate か `yamato rotate` の印
+            cols.append("[次は新しいシフト (入れ替えの印)]")
         failed = rec.get("launchFailed")
         if failed:
             cols.append(f"[起動失敗 {fmt_time(failed['at'])} ({failed.get('how')}): {failed.get('reason')}]")
