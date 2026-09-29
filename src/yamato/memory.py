@@ -551,9 +551,9 @@ def curator_agents(shipdir: Path, team: dict, role: str) -> dict:
 def curator_settings(shipdir: Path, team: dict) -> dict:
     """Not a seat: no hooks. dontAsk, so nothing outside the (empty) allow list runs
     (verify-p1-d V7); the answer comes back as text and yamato writes the file."""
-    from .runtime import _merge
+    from .runtime import _merge, render_rule
 
-    deny = [r.replace("{{ship}}", str(shipdir)) for r in team.get("deny") or []]
+    deny = [render_rule(r, shipdir, "") for r in team.get("deny") or []]
     return _merge(team.get("settings") or {}, {"permissions": {"defaultMode": "dontAsk", "allow": [], "deny": deny}})
 
 

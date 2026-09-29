@@ -173,7 +173,7 @@ def build(shipdir: Path, team: dict, seat: str, source: str = "startup",
         f"- 引き継ぎ: {posix_path(sdir / 'handoff.md')} / 作業ログ: {posix_path(sdir / 'log' / (today() + '.md'))}",
     ]
     if deadline.phase(dl) in (deadline.OVER, deadline.FORCE):
-        head.append(deadline.WRAP_UP_MESSAGE.format(yamato=y, ship=shipdir, seat=seat))
+        head.append(deadline.WRAP_UP_MESSAGE.format(yamato=y, ship=ship_arg(shipdir), seat=seat))
     if notice:
         parts.append(notice)
     parts.append("\n".join(head))

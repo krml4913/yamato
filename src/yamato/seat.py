@@ -599,7 +599,7 @@ def send(shipdir: Path, seat: str, text: str, sender: str | None, cwd: str | Non
                 out(f"猶予を過ぎても動いていた席を強制停止した: {', '.join(stopped)}")
         out("稼働時間の上限を過ぎているので宛先は起こさない (inbox には記録済み。次に起動したときに読まれる)。")
         if sender in team["seats"]:
-            out(deadline.WRAP_UP_MESSAGE.format(yamato=y, ship=shipdir, seat=sender))
+            out(deadline.WRAP_UP_MESSAGE.format(yamato=y, ship=ship_arg(shipdir), seat=sender))
         return 0
 
     try:
