@@ -133,7 +133,7 @@ notify:
 
 ## Windows + Git Bash
 
-Windows ネイティブの Claude Code と、Git for Windows の Git Bash から動かす形に対応している途中 (W1 まで。設計と調査は `work/windows-research.md`、実機の検証手順は [verify-win-plan](docs/verify/verify-win-plan.md))。macOS の動作は変わらない。
+Windows ネイティブの Claude Code と、Git for Windows の Git Bash から動かす形に対応している途中 (W4 まで。設計と調査は `work/windows-research.md`、実機の検証手順は [verify-win-plan](docs/verify/verify-win-plan.md))。macOS の動作は変わらない。
 
 - 要るもの: Windows ネイティブの Python 3.11+ (python.org 版など)、Claude Code、Git for Windows。**Python の名前は `python`** (python.org のインストーラーは `python3.exe` を作らない。`py -3` でもよい)。yamato の入口は `python <repo>/yamato ...` で打つ。人が短く打ちたいなら Git Bash の alias (`alias yamato='python /c/path/to/yamato/yamato'`) か `yamato.cmd` を自分で作る
 - 席と hook は Python の名前に依存しない: hook は exec form (`sys.executable` + `args`) で、役割プロンプトの `{{yamato}}` も `<インタプリタのフルパス> <yamato のパス>` の 2 語に展開される。`yamato up` を動かした Python が、そのまま席の Bash でも使われる
@@ -143,7 +143,8 @@ Windows ネイティブの Claude Code と、Git for Windows の Git Bash から
 - `notify.command` は Windows では `cmd.exe` で動く (シェルの書き方は艦の設定で決める)
 - パスの書き方 (W4): Windows では、規則の絶対パス `/{{ship}}/...` は `//c/Users/...` (小文字のドライブ、`/` 区切り) に、`Bash(...)` の中とプロンプトの `{{ship}}` は `C:/Users/...` (as_posix) に描く。W0 の実機で、docs の `//c/...` の形だけが deny に当たった (`/C:\...` は素通り)。艦のパスにスペースがあると、引数として置く `{{ship}}` は `'C:/Users/John Doe/...'` と引用して描く (プロンプトと allow の規則は同じ文字列)。`{{ship}}/work/...` のようにファイルのパスとして置くときは引用しない。`{{yamato}}` の interpreter と script も as_posix。zellij のペインは `python.exe <script> view attach ...` で起動する
 - **`python3` は使えない**: Windows の `python3` は WindowsApps の stub (W0 [1])。`python` か `py -3` を使う
-- まだ動かないもの (W3 以降、W0 の実機検証のあと): 席の切り離し起動・生死の判定・停止・遅延 stop・`admiral talk`。PowerShell ツールの扱いは owner の判断 (D-051) 待ち — 席は自分から PowerShell を使い、`Bash(...)` の規則は PowerShell の同じコマンドには当たらない。**W4 が入っても、実機 (W5) で deny が当たることを確かめるまで、Windows で無人の席を出さない**
+- プロセス (W3): 席の生死は `OpenProcess` + `GetExitCodeProcess`、切り離しは `CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW`、headless の停止は `CTRL_BREAK_EVENT` → `taskkill /T /F`、`admiral talk` は exec せず待って終了コードを返す (OS 差分は `src/yamato/procs.py` の 1 か所)。遅延 stop は Git Bash の `sh`・`sleep` をそのまま使う
+- まだ動かないもの (W5 の実機確認まで): PowerShell ツールの扱いは owner の判断 (D-051) 待ち — 席は自分から PowerShell を使い、`Bash(...)` の規則は PowerShell の同じコマンドには当たらない。**実機 (W5) で deny が当たることを確かめるまで、Windows で無人の席を出さない**
 
 ## テストの実行
 

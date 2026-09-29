@@ -20,6 +20,7 @@ import sys
 import time
 from pathlib import Path
 
+from . import procs
 from .util import YamatoError
 
 # The caller's session identity must not leak into a new seat (technical, not
@@ -97,16 +98,10 @@ def by_session(listing: list[dict]) -> dict:
 
 
 def is_alive(rec: dict | None) -> bool:
-    """Liveness is ``pid != null`` (verify-p0-a Q3), double-checked with kill -0."""
+    """Liveness is ``pid != null`` (verify-p0-a Q3), double-checked with the OS (procs.pid_alive)."""
     if not rec or rec.get("pid") is None:
         return False
-    try:
-        os.kill(int(rec["pid"]), 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+    return procs.pid_alive(rec["pid"])
 
 
 # after a launch / resume: how long the listing is watched (verify-p0-c Q5). A session with a

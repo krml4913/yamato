@@ -16,7 +16,7 @@ import time
 import uuid
 from pathlib import Path
 
-from . import claude, deadline, events, inbox, monitor, notify, report, roster, rotate, runtime, usage
+from . import claude, deadline, events, inbox, monitor, notify, procs, report, roster, rotate, runtime, usage
 from .team import last_call_conf, load_team, profile_of, seat_spec
 from .runtime import yamato_invocation
 from .util import (YAMATO_BIN, YamatoError, append_log, fmt_span, fmt_time, read_json,
@@ -377,8 +377,7 @@ def enforce(shipdir: Path, team: dict) -> list[str]:
 
 
 def _spawn_detached(args: list[str], cwd: str | None = None) -> None:
-    subprocess.Popen(["nohup", *args], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                     stderr=subprocess.DEVNULL, start_new_session=True, env=claude.seat_env(), cwd=cwd)
+    procs.spawn_detached(args, cwd=cwd, env=claude.seat_env())
 
 
 def spawn_watchdog(shipdir: Path, token: str) -> None:
@@ -790,12 +789,10 @@ def watchdog(shipdir: Path, token: str) -> int:
     try:
         other_pid, other_token = pidfile.read_text().split()
         if int(other_pid) != os.getpid() and other_token == token:
-            os.kill(int(other_pid), 0)
-            return 0  # the same deadline is already being watched
-    except (FileNotFoundError, ValueError, ProcessLookupError):
+            if procs.pid_alive(other_pid):
+                return 0  # the same deadline is already being watched
+    except (FileNotFoundError, ValueError):
         pass
-    except PermissionError:
-        return 0
     pidfile.write_text(f"{os.getpid()} {token}\n", encoding="utf-8", newline="\n")
     try:
         while True:

@@ -31,7 +31,7 @@ import uuid
 from collections import Counter
 from pathlib import Path
 
-from . import events, inbox
+from . import events, inbox, procs
 from .runtime import yamato_invocation
 from .util import (YAMATO_BIN, YamatoError, atomic_write, parse_duration, read_json, ship_lock,
                    today, write_json)
@@ -523,9 +523,8 @@ def curate(shipdir: Path, team: dict, role: str | None = None, wait: bool = Fals
             from . import claude
 
             with open(log, "a") as f:
-                subprocess.Popen([sys.executable, str(YAMATO_BIN), "_memory-curate", str(shipdir), r],
-                                 stdin=subprocess.DEVNULL, stdout=f, stderr=f, start_new_session=True,
-                                 env=claude.seat_env())
+                procs.spawn_detached([sys.executable, str(YAMATO_BIN), "_memory-curate", str(shipdir), r],
+                                     env=claude.seat_env(), stdout=f, stderr=f)
             out(f"{r}: 棚卸しのシフトを起こした。終わると {report_to(team)} に知らせが届く "
                 f"(案: {proposed_path(shipdir, r)})")
     return roles
@@ -594,7 +593,7 @@ def run_curate(shipdir: Path, team: dict, role: str, now: float | None = None) -
                 env = claude.seat_env([*claude.PRINT_CALLER_ENV, *(team.get("env_unset") or ())])
                 proc = subprocess.Popen(argv, cwd=str(shipdir), env=env, stdin=subprocess.DEVNULL,
                                         stdout=subprocess.PIPE, stderr=err, text=True, encoding="utf-8",
-                                        errors="replace")
+                                        errors="replace", **procs.group_kwargs())
         except OSError as e:
             launch_error = f"claude -p を起動できない: {e}"
         else:
@@ -657,10 +656,10 @@ def _watch(proc, started: float, max_duration: int) -> str | None:
     while proc.poll() is None:
         now = time.time()
         if killed_at is None and now >= started + max_duration:
-            proc.terminate()
+            procs.soft_stop(proc.pid)
             killed_at, reason = now, "max-duration"
         elif killed_at is not None and now - killed_at > KILL_WAIT:
-            proc.kill()
+            procs.hard_kill(proc.pid)
         try:
             proc.wait(timeout=WATCH_POLL)   # cut short when claude -p ends
         except subprocess.TimeoutExpired:
