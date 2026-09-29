@@ -256,10 +256,10 @@ def _live_short(shipdir: Path, name: str) -> str | None:
     return live.get("id") or rec.get("shortId") or rec["sessionId"][:8]
 
 
-def talk(shipdir: Path, name: str | None, *, execvp=os.execvp) -> int:
-    """Attach to a seat in the foreground. A stopped seat is woken first by the same
-    rule as ``send`` (a note in its inbox, then resume / a new shift): attaching to a
-    stopped session would start a copy (design §10)."""
+def _wake_for_attach(shipdir: Path, name: str | None) -> tuple[dict, str, str]:
+    """The seat to attach to, woken first by the same rule as ``send`` (a note in its inbox, then
+    resume / a new shift) if it is stopped: (team, seat name, short id). Attaching to a stopped
+    session would start a copy (design §10)."""
     team = seat.current_team(shipdir)
     name = name or team.get("talk_default") or team["hub"]
     if seat_spec(team, name)["shift"] == "headless":
@@ -279,6 +279,12 @@ def talk(shipdir: Path, name: str | None, *, execvp=os.execvp) -> int:
         short = _live_short(shipdir, name)
         if short is None:
             raise YamatoError(f"席 {name} を起こせなかったので attach しない (上の send の結果を参照)")
+    return team, name, short
+
+
+def talk(shipdir: Path, name: str | None, *, execvp=os.execvp) -> int:
+    """Attach to a seat in the foreground (woken first if stopped, see ``_wake_for_attach``)."""
+    team, name, short = _wake_for_attach(shipdir, name)
     out(f"claude attach {short} ({team['name']}.{name})")
     execvp(claude.claude_bin(), [claude.claude_bin(), "attach", short])
     return 0   # only reached when execvp is replaced (tests)
@@ -303,6 +309,15 @@ def ensure_admiral() -> Path:
     for w in warnings:
         out(f"注意: {w}")
     return created
+
+
+def wake_admiral() -> None:
+    """The admiral's pane in ``yamato view`` is only a ``view attach``, which never wakes a stopped
+    seat; the admiral is who the owner opens the view to talk to, so wake it the way
+    ``yamato admiral`` does (created on the first call, stopped -> send -> resume)."""
+    shipdir = ensure_admiral()
+    seat.prepare(shipdir)
+    _wake_for_attach(shipdir, None)
 
 
 def admiral_talk(*, execvp=os.execvp) -> int:

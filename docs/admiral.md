@@ -14,6 +14,7 @@
 | したいこと | コマンド |
 |---|---|
 | attach する (無ければ作って起こす) | `yamato admiral`。生きていれば attach、止まっていれば talk と同じ規則 (send → 起こす) で起こしてから attach する。`_admiral/` が無ければ `admiral` ひな形から初回に作る (登録はしない。`ships` には出ない) |
+| admiral と艦を開く | `yamato view` (絞るなら `yamato view admiral <艦>`)。admiral のタブが先頭、登録済みの全艦が続く 1 つの zellij セッション (`yamato-view`)。admiral が止まっていれば `yamato admiral` と同じ規則で起こしてから。抜けるのは **zellij の detach (Ctrl+O d)**、席は動き続ける。`/exit` は席を止める |
 | 引き継ぎを促して止める | `yamato admiral --stop`。引き継ぎ (handoff.md) を書いて `seat-stop` するよう admiral の inbox に伝える。これ自体はブロックしない |
 | それでも止まらなければ強制停止 | `yamato admiral --stop --force`。最大 `ADMIRAL_STOP_WAIT` 秒 (モジュール定数) 待って、それでも生きていれば `down --force` / `halt` と同じ強制停止に落ちる |
 
@@ -40,7 +41,7 @@
 | owner を席につなぐ | `yamato talk <name> [<seat>]`。既定は team.yaml の `talk_default` (省略時 captain)。止まっている席は send と同じ規則で起こしてから `claude attach`。**端末を占有する**ので、owner の端末で打ってもらう (admiral のセッションの中では打たない) |
 | 入れ替えの印を立てる | `yamato rotate <ship> <seat>...`。止まっている persistent の席に「次のシフトは入れ替え」の印を立てる (design-drift D) |
 | 判断の代筆 | owner の言葉を受けて `yamato decide close <ship> <判断の id> --choice "<決定>" --reason "<owner の言葉をそのまま>" --by owner`。設計の根幹に触る判断は owner にはっきり確かめてから閉じる |
-| 表示 | `yamato view open [<艦名>...]` (zellij のタブで艦を並べて見る。あれば) |
+| 表示 | `yamato view [admiral] [<艦名>...]` (zellij のタブで並べて見る。艦名を省くと admiral が先頭で全艦。`view open` と同じ) |
 
 ## 権限について (D-013)
 

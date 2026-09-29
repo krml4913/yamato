@@ -570,6 +570,29 @@ class AdmiralUpCommandTest(ShipTestCase):
         self.assertTrue(resumes)
         self.assertEqual(calls[0][1], "attach")
 
+    def test_wake_admiral_wakes_a_stopped_seat_without_attaching(self):
+        # view の admiral ペインは view attach なので、起こすのは wake_admiral (execvp しない)
+        with mock.patch("os.execvp") as ex:
+            self.run_cmd(admiral.wake_admiral)
+            ex.assert_not_called()
+        admdir = self.admdir()
+        self.assertEqual(len([c for c in self.fake()["calls"] if "--bg" in c["argv"]]), 1)
+        self.assertTrue(self.alive_seat(admdir, "admiral"))
+        self.stop_admiral(admdir)
+        self.assertFalse(self.alive_seat(admdir, "admiral"))
+        self.run_cmd(admiral.wake_admiral)
+        self.assertTrue([c for c in self.fake()["calls"] if "--resume" in c["argv"]])
+        self.assertTrue(self.alive_seat(admdir, "admiral"))
+
+    def test_wake_admiral_does_nothing_when_it_is_alive(self):
+        self.run_cmd(admiral.wake_admiral)
+        admdir = self.admdir()
+        before = (roster.seat(admdir, "admiral")["sessionId"], len(self.fake()["calls"]))
+        self.run_cmd(admiral.wake_admiral)
+        self.assertEqual(roster.seat(admdir, "admiral")["sessionId"], before[0])
+        self.assertEqual(len([c for c in self.fake()["calls"] if "--bg" in c["argv"]]), 1)
+        self.assertEqual([c for c in self.fake()["calls"] if "--resume" in c["argv"]], [])
+
     # --- stop (--stop / --force) ---
 
     def test_admiral_stop_before_it_ever_existed_is_a_clear_error(self):
