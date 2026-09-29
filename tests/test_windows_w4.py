@@ -1,6 +1,8 @@
 """W4: path forms in prompts and permission rules on Windows (T-041, work/windows-research.md §2.4,
 W0 [9] / Issue #68). Windows is never available here: ``runtime.is_windows`` is replaced and the
 ship path is a Windows-looking string, and the tests assert the text handed to Claude Code."""
+import contextlib
+import io
 import re
 import shlex
 import sys
@@ -116,6 +118,60 @@ class TemplatesOnWindowsTest(ShipTestCase):
         _, prompts = self.render("research", WIN)
         self.assertIn("C:/Users/John Doe/ships/t1/work/", prompts["researcher"])
         self.assertNotIn("'C:/Users/John Doe/ships/t1'/work", prompts["researcher"])
+
+
+class InjectionOnWindowsTest(ShipTestCase):
+    """seat-facing injected text uses the same ship word as the prompt / allow rules (T-044)."""
+
+    def test_session_start_and_first_prompt_use_ship_arg(self):
+        from yamato import inject, seat
+        team = load_team(self.shipdir)
+        with on_windows(), mock.patch.object(runtime.sys, "executable", EXE):
+            typed = runtime.ship_arg(WIN)
+            inv = runtime.yamato_invocation()
+            text, _ = inject.build(WIN, team, "impl")
+            first = seat._first_prompt(WIN, "impl")
+        self.assertIn("'C:/Users/John Doe/ships/t1'", typed)
+        self.assertIn(f"{inv} inbox {typed} impl", first)
+        self.assertIn(f"<ship> には {typed} を", text)
+        self.assertIn("C:/Users/John Doe/ships/t1/seats/impl/handoff.md", text)
+        self.assertNotIn("C:\\", text + first)
+
+    def test_hook_messages_use_ship_arg(self):
+        from yamato import hooks
+        with on_windows(), mock.patch.object(runtime.sys, "executable", EXE):
+            typed = runtime.ship_arg(WIN)
+            msg = hooks._wrapup_message(WIN, "impl")
+        self.assertIn(f"seat-stop {typed} impl", msg)
+
+    def test_wrap_up_past_the_deadline_uses_ship_arg(self):
+        """the seat-stop line the seat is told to type (inject at OVER, send by a seat at OVER)."""
+        from yamato import deadline, inject, seat
+        team = load_team(self.shipdir)
+        over = deadline.write(self.shipdir, limit=-10, grace=3600, token="t")
+        self.assertEqual(deadline.phase(over), deadline.OVER)
+        with mock.patch.object(inject, "ship_arg", return_value="SHIPARG"):
+            text, _ = inject.build(self.shipdir, team, "impl")
+        self.assertIn("seat-stop SHIPARG impl", text)
+        self.assertNotIn(f"seat-stop {self.shipdir} impl", text)
+        with mock.patch.object(seat, "ship_arg", return_value="SHIPARG"):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                seat.send(self.shipdir, "impl", "hi", "pm")
+            printed = buf.getvalue()
+        self.assertIn("seat-stop SHIPARG pm", printed)
+
+
+class CuratorOnWindowsTest(ShipTestCase):
+    def test_curator_deny_uses_the_seat_rule_form(self):
+        from yamato import memory
+        team = {"deny": ["Edit(/{{ship}}/team.yaml)", "Bash({{yamato}} board set {{ship}}*)"]}
+        with on_windows(), mock.patch.object(runtime.sys, "executable", EXE):
+            deny = memory.curator_settings(WIN, team)["permissions"]["deny"]
+            want = [runtime.render_rule(r, WIN, "") for r in team["deny"]]
+        self.assertEqual(deny, want)
+        self.assertEqual(deny[0], "Edit(//c/Users/John Doe/ships/t1/team.yaml)")
+        self.assertIn("'C:/Users/John Doe/ships/t1'", deny[1])
 
 
 class LayoutOnWindowsTest(unittest.TestCase):

@@ -26,7 +26,7 @@ from pathlib import Path
 from . import board as board_mod
 from . import events, notify, roster
 from .pr import PR_CONFLICT, PR_MERGE, PR_OPEN
-from .runtime import yamato_invocation
+from .runtime import ship_arg, yamato_invocation
 from .util import YamatoError, atomic_write, read_json, ship_lock, today
 
 REPORT_MADE = "report_made"    # events.jsonl kinds (docs/events.md)
@@ -567,7 +567,7 @@ def run(args) -> int:
     team = current_team(shipdir)
     if args.report_cmd == "daily":
         date = _check_date(args.date)
-        send_cmd = f"`{yamato_invocation()} report send {shipdir}" + (f" --date {args.date}" if args.date else "") + "`"
+        send_cmd = f"`{yamato_invocation()} report send {ship_arg(shipdir)}" + (f" --date {args.date}" if args.date else "") + "`"
         if report_path(shipdir, date).exists() and not (args.force or args.facts_only):
             # the day's second stop (e2e-p1 E): keep what the captain wrote, redo the facts
             if not needs_send(shipdir, date):

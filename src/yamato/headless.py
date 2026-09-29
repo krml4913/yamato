@@ -32,7 +32,7 @@ from pathlib import Path
 from . import board as board_mod
 from . import claude, deadline, events, inbox, notify, procs, roster, runtime, usage
 from .team import seat_spec
-from .runtime import yamato_invocation
+from .runtime import ship_arg, yamato_invocation
 from .util import YAMATO_BIN, YamatoError, append_log, lock_file, try_lock_file, unlock_file
 
 REPORTER = "yamato"   # the `from` of the end-of-shift report: not a seat, so nobody owes a SendMessage
@@ -207,8 +207,8 @@ def first_prompt(shipdir: Path, seat: str) -> str:
     y = yamato_invocation()
     return (f"[yamato] headless のシフト開始 (この 1 回の実行で終わります)。SessionStart で注入された引き継ぎ・"
             f"自分の担当・未読 inbox を確認し、役割どおりに仕事を進めてください。未読の続きは "
-            f"`{y} inbox {shipdir} {seat}` で読めます。終える前に handoff.md "
-            f"({inbox.seat_dir(shipdir, seat) / 'handoff.md'}) を上書きし、`{y} seat-stop {shipdir} {seat}` を"
+            f"`{y} inbox {ship_arg(shipdir)} {seat}` で読めます。終える前に handoff.md "
+            f"({inbox.seat_dir(shipdir, seat) / 'handoff.md'}) を上書きし、`{y} seat-stop {ship_arg(shipdir)} {seat}` を"
             f"実行してから、このターンを短く終えてください。")
 
 

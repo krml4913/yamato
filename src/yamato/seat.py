@@ -18,7 +18,7 @@ from pathlib import Path
 
 from . import claude, deadline, events, inbox, monitor, notify, procs, report, roster, rotate, runtime, usage
 from .team import last_call_conf, load_team, profile_of, seat_spec
-from .runtime import yamato_invocation
+from .runtime import ship_arg, yamato_invocation
 from .util import (YAMATO_BIN, YamatoError, append_log, fmt_span, fmt_time, read_json,
                    seat_lock, ship_lock, write_json)
 
@@ -113,7 +113,7 @@ def clear_pending(shipdir: Path, seat: str) -> None:
 
 def _first_prompt(shipdir: Path, seat: str) -> str:
     return (f"[yamato] シフト開始。SessionStart で注入された引き継ぎ・自分の担当・未読 inbox を確認し、"
-            f"役割どおりに仕事を進めてください。未読の続きは `{yamato_invocation()} inbox {shipdir} {seat}` で読めます。")
+            f"役割どおりに仕事を進めてください。未読の続きは `{yamato_invocation()} inbox {ship_arg(shipdir)} {seat}` で読めます。")
 
 
 def _resume_prompt(shipdir: Path, seat: str, reason: str = "send") -> str:
@@ -123,7 +123,7 @@ def _resume_prompt(shipdir: Path, seat: str, reason: str = "send") -> str:
         return (f"[yamato] 艦が起動された ({deadline.describe(deadline.read(shipdir))})。"
                 f"前のシフトの時間の判断は忘れ、SessionStart で注入された引き継ぎ・担当・未読 inbox を確認して、"
                 f"引き継ぎの「次にやること」から仕事を再開してください。")
-    return (f"[yamato] inbox に新しいメッセージがあります。`{yamato_invocation()} inbox {shipdir} {seat}` で読んで対応してください。")
+    return (f"[yamato] inbox に新しいメッセージがあります。`{yamato_invocation()} inbox {ship_arg(shipdir)} {seat}` で読んで対応してください。")
 
 
 def start_new_shift(shipdir: Path, team: dict, seat: str, rotated: list[str] | None = None) -> dict:
@@ -424,8 +424,8 @@ def notify_retired_seats(shipdir: Path, team: dict) -> list[dict]:
     for r in reported:
         lines.append(f"- {r['seat']}: 担当の task {', '.join(r['tasks']) if r['tasks'] else 'なし'}"
                      f" / 未読 {r['unread']} 件" + (" / handoff あり" if r["handoff"] else ""))
-    lines.append(f"読む: `{yamato_invocation()} inbox {shipdir} <席>`、task: `{yamato_invocation()} board mine {shipdir} <席>`、"
-                 f"振り直し: `{yamato_invocation()} board set {shipdir} <id> assignee=<席>`")
+    lines.append(f"読む: `{yamato_invocation()} inbox {ship_arg(shipdir)} <席>`、task: `{yamato_invocation()} board mine {ship_arg(shipdir)} <席>`、"
+                 f"振り直し: `{yamato_invocation()} board set {ship_arg(shipdir)} <id> assignee=<席>`")
     text = "\n".join(lines)
     hub = team["hub"]
     entry = inbox.append(shipdir, hub, REPORTER, text)
@@ -561,7 +561,7 @@ def send(shipdir: Path, seat: str, text: str, sender: str | None, cwd: str | Non
             raise YamatoError("--cwd は席への send でだけ使える")
         entry = inbox.append(shipdir, OWNER, sender, text)
         _send_event(shipdir, OWNER, sender, entry)
-        out(f"owner の inbox に記録した: #{entry['n']} (`{yamato_invocation()} inbox {shipdir} owner` で読む)")
+        out(f"owner の inbox に記録した: #{entry['n']} (`{yamato_invocation()} inbox {ship_arg(shipdir)} owner` で読む)")
         _watch_send(shipdir, team, sender, OWNER, entry, text)
         for line in notify.notify(team, f"yamato {team['name']}: {sender} から", text, shipdir=shipdir):
             out(line)
@@ -590,7 +590,7 @@ def send(shipdir: Path, seat: str, text: str, sender: str | None, cwd: str | Non
     # ship that simply has not been `up`'d yet, it has no "up" step to wait for at all
     # (T-021): the gate below does not apply to it.
     if team["time_limit"] is not None and ph == deadline.NOT_UP:
-        out(f"艦は起動していないので宛先は起こさない。`{y} up {shipdir}` で起動すると、宛先の席が起きたときに読まれる。")
+        out(f"艦は起動していないので宛先は起こさない。`{y} up {ship_arg(shipdir)}` で起動すると、宛先の席が起きたときに読まれる。")
         return 0
     if ph in (deadline.OVER, deadline.FORCE):
         if ph == deadline.FORCE:
@@ -599,7 +599,7 @@ def send(shipdir: Path, seat: str, text: str, sender: str | None, cwd: str | Non
                 out(f"猶予を過ぎても動いていた席を強制停止した: {', '.join(stopped)}")
         out("稼働時間の上限を過ぎているので宛先は起こさない (inbox には記録済み。次に起動したときに読まれる)。")
         if sender in team["seats"]:
-            out(deadline.WRAP_UP_MESSAGE.format(yamato=y, ship=shipdir, seat=sender))
+            out(deadline.WRAP_UP_MESSAGE.format(yamato=y, ship=ship_arg(shipdir), seat=sender))
         return 0
 
     try:

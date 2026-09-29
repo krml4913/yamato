@@ -133,7 +133,7 @@ notify:
 
 ## Windows + Git Bash
 
-Windows ネイティブの Claude Code と、Git for Windows の Git Bash から動かす形に対応している途中 (W4 まで。設計と調査は `work/windows-research.md`、実機の検証手順は [verify-win-plan](docs/verify/verify-win-plan.md))。macOS の動作は変わらない。
+Windows ネイティブの Claude Code と、Git for Windows の Git Bash から動かす形に対応している途中 (W4 まで。席に見せる注入・通知の文言の艦フォルダも同じ ship_arg (T-044)。設計と調査は `work/windows-research.md`、実機の検証手順は [verify-win-plan](docs/verify/verify-win-plan.md))。macOS の動作は変わらない。
 
 - 要るもの: Windows ネイティブの Python 3.11+ (python.org 版など)、Claude Code、Git for Windows。**Python の名前は `python`** (python.org のインストーラーは `python3.exe` を作らない。`py -3` でもよい)。yamato の入口は `python <repo>/yamato ...` で打つ。人が短く打ちたいなら Git Bash の alias (`alias yamato='python /c/path/to/yamato/yamato'`) か `yamato.cmd` を自分で作る
 - 席と hook は Python の名前に依存しない: hook は exec form (`sys.executable` + `args`) で、役割プロンプトの `{{yamato}}` も `<インタプリタのフルパス> <yamato のパス>` の 2 語に展開される。`yamato up` を動かした Python が、そのまま席の Bash でも使われる
