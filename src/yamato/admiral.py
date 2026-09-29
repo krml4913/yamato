@@ -256,10 +256,9 @@ def _live_short(shipdir: Path, name: str) -> str | None:
     return live.get("id") or rec.get("shortId") or rec["sessionId"][:8]
 
 
-def talk(shipdir: Path, name: str | None, *, execvp=os.execvp) -> int:
-    """Attach to a seat in the foreground. A stopped seat is woken first by the same
-    rule as ``send`` (a note in its inbox, then resume / a new shift): attaching to a
-    stopped session would start a copy (design §10)."""
+def _wake_for_attach(shipdir: Path, name: str | None) -> tuple[dict, str, str]:
+    """The seat to attach to, woken first by the same rule as ``send`` if it is stopped:
+    (team, seat name, short id). Attaching to a stopped session would start a copy (design §10)."""
     team = seat.current_team(shipdir)
     name = name or team.get("talk_default") or team["hub"]
     if seat_spec(team, name)["shift"] == "headless":
@@ -279,6 +278,12 @@ def talk(shipdir: Path, name: str | None, *, execvp=os.execvp) -> int:
         short = _live_short(shipdir, name)
         if short is None:
             raise YamatoError(f"席 {name} を起こせなかったので attach しない (上の send の結果を参照)")
+    return team, name, short
+
+
+def talk(shipdir: Path, name: str | None, *, execvp=os.execvp) -> int:
+    """Attach to a seat in the foreground (woken first if stopped, see ``_wake_for_attach``)."""
+    team, name, short = _wake_for_attach(shipdir, name)
     out(f"claude attach {short} ({team['name']}.{name})")
     execvp(claude.claude_bin(), [claude.claude_bin(), "attach", short])
     return 0   # only reached when execvp is replaced (tests)
@@ -305,13 +310,26 @@ def ensure_admiral() -> Path:
     return created
 
 
-def admiral_talk(*, execvp=os.execvp) -> int:
-    """``yamato admiral``: 生きていれば attach、止まっていれば talk と同じ規則で起こしてから attach
-    する (D-011)。``_admiral/`` は無ければここで初めて作る。settings / agents は毎回 ``prepare`` で
-    作り直す (team.yaml を直したときに次の attach から効くのは他のどの艦とも同じ)。"""
+def admiral_talk(direct: bool = False, *, execvp=os.execvp, open_view=None) -> int:
+    """``yamato admiral``: 生きていればそのまま、止まっていれば talk と同じ規則で起こしてから、
+    zellij 経由で開く (T-040): admiral のタブを先頭に ``view open`` と同じ layout (全艦のタブも並ぶ)。
+    抜けるのは zellij の detach で、席は動き続ける。``direct`` (``--direct``) は今までどおり端末で
+    ``claude attach`` を前面に出す (zellij の無い環境の逃げ道。抜けるのは ← か Ctrl+Z)。
+    ``_admiral/`` は無ければここで初めて作る。settings / agents は毎回 ``prepare`` で作り直す
+    (team.yaml を直したときに次の attach から効くのは他のどの艦とも同じ)。"""
     shipdir = ensure_admiral()
     seat.prepare(shipdir)
-    return talk(shipdir, None, execvp=execvp)
+    if direct:
+        return talk(shipdir, None, execvp=execvp)
+    team, name, short = _wake_for_attach(shipdir, None)
+    out(f"admiral は動いている ({team['name']}.{name}, session {short})。zellij で開く。"
+        "抜けるときは zellij の detach (Ctrl+O d)。/exit は席を止める。")
+    if open_view is None:
+        from .view import opener
+
+        open_view = opener.open_ships
+    open_view(None, admiral_only=True)
+    return 0
 
 
 def admiral_stop(force: bool = False) -> int:
@@ -360,8 +378,10 @@ def register(sub) -> None:
     t = sub.add_parser("talk", help="(admiral) 席に attach して直接話す。止まっていれば起こしてから")
     t.add_argument("ship")
     t.add_argument("seat", nargs="?", help="既定は team.yaml の talk_default (省略時 hub)")
-    a = sub.add_parser("admiral", help="(owner) 常駐の admiral セッションに attach する。"
+    a = sub.add_parser("admiral", help="(owner) 常駐の admiral セッションを zellij で開く (admiral のタブが先頭)。"
                                         "止まっていれば talk と同じ規則で起こしてから (D-011)")
+    a.add_argument("--direct", action="store_true",
+                   help="zellij を使わず、端末で claude attach を前面に出す (zellij の無い環境の逃げ道。抜けるのは ← か Ctrl+Z)")
     a.add_argument("--stop", action="store_true", help="引き継ぎを促して止める (seat-stop は艦の席と同じに使える)")
     a.add_argument("--force", action="store_true",
                    help="--stop と一緒に使う。待っても自分で止まらなければ強制停止する (down --force と同じ扱い)")

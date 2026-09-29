@@ -536,7 +536,7 @@ class AdmiralUpCommandTest(ShipTestCase):
 
     def test_admiral_wakes_and_attaches_with_remote_control_and_model(self):
         calls = []
-        out = self.run_cmd(admiral.admiral_talk, execvp=lambda f, a: calls.append(a))
+        out = self.run_cmd(admiral.admiral_talk, True, execvp=lambda f, a: calls.append(a))
         admdir = self.admdir()
         rec = roster.seat(admdir, "admiral")
         self.assertEqual(rec["state"], roster.ON_SHIFT)
@@ -548,11 +548,11 @@ class AdmiralUpCommandTest(ShipTestCase):
         self.assertEqual(launched[launched.index("--name") + 1], "yamato.admiral")
 
     def test_admiral_attaches_to_the_already_alive_session_without_relaunching(self):
-        self.run_cmd(admiral.admiral_talk, execvp=lambda f, a: None)
+        self.run_cmd(admiral.admiral_talk, True, execvp=lambda f, a: None)
         admdir = self.admdir()
         before = roster.seat(admdir, "admiral")["sessionId"]
         calls = []
-        self.run_cmd(admiral.admiral_talk, execvp=lambda f, a: calls.append(a))
+        self.run_cmd(admiral.admiral_talk, True, execvp=lambda f, a: calls.append(a))
         self.assertEqual(roster.seat(admdir, "admiral")["sessionId"], before)
         self.assertEqual(len([c for c in self.fake()["calls"] if "--bg" in c["argv"]]), 1)
         self.assertEqual(calls, [[claude.claude_bin(), "attach", roster.seat(admdir, "admiral")["shortId"]]])
@@ -560,12 +560,12 @@ class AdmiralUpCommandTest(ShipTestCase):
     def test_admiral_wakes_a_stopped_seat_even_with_no_deadline_ever(self):
         # D-013: there is no `up` for the admiral, so talk()'s usual "艦は稼働時間の外" gate
         # (only in bounds while a deadline says RUNNING) must not apply to it (T-021)
-        self.run_cmd(admiral.admiral_talk, execvp=lambda f, a: None)
+        self.run_cmd(admiral.admiral_talk, True, execvp=lambda f, a: None)
         admdir = self.admdir()
         self.assertIsNone(deadline.read(admdir))
         self.stop_admiral(admdir)
         calls = []
-        self.run_cmd(admiral.admiral_talk, execvp=lambda f, a: calls.append(a))
+        self.run_cmd(admiral.admiral_talk, True, execvp=lambda f, a: calls.append(a))
         resumes = [c for c in self.fake()["calls"] if "--resume" in c["argv"]]
         self.assertTrue(resumes)
         self.assertEqual(calls[0][1], "attach")
@@ -582,7 +582,7 @@ class AdmiralUpCommandTest(ShipTestCase):
         self.assertIn("すでに止まっている", out)
 
     def test_admiral_stop_sends_the_note_and_does_not_block(self):
-        self.run_cmd(admiral.admiral_talk, execvp=lambda f, a: None)
+        self.run_cmd(admiral.admiral_talk, True, execvp=lambda f, a: None)
         admdir = self.admdir()
         out = self.run_cmd(admiral.admiral_stop, False)
         self.assertIn("引き継ぎ", inbox.unread(admdir, "admiral")[-1]["text"])
@@ -590,7 +590,7 @@ class AdmiralUpCommandTest(ShipTestCase):
         self.assertTrue(self.alive_seat(admdir, "admiral"))
 
     def test_admiral_stop_force_waits_then_accepts_a_voluntary_seat_stop(self):
-        self.run_cmd(admiral.admiral_talk, execvp=lambda f, a: None)
+        self.run_cmd(admiral.admiral_talk, True, execvp=lambda f, a: None)
         admdir = self.admdir()
         sid = roster.seat(admdir, "admiral")["sessionId"]
 
@@ -604,7 +604,7 @@ class AdmiralUpCommandTest(ShipTestCase):
         self.assertIn("自分で終業した", out)
 
     def test_admiral_stop_force_stops_it_when_it_does_not_stop_itself(self):
-        self.run_cmd(admiral.admiral_talk, execvp=lambda f, a: None)
+        self.run_cmd(admiral.admiral_talk, True, execvp=lambda f, a: None)
         admdir = self.admdir()
         with mock.patch.object(claude, "wait_gone", return_value=False):
             out = self.run_cmd(admiral.admiral_stop, True)
@@ -615,7 +615,7 @@ class AdmiralUpCommandTest(ShipTestCase):
     # --- rotate: 艦の席と同じ roles.<role>.rotate が効く (T-021 の完了条件 4) ---
 
     def test_rotate_marks_a_stopped_admiral_for_a_fresh_shift(self):
-        self.run_cmd(admiral.admiral_talk, execvp=lambda f, a: None)
+        self.run_cmd(admiral.admiral_talk, True, execvp=lambda f, a: None)
         admdir = self.admdir()
         self.stop_admiral(admdir)
         rc, out = self.cli("rotate", str(admdir), "admiral")
@@ -625,7 +625,7 @@ class AdmiralUpCommandTest(ShipTestCase):
     # --- seat-stop: 艦の席と同じに使える (T-021 の完了条件 3) ---
 
     def test_seat_stop_works_on_the_admiral_like_any_seat(self):
-        self.run_cmd(admiral.admiral_talk, execvp=lambda f, a: None)
+        self.run_cmd(admiral.admiral_talk, True, execvp=lambda f, a: None)
         admdir = self.admdir()
         sid = roster.seat(admdir, "admiral")["sessionId"]
         (admdir / "seats" / "admiral" / "handoff.md").write_text("引き継ぎ\n")
@@ -643,7 +643,35 @@ class AdmiralUpCommandTest(ShipTestCase):
         with mock.patch.object(admiral, "admiral_talk", return_value=0) as at:
             rc, _ = self.cli("admiral")
         self.assertEqual(rc, 0)
-        at.assert_called_once_with()
+        at.assert_called_once_with(False)
+
+    def test_cli_admiral_direct_passes_direct(self):
+        with mock.patch.object(admiral, "admiral_talk", return_value=0) as at:
+            rc, _ = self.cli("admiral", "--direct")
+        self.assertEqual(rc, 0)
+        at.assert_called_once_with(True)
+
+    def test_cli_admiral_direct_with_stop_is_refused(self):
+        rc, _ = self.cli("admiral", "--direct", "--stop")
+        self.assertEqual(rc, 1)
+
+    def test_admiral_default_wakes_then_opens_the_admiral_tab_via_zellij(self):
+        # T-040: default = wake (no attach), then hand the view to opener (faked: no zellij)
+        opened, execs = [], []
+        out = self.run_cmd(admiral.admiral_talk, execvp=lambda f, a: execs.append(a),
+                           open_view=lambda *a, **k: opened.append((a, k)))
+        self.assertEqual(execs, [])
+        self.assertEqual(opened, [((None,), {"admiral_only": True})])
+        self.assertTrue(self.alive_seat(self.admdir(), "admiral"))
+        self.assertIn("detach", out)
+        self.assertIn("/exit", out)
+
+    def test_admiral_default_wakes_a_stopped_seat_before_opening(self):
+        self.run_cmd(admiral.admiral_talk, True, execvp=lambda f, a: None)
+        self.stop_admiral(self.admdir())
+        self.run_cmd(admiral.admiral_talk, open_view=lambda *a, **k: None)
+        self.assertTrue(self.alive_seat(self.admdir(), "admiral"))
+        self.assertTrue([c for c in self.fake()["calls"] if "--resume" in c["argv"]])
 
     def test_cli_admiral_stop_calls_admiral_stop(self):
         with mock.patch.object(admiral, "admiral_stop", return_value=0) as astop:

@@ -48,6 +48,10 @@ def _refs(refs: list[str] | None) -> list[str]:
     return list(refs) if refs else sorted(admiral.all_ships())
 
 
+def _admiral_exists() -> bool:
+    return (admiral.admiral_dir() / "team.yaml").is_file()
+
+
 def _run_zellij(run, args: list[str], **kwargs):
     try:
         cp = run([zellij_bin(), *args], **kwargs)
@@ -87,24 +91,34 @@ def _session_exists(run, session: str) -> bool:
 
 def open_ships(refs: list[str] | None = None, *, command: str | None = None,
                output: str | None = None, session: str = DEFAULT_SESSION,
-               in_zellij: bool | None = None, run=subprocess.run) -> None:
+               in_zellij: bool | None = None, run=subprocess.run,
+               admiral_tab: bool | None = None, admiral_only: bool = False) -> None:
     """Build the layout(s) and open them in zellij.
 
     ``in_zellij`` defaults to whether ``$ZELLIJ`` is set (tests pass it
     explicitly so they do not depend on the environment they run in).
+    ``admiral_tab``: put the admiral's tab ("admiral") first. Default: yes when no ship is
+    named (the whole fleet) and ``_admiral/`` exists. ``admiral_only`` (``yamato admiral``):
+    only that tab -- outside zellij the session is still built with every ship's tab, inside
+    it just the admiral's tab is added and focused.
     ``output`` only applies outside zellij (a fixed file to attach); inside
     zellij each ship's one-tab layout is written to its own temp file, since
     ``new-tab --layout`` is called once per ship.
     """
+    if admiral_tab is None:
+        admiral_tab = not refs and _admiral_exists()
+    admiral_tab = admiral_tab or admiral_only
     refs = _refs(refs)
-    if not refs:
+    if not refs and not admiral_tab:
         raise YamatoError("開ける艦がありません (艦の登録がないか、引数で名前を渡してください)")
     if in_zellij is None:
         in_zellij = bool(os.environ.get("ZELLIJ"))
 
     if in_zellij:
-        for ref in refs:
-            text = layout.layout_for([ref], command)
+        # (ref, with admiral tab): the admiral's own tab first, then one per ship
+        todo = ([(None, True)] if admiral_tab else []) + ([] if admiral_only else [(r, False) for r in refs])
+        for ref, is_admiral in todo:
+            text = layout.layout_for([] if is_admiral else [ref], command, admiral=is_admiral)
             fd, tmp = tempfile.mkstemp(prefix="yamato-view-", suffix=".kdl")
             with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
                 f.write(text)
@@ -117,7 +131,7 @@ def open_ships(refs: list[str] | None = None, *, command: str | None = None,
                     os.remove(tmp)
         return
 
-    text = layout.layout_for(refs, command)
+    text = layout.layout_for(refs, command, admiral=admiral_tab)
     path = Path(output) if output else yamato_home() / "view.kdl"
     path.parent.mkdir(parents=True, exist_ok=True)
     old_text = path.read_text(encoding="utf-8") if path.exists() else None
@@ -125,6 +139,11 @@ def open_ships(refs: list[str] | None = None, *, command: str | None = None,
 
     if _session_exists(run, session):
         if old_text == text:
+            if admiral_only:
+                # best effort: land on the admiral's tab, not wherever the last detach left us
+                with contextlib.suppress(FileNotFoundError):
+                    run([zellij_bin(), "--session", session, "action", "go-to-tab-name", layout.ADMIRAL_TAB],
+                        capture_output=True, text=True)
             _zellij_interactive(run, ["attach", session])
             return
         # the crew (or the set of ships) changed since this session was created.

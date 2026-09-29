@@ -299,9 +299,11 @@ def main(argv: list[str] | None = None) -> int:
 
             if args.force and not args.stop:
                 raise YamatoError("--force は --stop と一緒に使う")
+            if args.direct and args.stop:
+                raise YamatoError("--direct は --stop と一緒に使えない")
             if args.stop:
                 return admiral.admiral_stop(args.force)
-            return admiral.admiral_talk()
+            return admiral.admiral_talk(args.direct)
         if args.cmd in ("extend", "halt", "ships", "talk"):
             from . import admiral
 

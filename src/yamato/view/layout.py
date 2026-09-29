@@ -54,13 +54,30 @@ def build(ships: list[tuple[str, str, list[str]]], command: str) -> str:
     return "\n".join(lines) + "\n"
 
 
-def layout_for(refs: list[str], command: str | None = None) -> str:
+ADMIRAL_TAB = "admiral"
+
+
+def admiral_tab() -> tuple[str, str, list[str]] | None:
+    """The admiral's tab (``_admiral/``, D-011): named "admiral" (not the team.yaml name), or
+    None while ``_admiral/`` has never been built."""
+    from ..admiral import admiral_dir
+
+    shipdir = admiral_dir()
+    if not (shipdir / "team.yaml").is_file():
+        return None
+    return ADMIRAL_TAB, str(shipdir.resolve()), list(runtime_team(shipdir)["seats"])
+
+
+def layout_for(refs: list[str], command: str | None = None, *, admiral: bool = False) -> str:
     """Build the layout for ships given by name (registry, then ``$YAMATO_HOME``) or path.
 
     Every pane gets the ship's absolute path: the panes run in the zellij
     server's environment, which may not have this shell's YAMATO_HOME.
+    ``admiral``: the admiral's tab goes first (skipped while ``_admiral/`` does not exist).
     """
     ships = []
+    if admiral and (tab := admiral_tab()):
+        ships.append(tab)
     for ref in refs:
         shipdir = resolve_ship(ref)
         team = runtime_team(shipdir)

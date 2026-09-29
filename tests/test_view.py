@@ -421,6 +421,77 @@ class OpenerTest(ShipTestCase):
         self.assertTrue(any('tab name="t1"' in t for t in run.layouts))
         self.assertTrue(any('tab name="other"' in t for t in run.layouts))
 
+    # --- the admiral's tab (T-040) ---
+
+    def make_admiral(self):
+        from yamato import admiral
+        return admiral.ensure_admiral()
+
+    def test_layout_puts_the_admiral_tab_first_named_admiral(self):
+        self.make_admiral()
+        text = layout.layout_for(["t1"], "yamato", admiral=True)
+        self.assertLess(text.index('tab name="admiral"'), text.index('tab name="t1"'))
+        self.assertEqual(text.count("focus=true"), 1)
+        self.assertNotIn('tab name="yamato"', text)
+
+    def test_layout_without_admiral_dir_has_no_admiral_tab(self):
+        self.assertNotIn("admiral", layout.layout_for(["t1"], "yamato", admiral=True))
+
+    def test_view_open_all_ships_includes_the_admiral_tab(self):
+        self.make_admiral()
+        dest = self.tmp / "view.kdl"
+        opener.open_ships(command="yamato", output=str(dest), run=FakeZellijRun(), in_zellij=False)
+        text = dest.read_text()
+        self.assertLess(text.index('tab name="admiral"'), text.index('tab name="t1"'))
+
+    def test_view_open_named_ships_has_no_admiral_tab(self):
+        self.make_admiral()
+        dest = self.tmp / "view.kdl"
+        opener.open_ships(["t1"], command="yamato", output=str(dest), run=FakeZellijRun(), in_zellij=False)
+        self.assertNotIn("admiral", dest.read_text())
+
+    def test_admiral_only_outside_zellij_builds_the_session_with_every_tab(self):
+        self.make_admiral()
+        run = FakeZellijRun()
+        dest = self.tmp / "view.kdl"
+        opener.open_ships(command="yamato", output=str(dest), run=run, in_zellij=False, admiral_only=True)
+        self.assertIn("--new-session-with-layout", run.calls[-1])
+        text = dest.read_text()
+        self.assertIn('tab name="admiral"', text)
+        self.assertIn('tab name="t1"', text)
+
+    def test_admiral_only_attaches_an_up_to_date_session_on_the_admiral_tab(self):
+        self.make_admiral()
+        dest = self.tmp / "view.kdl"
+        dest.write_text(layout.layout_for(["t1"], "yamato", admiral=True))
+        run = FakeZellijRun(sessions="yamato-view\n")
+        opener.open_ships(command="yamato", output=str(dest), run=run, in_zellij=False, admiral_only=True)
+        self.assertIn(["zellij", "--session", "yamato-view", "action", "go-to-tab-name", "admiral"], run.calls)
+        self.assertEqual(run.calls[-1], ["zellij", "attach", "yamato-view"])
+
+    def test_admiral_only_recreates_a_stale_session(self):
+        self.make_admiral()
+        dest = self.tmp / "view.kdl"
+        dest.write_text("stale\n")
+        run = FakeZellijRun(sessions="yamato-view\n")
+        opener.open_ships(command="yamato", output=str(dest), run=run, in_zellij=False, admiral_only=True)
+        self.assertIn(["zellij", "delete-session", "--force", "yamato-view"], run.calls)
+
+    def test_admiral_only_in_zellij_adds_just_the_admiral_tab(self):
+        self.make_admiral()
+        run = FakeZellijRun()
+        opener.open_ships(command="yamato", run=run, in_zellij=True, admiral_only=True)
+        self.assertEqual(len(run.layouts), 1)
+        self.assertIn('tab name="admiral"', run.layouts[0])
+        self.assertNotIn('tab name="t1"', run.layouts[0])
+
+    def test_view_open_all_in_zellij_adds_the_admiral_tab_first(self):
+        self.make_admiral()
+        run = FakeZellijRun()
+        opener.open_ships(command="yamato", run=run, in_zellij=True)
+        self.assertIn('tab name="admiral"', run.layouts[0])
+        self.assertIn('tab name="t1"', run.layouts[1])
+
     def test_in_zellij_removes_the_temp_layout_file_after_new_tab(self):
         # T-015: the mkstemp file for each ship's tab must not be left behind once
         # zellij has read it (new-tab returned).

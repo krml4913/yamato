@@ -498,7 +498,7 @@ zellij セッション
 ## 11. admiral (窓口)
 
 - 人間の窓口。仕事は**チームの作成・構成の変更、出撃と帰投、全チームの状況を一望し、owner の判断を代筆すること**
-- **admiral はどの艦にも属さない、常駐の Claude のセッション**である (owner の決定、D-011)。名前付きの bg セッション (`yamato.admiral`)。`yamato admiral` で、生きていれば attach、止まっていれば talk と同じ規則で起こしてから attach する。スマホからは Remote Control (`--remote-control`) で話せる
+- **admiral はどの艦にも属さない、常駐の Claude のセッション**である (owner の決定、D-011)。名前付きの bg セッション (`yamato.admiral`)。`yamato admiral` で、止まっていれば talk と同じ規則で起こしてから、zellij 経由で開く (admiral のタブが先頭。抜けるのは zellij の detach。`--direct` で直接 `claude attach`、T-040)。スマホからは Remote Control (`--remote-control`) で話せる
 - 記録は `~/yamato/_admiral/` (`$YAMATO_HOME/_admiral/`)。**`_admiral/` は「席 1 つ・deadline なしの特別な艦」として、既存の seat / inject / rotate / talk / inbox の仕組みを丸ごと使い回す** (D-013)。`ships.json` には登録せず、`yamato ships` の一覧にも出ない (名前が `_` 始まり)
 - **時間の上限は掛けない** (`time_limit: none`。§0 B4 の例外、D-013)。実装しておらず CLI を打って話すだけなので、上限を掛ける理由がない。長くなったら rotate (コンテキスト・compaction・日付) で入れ替える
 - **艦の中身の仕事には踏み込まない** (task の割り振り・実装・レビュー・merge。判断や方針の中身は owner と captain / planner が直接やる)。**これは admiral の役割プロンプトの約束で、CLI は admiral からの `send` や board の操作を拒否しない** (mechanism-not-policy)。艦に送るのは出撃と帰投に伴う定型のメッセージだけ
