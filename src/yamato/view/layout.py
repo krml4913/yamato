@@ -6,7 +6,9 @@ are laid out two per row so the Claude TUI keeps a usable width.
 from __future__ import annotations
 
 import re
+import sys
 
+from ..runtime import is_windows
 from ..team import runtime_team
 from ..util import YAMATO_BIN, YamatoError, resolve_ship
 
@@ -18,9 +20,14 @@ def kdl_str(s: str) -> str:
 
 
 def _pane(seat: str, ship_ref: str, command: str, indent: str) -> list[str]:
+    lead = ""
+    if is_windows() and not command.lower().endswith(".exe"):
+        # native zellij cannot start an extension-less Python script (W4, research §2.5):
+        # run it as `python.exe <script> ...`
+        command, lead = sys.executable, f"{kdl_str(command)} "
     return [
         f"{indent}pane name={kdl_str(seat)} command={kdl_str(command)} {{",
-        f"{indent}    args \"view\" \"attach\" {kdl_str(ship_ref)} {kdl_str(seat)}",
+        f"{indent}    args {lead}\"view\" \"attach\" {kdl_str(ship_ref)} {kdl_str(seat)}",
         f"{indent}}}",
     ]
 
