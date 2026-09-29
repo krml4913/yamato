@@ -14,7 +14,7 @@ from pathlib import Path
 from unittest import mock
 
 from tests import fake_gh
-from tests.helpers import HERE, ShipTestCase
+from tests.helpers import HERE, ShipTestCase, fake_command
 from yamato.util import YamatoError
 
 
@@ -34,6 +34,7 @@ def git_env(tmp: Path) -> dict:
 
 
 FAKE_GH = str(HERE / "fake_gh.py")
+FAKE_GH_ARGV, FAKE_GH_ENV = fake_command(FAKE_GH)
 
 
 class _InProcessGh:
@@ -43,10 +44,11 @@ class _InProcessGh:
         return getattr(subprocess, name)
 
     def run(self, args, *, cwd=None, **kw):
-        if args[0] != FAKE_GH:
+        n = len(FAKE_GH_ARGV)
+        if list(args[:n]) != FAKE_GH_ARGV:
             return subprocess.run(args, cwd=cwd, **kw)
         out, err = io.StringIO(), io.StringIO()
-        rc = fake_gh.main(list(args[1:]), cwd=os.path.realpath(cwd) if cwd else None, out=out, err=err)
+        rc = fake_gh.main(list(args[n:]), cwd=os.path.realpath(cwd) if cwd else None, out=out, err=err)
         return subprocess.CompletedProcess(args, rc, out.getvalue(), err.getvalue())
 
 
@@ -76,7 +78,7 @@ class GitShipTestCase(ShipTestCase):
     def setUp(self):
         super().setUp()
         env = {**git_env(self.tmp),
-               "YAMATO_GH": FAKE_GH, "FAKE_GH_STATE": str(self.tmp / "gh.json")}
+               "YAMATO_GH": FAKE_GH_ENV, "FAKE_GH_STATE": str(self.tmp / "gh.json")}
         for k, v in env.items():
             self._old.setdefault(k, os.environ.get(k))
         os.environ.update(env)

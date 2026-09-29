@@ -132,6 +132,35 @@ class FlockWindowsTest(WindowsSimTestCase):
         self.assertTrue(done.is_set())
 
 
+class EnvCommandTest(unittest.TestCase):
+    """``$YAMATO_CLAUDE`` / ``$YAMATO_GH`` as a command line (W5)."""
+
+    def cmd(self, value, default="claude"):
+        with mock.patch.dict(os.environ, {"X_CMD": value}):
+            return util.env_command("X_CMD", default)
+
+    def test_unset_or_empty_is_the_default(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("X_CMD", None)
+            self.assertEqual(util.env_command("X_CMD", "no-such-prog-xyz"), ["no-such-prog-xyz"])
+        self.assertEqual(self.cmd("", "no-such-prog-xyz"), ["no-such-prog-xyz"])
+
+    def test_a_path_that_exists_is_one_program_even_with_spaces(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "a dir with spaces"
+            p.mkdir()
+            f = p / "claude x"
+            f.write_text("")
+            self.assertEqual(self.cmd(str(f)), [str(f)])
+
+    def test_program_plus_args_is_split(self):
+        self.assertEqual(self.cmd(f'"{sys.executable}" "fake claude.py"'), [sys.executable, "fake claude.py"])
+        self.assertEqual(self.cmd(f"{sys.executable} a.py --x"), [sys.executable, "a.py", "--x"])
+
+    def test_an_unknown_single_word_stays_as_is(self):
+        self.assertEqual(self.cmd("no-such-claude-xyz"), ["no-such-claude-xyz"])
+
+
 class AtomicWriteTest(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()

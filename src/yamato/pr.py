@@ -23,7 +23,7 @@ from pathlib import Path
 
 from .board import Board
 from .team import git_conf
-from .util import YamatoError, merge_lock
+from .util import YamatoError, env_command, merge_lock
 from .worktree import caller, clip, record, record_failure, repo_root
 
 _PR_URL_RE = re.compile(r"https?://\S+/pull/(\d+)")
@@ -37,13 +37,18 @@ PR_MERGE_FAILED = "pr_merge_failed"  # also when git.merge_requires is not met (
 PR_CONFLICT = "pr_conflict"
 
 
+def gh_cmd() -> list[str]:
+    """``$YAMATO_GH`` as a command line (``[program, *leading args]``, default ``["gh"]``)."""
+    return env_command("YAMATO_GH", "gh")
+
+
 def gh_bin() -> str:
-    return os.environ.get("YAMATO_GH", "gh")
+    return gh_cmd()[0]
 
 
 def gh(args: list[str], cwd: Path, check: bool = True) -> subprocess.CompletedProcess:
     try:
-        cp = subprocess.run([gh_bin(), *args], cwd=str(cwd), capture_output=True, text=True,
+        cp = subprocess.run([*gh_cmd(), *args], cwd=str(cwd), capture_output=True, text=True,
                             encoding="utf-8", errors="replace", timeout=180)
     except FileNotFoundError:
         raise YamatoError(f"gh コマンドが見つかりません ({gh_bin()})") from None

@@ -6,6 +6,7 @@ import io
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,6 +16,17 @@ from tests import fake_claude
 
 HERE = Path(__file__).resolve().parent
 FAKE_CLAUDE = str(HERE / "fake_claude.py")
+
+
+def fake_command(script: str) -> tuple[list[str], str]:
+    """``(argv prefix, $YAMATO_* value)`` that run a fake script: the script itself on POSIX
+    (shebang), ``python script`` on Windows, where a ``.py`` cannot be run directly."""
+    if os.name == "nt":
+        return [sys.executable, script], subprocess.list2cmdline([sys.executable, script])
+    return [script], script
+
+
+FAKE_CLAUDE_ARGV, FAKE_CLAUDE_ENV = fake_command(FAKE_CLAUDE)
 
 
 def _outside_git(path) -> bool:
@@ -82,12 +94,12 @@ def patch_fast(case: unittest.TestCase, tmp: Path) -> None:
     real_run, real_main = claude._run, claude.main_repo_root
 
     def run(args, *, cwd=None, env=None, timeout=120):
-        if claude.claude_bin() != FAKE_CLAUDE or "-p" in args:
+        if claude.claude_cmd() != FAKE_CLAUDE_ARGV or "-p" in args:
             return real_run(args, cwd=cwd, env=env, timeout=timeout)
         out, err = io.StringIO(), io.StringIO()
         rc = fake_claude.main(list(args), cwd=os.path.realpath(cwd) if cwd else None,
                               env=os.environ if env is None else env, out=out, err=err)
-        return subprocess.CompletedProcess([FAKE_CLAUDE, *args], rc, out.getvalue(), err.getvalue())
+        return subprocess.CompletedProcess([*FAKE_CLAUDE_ARGV, *args], rc, out.getvalue(), err.getvalue())
 
     for target, attr, new in ((claude, "_run", run),
                               (claude, "git_root", _git_root(claude.git_root)),
@@ -117,7 +129,7 @@ class ShipTestCase(unittest.TestCase):
         self._env = {
             "YAMATO_HOME": str(self.tmp / "home"),
             "CLAUDE_CONFIG_DIR": str(self.config),
-            "YAMATO_CLAUDE": FAKE_CLAUDE,
+            "YAMATO_CLAUDE": FAKE_CLAUDE_ENV,
             "FAKE_CLAUDE_STATE": str(self.fake_state),
             "FAKE_ALIVE_PID": str(os.getpid()),
         }

@@ -681,6 +681,7 @@ else:
 """
 
 
+@unittest.skipUnless(os.name == "posix", "stopped with SIGINT (POSIX only; Windows: docs/verify/verify-win-w5.md)")
 class AttachProcessTest(ShipTestCase):
     """`yamato view attach` as a real process, against a fake claude: only a live seat is attached."""
 
