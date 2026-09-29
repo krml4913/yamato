@@ -311,6 +311,9 @@ class FakeZellijRun:
         out = self.sessions if argv[1:3] == ["list-sessions", "--short"] else ""
         if "query-tab-names" in argv:
             out = self.tabs
+        if "list-tabs" in argv:   # ids are 10, 11, ... in the order of ``tabs``
+            out = json.dumps([{"tab_id": 10 + i, "name": n, "position": i}
+                              for i, n in enumerate(self.tabs.split())])
         return subprocess.CompletedProcess(argv, self.rc_for(argv), stdout=out, stderr="")
 
 
@@ -340,7 +343,7 @@ class OpenerTest(ShipTestCase):
         self.assertIn('args "view" "attach"', dest.read_text())
         self.assertEqual(run.calls, [
             ["zellij", "list-sessions", "--short"],
-            ["zellij", "--session", "yamato-view", "action", "query-tab-names"],
+            ["zellij", "--session", "yamato-view", "action", "list-tabs", "--json"],
             ["zellij", "attach", "yamato-view"],
         ])
 
@@ -393,8 +396,9 @@ class OpenerTest(ShipTestCase):
         dest.write_text(layout.layout_for(["t1"], "yamato").replace('"pm"', '"gone"'))
         opener.open_ships(["t1"], command="yamato", output=str(dest), run=run, in_zellij=False)
         acts = [c[4:] for c in run.calls if c[3:4] == ["action"]]
-        self.assertEqual(acts, [["query-tab-names"], ["go-to-tab-name", "t1"], ["rename-tab", "_stale"],
-                                ["new-tab", "--layout", acts[3][2]], ["go-to-tab-name", "_stale"], ["close-tab"]])
+        # by tab id only: nothing depends on which tab has the focus
+        self.assertEqual(acts, [["list-tabs", "--json"], ["rename-tab-by-id", "10", "_stale"],
+                                ["new-tab", "--layout", acts[2][2]], ["close-tab-by-id", "10"]])
         self.assertIn('"pm"', run.layouts[0])
         self.assertNotIn("gone", dest.read_text())
 
@@ -402,8 +406,34 @@ class OpenerTest(ShipTestCase):
         run = FakeZellijRun(sessions="yamato-view\n", tabs="elsewhere\nt1\n")
         dest = self.tmp / "view.kdl"   # no file: nothing known about t1's old crew -> left alone
         opener.open_ships(["t1"], command="yamato", output=str(dest), run=run, in_zellij=False)
-        self.assertEqual([c[4] for c in run.calls if c[3:4] == ["action"]], ["query-tab-names"])
+        self.assertEqual([c[4] for c in run.calls if c[3:4] == ["action"]], ["list-tabs"])
         self.assertEqual(run.calls[-1], ["zellij", "attach", "yamato-view"])
+
+    def test_failed_sync_falls_back_to_delete_session_and_a_full_layout(self):
+        # e.g. an EXITED session: list-tabs fails -> delete-session --force, then start over
+        # from the layout of every tab (the old ones too), never a YamatoError
+        run = FakeZellijRun(sessions="yamato-view [EXITED]\n",
+                            rc_for=lambda argv: 1 if "list-tabs" in argv else 0)
+        ship.create("elsewhere", str(self.workspace), None, "dev")
+        dest = self.tmp / "view.kdl"
+        dest.write_text(layout.layout_for(["elsewhere"], "yamato"))
+        opener.open_ships(["t1"], command="yamato", output=str(dest), run=run, in_zellij=False)
+        self.assertEqual(run.calls[-2], ["zellij", "delete-session", "--force", "yamato-view"])
+        self.assertEqual(run.calls[-1], ["zellij", "--session", "yamato-view", "--new-session-with-layout", str(dest)])
+        self.assertNotIn("attach", [c[1] for c in run.calls])
+        text = dest.read_text()
+        self.assertIn('tab name="t1"', text)
+        self.assertIn('tab name="elsewhere"', text)
+
+    def test_failed_rebuild_action_also_falls_back(self):
+        run = FakeZellijRun(sessions="yamato-view\n", tabs="t1\n",
+                            rc_for=lambda argv: 1 if "close-tab-by-id" in argv else 0)
+        dest = self.tmp / "view.kdl"
+        dest.write_text(layout.layout_for(["t1"], "yamato").replace('"pm"', '"gone"'))
+        opener.open_ships(["t1"], command="yamato", output=str(dest), run=run, in_zellij=False)
+        self.assertIn(["zellij", "delete-session", "--force", "yamato-view"], run.calls)
+        self.assertEqual(run.calls[-1][1:3], ["--session", "yamato-view"])
+        self.assertNotIn("gone", dest.read_text())
 
     def test_list_sessions_failure_means_no_sessions(self):
         # zellij list-sessions exits 1 with "No active zellij sessions found."

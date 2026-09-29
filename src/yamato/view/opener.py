@@ -24,6 +24,7 @@ first-run case), so that one treats a non-zero exit as "no sessions" instead of 
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import subprocess
 import tempfile
@@ -106,20 +107,30 @@ def _new_tab(run, block: str, *, session: str | None = None) -> None:
             os.remove(tmp)
 
 
+def _session_tabs(run, session: str) -> list[tuple[int, str]]:
+    """``(tab_id, name)`` of the running session, from ``action list-tabs --json``. The id is
+    stable, so the caller never depends on which tab has the focus (nobody may be attached)."""
+    cp = _zellij(run, ["--session", session, "action", "list-tabs", "--json"])
+    try:
+        return [(int(t["tab_id"]), str(t["name"])) for t in json.loads(cp.stdout or "[]")]
+    except (ValueError, KeyError, TypeError):
+        raise YamatoError("zellij action list-tabs --json の出力を読めません") from None
+
+
 def _sync_session(run, session: str, tabs: list[tuple[str, str]], old: dict[str, str]) -> None:
     """Bring the running session up to ``tabs``: add the missing ones, rebuild those whose block
-    differs from ``old`` (what was written last). Tabs it has that are not asked for stay."""
-    have = _tab_names(run, session)
+    differs from ``old`` (what was written last). Tabs it has that are not asked for stay.
+    Everything goes by tab id (``rename-tab-by-id`` / ``close-tab-by-id``), never by focus."""
+    have = dict((name, tid) for tid, name in _session_tabs(run, session))
     for name, block in tabs:
         if name not in have:
             _new_tab(run, block, session=session)
         elif old.get(name, block) != block:
-            # rename first, so the new tab can take the name (and the old one is closed by it)
-            _zellij(run, ["--session", session, "action", "go-to-tab-name", name])
-            _zellij(run, ["--session", session, "action", "rename-tab", "_stale"])
+            # rename first, so the new tab can take the name; then close the old one by its id
+            tid = str(have[name])
+            _zellij(run, ["--session", session, "action", "rename-tab-by-id", tid, "_stale"])
             _new_tab(run, block, session=session)
-            _zellij(run, ["--session", session, "action", "go-to-tab-name", "_stale"])
-            _zellij(run, ["--session", session, "action", "close-tab"])
+            _zellij(run, ["--session", session, "action", "close-tab-by-id", tid])
 
 
 def open_ships(refs: list[str] | None = None, *, command: str | None = None,
@@ -151,10 +162,18 @@ def open_ships(refs: list[str] | None = None, *, command: str | None = None,
     path = Path(output) if output else yamato_home() / "view.kdl"
     path.parent.mkdir(parents=True, exist_ok=True)
     old = layout.tabs_of(path.read_text(encoding="utf-8")) if path.exists() else {}
+    merged = {**old, **dict(tabs)}   # what the session holds once synced: old tabs, these replaced / added
     if _session_exists(run, session):
-        _sync_session(run, session, tabs, old)
-        # the file keeps what the session now holds: the old tabs, with these replaced / added
-        merged = {**old, **dict(tabs)}
+        try:
+            _sync_session(run, session, tabs, old)
+        except YamatoError:
+            # e.g. an EXITED (resurrectable) session, or zellij's actions changed: the panes are
+            # only ``view attach`` processes, so throw the session away and start over from the
+            # layout of every tab it should hold
+            path.write_text(layout.assemble(list(merged.values())), encoding="utf-8", newline="\n")
+            _zellij(run, ["delete-session", "--force", session])
+            _zellij_interactive(run, ["--session", session, "--new-session-with-layout", str(path)])
+            return
         path.write_text(layout.assemble(list(merged.values())), encoding="utf-8", newline="\n")
         _zellij_interactive(run, ["attach", session])
         return
