@@ -38,11 +38,9 @@ _COPY_RE = re.compile(r"started a copy(?: of that conversation)? as ([0-9a-f]{8}
 
 
 def claude_bin() -> str:
-    """The ``claude`` executable's path, resolved the way a shell would (``shutil.which``)
-    instead of left to ``subprocess``'s own search: an npm-installed ``claude.cmd`` is a
-    shim that ``subprocess.run([...], shell=False)`` cannot spawn directly on Windows
-    (W1, work/windows-research.md §2.1). Falls back to the bare name when ``which`` finds
-    nothing, so the usual "not found" error still fires from ``_run``."""
+    """The ``claude`` executable (the program part of ``claude_cmd()``): ``$YAMATO_CLAUDE``'s
+    first word, else ``claude``. Resolving it with ``shutil.which`` (a Windows ``claude.cmd``
+    shim) is ``env_command``'s job, not this function's."""
     return claude_cmd()[0]
 
 

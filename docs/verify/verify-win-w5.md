@@ -72,7 +72,7 @@ $Y ship create w5 --workspace ~/yamato-verify-w5/ws --path ~/yamato-verify-w5/sh
 ## 3. `taskkill /T` の単体確認 (W0 で未確認)
 
 ```
-python -c "import subprocess,sys,time; p=subprocess.Popen([sys.executable,'-c','import subprocess,sys,time; subprocess.Popen([sys.executable,\"-c\",\"import time; time.sleep(300)\"]); time.sleep(300)']); print(p.pid); time.sleep(2); subprocess.run(['taskkill','/PID',str(p.pid),'/T','/F']); time.sleep(1); import os; print(os.path.exists('x'))"
+python -c "import subprocess,sys,time; p=subprocess.Popen([sys.executable,'-c','import subprocess,sys,time; subprocess.Popen([sys.executable,\"-c\",\"import time; time.sleep(300)\"]); time.sleep(300)']); print(p.pid); time.sleep(2); subprocess.run(['taskkill','/PID',str(p.pid),'/T','/F']); time.sleep(1)"
 tasklist | grep -i python
 ```
 

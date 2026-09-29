@@ -744,7 +744,8 @@ def spawn_delayed_stop(shipdir: Path, seat: str, sid: str, after: int, forced: b
     `worktree rm` can remove out from under the sleeping shell before it wakes -- the whole
     script then fails to even start, and the seat never actually stops). The ship folder
     only goes away with the ship itself, unlike ``worktrees/<item>/`` inside it."""
-    script = (f"sleep {int(after)}; {" ".join(shlex.quote(a) for a in claude.claude_cmd())} stop {sid[:8]}; "
+    claude_stop = " ".join(shlex.quote(a) for a in claude.claude_cmd())
+    script = (f"sleep {int(after)}; {claude_stop} stop {sid[:8]}; "
               f"{shlex.quote(sys.executable)} {shlex.quote(str(YAMATO_BIN))} _shift-ended "
               f"{shlex.quote(str(shipdir))} {shlex.quote(seat)} {sid}" + (" --forced" if forced else ""))
     try:
