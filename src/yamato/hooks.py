@@ -13,7 +13,7 @@ from pathlib import Path
 
 from . import deadline, events, inbox, inject, procs, roster
 from .team import runtime_team
-from .runtime import yamato_invocation
+from .runtime import ship_arg, yamato_invocation
 from .util import YamatoError, append_log, read_json, ship_lock, write_json
 
 MAX_WRAPUP_NOTICES = 3   # per shift, Stop and PreToolUse together; then the grace-period force stop takes over
@@ -170,7 +170,7 @@ def force_stop_self(shipdir: Path, seat: str, session_id: str | None, where: str
 
 
 def _wrapup_message(shipdir: Path, seat: str) -> str:
-    return deadline.WRAP_UP_MESSAGE.format(yamato=yamato_invocation(), ship=shipdir, seat=seat)
+    return deadline.WRAP_UP_MESSAGE.format(yamato=yamato_invocation(), ship=ship_arg(shipdir), seat=seat)
 
 
 def _last_call_notice(shipdir: Path, team: dict, seat: str, where: str) -> str | None:
@@ -203,7 +203,7 @@ def _rotate_notice(shipdir: Path, team: dict, seat: str, rec: dict, data: dict) 
     append_log(shipdir, seat, f"Stop hook: 入れ替えの条件 ({', '.join(reasons)}) → seat-stop --rotate を促す")
     events.emit(shipdir, events.ROTATE_SUGGESTED, seat=seat, summary=f"入れ替えを促した: {', '.join(reasons)}",
                 data={"shiftNo": rec.get("shiftNo"), "reasons": reasons})
-    return rotate.MESSAGE.format(reasons=", ".join(reasons), yamato=yamato_invocation(), ship=shipdir, seat=seat)
+    return rotate.MESSAGE.format(reasons=", ".join(reasons), yamato=yamato_invocation(), ship=ship_arg(shipdir), seat=seat)
 
 
 def stop(shipdir: Path, seat: str) -> int:
@@ -359,7 +359,7 @@ def take_inbox_wake(shipdir: Path, seat: str, seats) -> list[dict]:
 
 def _inbox_wake_message(shipdir: Path, seat: str, news: list[dict]) -> str:
     senders = "・".join(dict.fromkeys(str(e.get("from")) for e in news))
-    return INBOX_WAKE_MESSAGE.format(count=len(news), senders=senders, yamato=yamato_invocation(), ship=shipdir, seat=seat)
+    return INBOX_WAKE_MESSAGE.format(count=len(news), senders=senders, yamato=yamato_invocation(), ship=ship_arg(shipdir), seat=seat)
 
 
 def _pidfile_text(pidfile: Path) -> str | None:

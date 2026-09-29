@@ -14,7 +14,7 @@ from pathlib import Path
 from . import board as board_mod
 from . import board_view, deadline, inbox, memory, roster
 from .team import inject_parts
-from .runtime import yamato_invocation
+from .runtime import posix_path, ship_arg, yamato_invocation
 from .util import YamatoError, today
 
 # fallback only: the template's team.yaml spells these out (`inject.limits`). The role's
@@ -102,7 +102,7 @@ def _board(shipdir: Path, team: dict, limit: int, y: str) -> str:
     """The `board` part (T-030, design-drift #4/#14): a whole-ship overview (opt-in), not
     just what the captain's own `mine` shows. Decisions are out (`decide list` covers those)."""
     items = board_mod.Board(shipdir, team).items()
-    lines = board_view.inject_lines(items, limit, f"{y} board kanban {shipdir}")
+    lines = board_view.inject_lines(items, limit, f"{y} board kanban {ship_arg(shipdir)}")
     return "## board (艦全体の進み具合)\n" + "\n".join(lines)
 
 
@@ -115,7 +115,7 @@ def _orphans(shipdir: Path, team: dict, max_items: int, y: str) -> str:
         return "## 孤児の項目 (active のまま担当が止まっている)\n(なし)"
     lines = [f"- {board_mod.format_item(m)} ← {why}" for m, why in found[:max_items]]
     if len(found) > max_items:
-        lines.append(f"…ほか {len(found) - max_items} 件 (`{y} board list {shipdir} --state active`)")
+        lines.append(f"…ほか {len(found) - max_items} 件 (`{y} board list {ship_arg(shipdir)} --state active`)")
     return ("## 孤児の項目 (active のまま担当が止まっている)\n" + "\n".join(lines)
             + "\n割り当て直すか、同じ席に send して起こし直す")
 
@@ -166,11 +166,11 @@ def build(shipdir: Path, team: dict, seat: str, source: str = "startup",
     dl = deadline.read(shipdir)
     head = [
         f"# yamato: シフト開始 ({source})",
-        f"- 艦: {team['name']} / 艦フォルダ: {shipdir}",
+        f"- 艦: {team['name']} / 艦フォルダ: {ship_arg(shipdir)}",
         f"- あなたの席: {seat} (役割 {spec['role']}, shift {spec['shift']}) / captain: {team['hub']}",
-        f"- yamato コマンド: {y} (コマンドの <ship> には {shipdir} を、<seat> には {seat} を渡す)",
+        f"- yamato コマンド: {y} (コマンドの <ship> には {ship_arg(shipdir)} を、<seat> には {seat} を渡す)",
         f"- 稼働時間: {deadline.describe(dl)}",
-        f"- 引き継ぎ: {sdir / 'handoff.md'} / 作業ログ: {sdir / 'log' / (today() + '.md')}",
+        f"- 引き継ぎ: {posix_path(sdir / 'handoff.md')} / 作業ログ: {posix_path(sdir / 'log' / (today() + '.md'))}",
     ]
     if deadline.phase(dl) in (deadline.OVER, deadline.FORCE):
         head.append(deadline.WRAP_UP_MESSAGE.format(yamato=y, ship=shipdir, seat=seat))
@@ -194,7 +194,7 @@ def build(shipdir: Path, team: dict, seat: str, source: str = "startup",
         mine = board_mod.Board(shipdir, team).mine(seat)
         shown = [board_mod.format_item(m) for m in mine[:lim["mine_items"]]]
         if len(mine) > lim["mine_items"]:
-            shown.append(f"…ほか {len(mine) - lim['mine_items']} 件 (上限で省略。`{y} board mine {shipdir} {seat}`)")
+            shown.append(f"…ほか {len(mine) - lim['mine_items']} 件 (上限で省略。`{y} board mine {ship_arg(shipdir)} {seat}`)")
         parts.append("## 自分の担当 (board mine)\n" + ("\n".join(shown) if shown else "(なし)"))
 
     if "orphans" in want:
@@ -220,7 +220,7 @@ def build(shipdir: Path, team: dict, seat: str, source: str = "startup",
         # moves over what was shown, so nothing past it may be cut by the total cap
         unread = inbox.unread(shipdir, seat)
         title = f"## 未読の inbox ({len(unread)} 件)"
-        more = f"…続きと省略された全文は `{y} inbox {shipdir} {seat}` で読む"
+        more = f"…続きと省略された全文は `{y} inbox {ship_arg(shipdir)} {seat}` で読む"
         budget = lim["total_chars"] - len("\n\n".join([*parts, title])) - len(more) - 2
         lines = []
         contiguous = True

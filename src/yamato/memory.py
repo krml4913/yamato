@@ -32,7 +32,7 @@ from collections import Counter
 from pathlib import Path
 
 from . import events, inbox, procs
-from .runtime import yamato_invocation
+from .runtime import ship_arg, yamato_invocation
 from .util import (YAMATO_BIN, YamatoError, atomic_write, parse_duration, read_json, ship_lock,
                    today, write_json)
 
@@ -362,7 +362,7 @@ def status_lines(shipdir: Path, team: dict, now: float | None = None) -> list[st
             line += f" ← 棚卸しの目安 ({c['curate_every'] // 86400} 日 / {c['curate_at']} 件) に達した"
         if r["proposal"]:
             plus, minus = r["proposal"]
-            what = f"`{y} apply {shipdir} {r['role']}`" if r["role"] else f"`{y} apply {shipdir} --knowledge`"
+            what = f"`{y} apply {ship_arg(shipdir)} {r['role']}`" if r["role"] else f"`{y} apply {ship_arg(shipdir)} --knowledge`"
             line += f" / 棚卸し案あり (+{plus} / -{minus} 行): {what} で反映"
         if r["over"]:
             line += f" / {'memory.md' if r['role'] else 'knowledge.md'} が上限を超えている: {r['over']}"
@@ -457,7 +457,7 @@ def proposal_text(shipdir: Path, team: dict, role: str, *, new: str, archive: st
         f"- memory.md: {len(old.rstrip().splitlines())} 行 → {len(new.rstrip().splitlines())} 行 "
         f"(+{plus} / -{minus} 行)。上限 {lim['memory_lines']} 行 / {lim['memory_chars']} 文字"
         + (f"。**上限を超えている ({over})。このままでは反映できない**" if over else ""),
-        f"- 反映: `{yamato_invocation()} memory apply {shipdir} {role}`。反映の前にこのファイルを直してよい "
+        f"- 反映: `{yamato_invocation()} memory apply {ship_arg(shipdir)} {role}`。反映の前にこのファイルを直してよい "
         "(`<!-- yamato: ... -->` の行は消さない)",
         "- memory 節が新しい memory.md、archive 節と memory.md から外れた行は memory-archive.md へ、"
         "knowledge 節と (ship) の候補は knowledge-inbox.md へ、candidates 節の候補は memory-inbox.done/ へ移る",
@@ -644,7 +644,7 @@ def run_curate(shipdir: Path, team: dict, role: str, now: float | None = None) -
                               "candidates": count, "over": over})
             text = (f"[yamato] 役割 {role} の memory の棚卸し案ができた (+{plus} / -{minus} 行、候補 {count} 件"
                     + (f"、上限を超えている: {over}" if over else "") + f")。案: {proposed_path(shipdir, role)}。"
-                    f"読んで `{yamato_invocation()} memory apply {shipdir} {role}` で反映する")
+                    f"読んで `{yamato_invocation()} memory apply {ship_arg(shipdir)} {role}` で反映する")
         _tell(shipdir, team, text)
         return {"outcome": outcome, "message": msg, "sessionId": sid, "failures": failures}
     finally:

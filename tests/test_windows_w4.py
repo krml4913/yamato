@@ -118,6 +118,32 @@ class TemplatesOnWindowsTest(ShipTestCase):
         self.assertNotIn("'C:/Users/John Doe/ships/t1'/work", prompts["researcher"])
 
 
+class InjectionOnWindowsTest(ShipTestCase):
+    """seat-facing injected text uses the same ship word as the prompt / allow rules (T-044)."""
+
+    def test_session_start_and_first_prompt_use_ship_arg(self):
+        from yamato import inject, seat
+        team = load_team(self.shipdir)
+        with on_windows(), mock.patch.object(runtime.sys, "executable", EXE):
+            typed = runtime.ship_arg(WIN)
+            inv = runtime.yamato_invocation()
+            text, _ = inject.build(WIN, team, "impl")
+            first = seat._first_prompt(WIN, "impl")
+        self.assertIn("'C:/Users/John Doe/ships/t1'", typed)
+        self.assertIn(f"{inv} inbox {typed} impl", first)
+        self.assertIn(f"<ship> には {typed} を", text)
+        self.assertIn("C:/Users/John Doe/ships/t1/seats/impl/handoff.md", text)
+        self.assertNotIn("C:\\", text + first)
+
+    def test_hook_messages_use_ship_arg(self):
+        from yamato import hooks
+        with on_windows(), mock.patch.object(runtime.sys, "executable", EXE):
+            typed = runtime.ship_arg(WIN)
+            msg = hooks.deadline.WRAP_UP_MESSAGE.format(
+                yamato=runtime.yamato_invocation(), ship=runtime.ship_arg(WIN), seat="impl")
+        self.assertIn(f"seat-stop {typed} impl", msg)
+
+
 class LayoutOnWindowsTest(unittest.TestCase):
     def test_pane_runs_python_exe_with_the_script_as_its_first_arg(self):
         with on_windows(), mock.patch.object(layout.sys, "executable", EXE), \
