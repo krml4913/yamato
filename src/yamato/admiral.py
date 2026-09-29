@@ -15,7 +15,8 @@ import os
 import time
 from pathlib import Path
 
-from . import claude, deadline, inbox, report, roster, seat
+from . import claude, deadline, inbox, procs, report, roster, seat
+from .runtime import yamato_invocation
 from .team import WATCH_FALLBACK, load_team, seat_spec
 from .util import (YamatoError, fmt_span, fmt_time, load_registry, parse_duration, resolve_ship,
                    ship_lock, today, yamato_home)
@@ -32,8 +33,8 @@ ADMIRAL_TEMPLATE = "admiral"
 # passed as ship.create's `name` (fills a template `{{name}}`), so `session_name()` (team["name"]
 # + "." + seat) reads "yamato.admiral" for the (single, hub) seat "admiral" the template defines
 ADMIRAL_SHIP_NAME = "yamato"
-ADMIRAL_STOP_NOTE = ("[yamato admiral --stop] 引き継ぎ (handoff.md) を書いて `yamato seat-stop` で"
-                     "終業してください。")
+ADMIRAL_STOP_NOTE = ("[yamato admiral --stop] 引き継ぎ (handoff.md) を書いて "
+                     f"`{yamato_invocation()} seat-stop` で終業してください。")
 ADMIRAL_STOP_WAIT = 20   # --force が「待っても止まらなければ」で待つ秒数 (モジュール定数。テストで縮める)
 
 
@@ -286,8 +287,7 @@ def talk(shipdir: Path, name: str | None, *, execvp=os.execvp) -> int:
     """Attach to a seat in the foreground (woken first if stopped, see ``_wake_for_attach``)."""
     team, name, short = _wake_for_attach(shipdir, name)
     out(f"claude attach {short} ({team['name']}.{name})")
-    execvp(claude.claude_bin(), [claude.claude_bin(), "attach", short])
-    return 0   # only reached when execvp is replaced (tests)
+    return procs.run_foreground([claude.claude_bin(), "attach", short], execvp=execvp)
 
 
 # --- yamato admiral: bootstrap, attach, stop (D-011, T-021) ---------------------------

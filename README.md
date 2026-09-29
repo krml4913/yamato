@@ -133,7 +133,7 @@ notify:
 
 ## Windows + Git Bash
 
-Windows ネイティブの Claude Code と、Git for Windows の Git Bash から動かす形に対応している途中 (W1 まで。設計と調査は `work/windows-research.md`、実機の検証手順は [verify-win-plan](docs/verify/verify-win-plan.md))。macOS の動作は変わらない。
+Windows ネイティブの Claude Code と、Git for Windows の Git Bash から動かす形に対応している途中 (W3 まで。設計と調査は `work/windows-research.md`、実機の検証手順は [verify-win-plan](docs/verify/verify-win-plan.md))。macOS の動作は変わらない。
 
 - 要るもの: Windows ネイティブの Python 3.11+ (python.org 版など)、Claude Code、Git for Windows。**Python の名前は `python`** (python.org のインストーラーは `python3.exe` を作らない。`py -3` でもよい)。yamato の入口は `python <repo>/yamato ...` で打つ。人が短く打ちたいなら Git Bash の alias (`alias yamato='python /c/path/to/yamato/yamato'`) か `yamato.cmd` を自分で作る
 - 席と hook は Python の名前に依存しない: hook は exec form (`sys.executable` + `args`) で、役割プロンプトの `{{yamato}}` も `<インタプリタのフルパス> <yamato のパス>` の 2 語に展開される。`yamato up` を動かした Python が、そのまま席の Bash でも使われる
@@ -141,7 +141,8 @@ Windows ネイティブの Claude Code と、Git for Windows の Git Bash から
 - 改行と文字コード: リポジトリは `.gitattributes` で LF に固定してある (`core.autocrlf=true` でも `yamato` の shebang は壊れない)。yamato は標準入出力を UTF-8 にし (入口で `reconfigure`)、子プロセスの出力も UTF-8 で読み、記録は LF で書く。日本語の Windows (cp932) でも化けない
 - Git Bash の MSYS のパス変換: `/` で始まる引数 (`yamato log <艦> <席> "/review 済み"` など) は Windows のパスに書き換えられる。止めたいときは `MSYS_NO_PATHCONV=1`
 - `notify.command` は Windows では `cmd.exe` で動く (シェルの書き方は艦の設定で決める)
-- まだ動かないもの (W3 以降、W0 の実機検証のあと): 席の切り離し起動・生死の判定・停止・遅延 stop・`admiral talk`・permission 規則のパスの形。**deny が実機で当たることを確かめるまで、Windows で無人の席を出さない**
+- プロセス (W3): 席の生死は `OpenProcess` + `GetExitCodeProcess`、切り離しは `CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW`、headless の停止は `CTRL_BREAK_EVENT` → `taskkill /T /F`、`admiral talk` は exec せず待って終了コードを返す (OS 差分は `src/yamato/procs.py` の 1 か所)。遅延 stop は Git Bash の `sh`・`sleep` をそのまま使う
+- まだ動かないもの (W4 以降): permission 規則のパスの形・view。**deny が実機で当たることを確かめるまで、Windows で無人の席を出さない**
 
 ## テストの実行
 

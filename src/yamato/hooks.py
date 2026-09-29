@@ -11,7 +11,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import deadline, events, inbox, inject, roster
+from . import deadline, events, inbox, inject, procs, roster
 from .team import runtime_team
 from .runtime import yamato_invocation
 from .util import YamatoError, append_log, read_json, ship_lock, write_json
@@ -295,13 +295,7 @@ def pre_compact(shipdir: Path, seat: str) -> int:
 
 
 def _pid_alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+    return procs.pid_alive(pid)
 
 
 def _inbox_wake_path(shipdir: Path, seat: str) -> Path:

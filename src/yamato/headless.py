@@ -30,7 +30,7 @@ import uuid
 from pathlib import Path
 
 from . import board as board_mod
-from . import claude, deadline, events, inbox, notify, roster, runtime, usage
+from . import claude, deadline, events, inbox, notify, procs, roster, runtime, usage
 from .team import seat_spec
 from .runtime import yamato_invocation
 from .util import YAMATO_BIN, YamatoError, append_log, lock_file, try_lock_file, unlock_file
@@ -99,9 +99,8 @@ def spawn(shipdir: Path, seat: str) -> None:
     log = inbox.seat_dir(shipdir, seat) / "headless" / "wrapper.log"
     log.parent.mkdir(parents=True, exist_ok=True)
     with open(log, "a") as f:
-        subprocess.Popen([sys.executable, str(YAMATO_BIN), "run-headless", str(shipdir), seat],
-                         stdin=subprocess.DEVNULL, stdout=f, stderr=f, start_new_session=True,
-                         env=claude.seat_env())
+        procs.spawn_detached([sys.executable, str(YAMATO_BIN), "run-headless", str(shipdir), seat],
+                             env=claude.seat_env(), stdout=f, stderr=f)
 
 
 def wake(shipdir: Path, team: dict, seat: str) -> tuple[str, dict]:
@@ -120,10 +119,7 @@ def terminate(shipdir: Path, seat: str, reason: str, timeout: float = 30) -> boo
     pid = rec.get("pid")
     if pid and rec.get("state") in (roster.ON_SHIFT, roster.STOPPING):
         roster.update(shipdir, seat, forceStop=reason)
-        try:
-            os.kill(int(pid), 15)
-        except (ProcessLookupError, PermissionError):
-            pass
+        procs.soft_stop(pid)
     return wait_idle(shipdir, seat, timeout)
 
 
@@ -133,6 +129,14 @@ def live_pid(rec: dict) -> int | None:
     pid, sid = rec.get("pid"), rec.get("sessionId")
     if not pid or not sid:
         return None
+    if procs.is_windows():
+        # Git Bash の ps には -o が無い。pid + 起動時刻 (roster の pidStart) で pid の再利用を見分ける
+        if not procs.pid_alive(pid):
+            return None
+        started = rec.get("pidStart")
+        if started is not None and procs.start_time(pid) != started:
+            return None
+        return int(pid)
     try:
         cp = subprocess.run(["ps", "-p", str(int(pid)), "-o", "command="], capture_output=True, text=True,
                             encoding="utf-8", errors="replace", timeout=10)
@@ -151,16 +155,7 @@ def stop_orphan(shipdir: Path, seat: str, reason: str, timeout: float = 10) -> b
     pid = live_pid(rec)
     if pid is None:
         return False
-    for sig, wait in ((signal.SIGTERM, timeout), (signal.SIGKILL, 5)):
-        try:
-            os.kill(pid, sig)
-        except ProcessLookupError:
-            break
-        end = time.time() + wait
-        while time.time() < end and live_pid(rec):
-            time.sleep(0.2)
-        if not live_pid(rec):
-            break
+    procs.terminate(pid, timeout, alive=lambda: live_pid(rec) is not None)
     append_log(shipdir, seat, f"headless: ラッパーが居ないまま claude -p (pid {pid}) が残っていたので止めた ({reason})")
     events.emit(shipdir, events.FORCE_STOP, seat=seat, summary=f"孤児の claude -p を停止 ({reason})",
                 data={"reason": reason, "shiftNo": rec.get("shiftNo"), "sessionId": rec.get("sessionId"),
@@ -292,11 +287,12 @@ def run_shift(shipdir: Path, team: dict, seat: str) -> dict:
             env = claude.seat_env([*claude.PRINT_CALLER_ENV, *(team.get("env_unset") or ())])
             proc = subprocess.Popen(argv, cwd=cwd or team["workspace"], env=env,
                                     stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=err,
-                                    text=True, encoding="utf-8", errors="replace")
+                                    text=True, encoding="utf-8", errors="replace", **procs.group_kwargs())
     except OSError as e:
         launch_error = f"claude -p を起動できない: {e}"
     else:
-        roster.update(shipdir, seat, pid=proc.pid, wrapperPid=os.getpid(), forceStop=None)
+        roster.update(shipdir, seat, pid=proc.pid, pidStart=procs.start_time(proc.pid),
+                      wrapperPid=os.getpid(), forceStop=None)
         stream.src = proc.stdout
         reader = threading.Thread(target=stream, daemon=True)
         reader.start()
@@ -327,9 +323,11 @@ def _forward_signals(shipdir: Path, seat: str, proc):
     def forward(signum, _frame):
         roster.update(shipdir, seat, forceStop="wrapper-signal")
         if proc.poll() is None:
-            proc.terminate()
+            procs.soft_stop(proc.pid)
 
-    old = {sig: signal.signal(sig, forward) for sig in (signal.SIGTERM, signal.SIGINT)}
+    # Windows: 切り離したラッパーに届くのは CTRL_BREAK (= SIGBREAK)
+    sigs = [signal.SIGTERM, signal.SIGINT, *([signal.SIGBREAK] if hasattr(signal, "SIGBREAK") else [])]
+    old = {sig: signal.signal(sig, forward) for sig in sigs}
 
     def restore():
         for sig, h in old.items():
@@ -345,13 +343,13 @@ def _watch(shipdir: Path, seat: str, proc, role: dict, started: float, no: int, 
         if killed is None:
             kill_reason = _time_up(shipdir, started, role.get("max_duration"), now)
             if kill_reason:
-                proc.terminate()
+                procs.soft_stop(proc.pid)
                 killed = now
                 append_log(shipdir, seat, f"headless: 時間切れ ({kill_reason}) → SIGTERM")
                 events.emit(shipdir, events.FORCE_STOP, seat=seat, summary=f"時間切れで停止 ({kill_reason})",
                             data={"reason": kill_reason, "shiftNo": no, "sessionId": sid})
         elif now - killed > KILL_WAIT:
-            proc.kill()
+            procs.hard_kill(proc.pid)
         try:
             proc.wait(timeout=POLL)   # a POLL-long look, cut short when claude -p ends
         except subprocess.TimeoutExpired:
