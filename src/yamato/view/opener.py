@@ -1,28 +1,25 @@
-"""``yamato view open``: open (or grow) the zellij window onto ships (design §13).
+"""``yamato view`` / ``yamato view open``: open (or grow) the zellij window onto ships (design §13).
 
-Outside zellij: builds the layout for the requested ships (every registered
-ship, if none are named), writes it to a file, and attaches the ``yamato-view``
-session -- starting it from that layout if it is not already up. If the
-session is already up but the crew (or the set of ships) changed since it was
-created, the layout on disk will now differ from what is on disk this time --
-the stale session is torn down (``delete-session --force``; its only panes
-are ``view attach`` processes, so nothing is lost) and rebuilt fresh.
+One session, ``yamato-view``, holds every tab. Names are ships (registry, then
+``$YAMATO_HOME``), paths, or ``admiral`` (``$YAMATO_HOME/_admiral``, tab "admiral"); with no
+name, the admiral's tab (if ``_admiral/`` exists) comes first and every registered ship follows.
 
-Inside zellij (``$ZELLIJ`` set): there is already a window to grow, so each
-ship instead gets one ``zellij action new-tab --layout <file>`` call into the
-*current* session, one tab per ship.
+Outside zellij: writes the layout to a file and attaches ``yamato-view`` -- starting it from
+that layout if it is not up. If it is already up, the tabs it lacks are added to it, and the tab
+of a ship whose crew changed since (its block differs from the one last written) is rebuilt;
+the panes are only ``view attach`` processes, so nothing is lost. Then it attaches. Never a second session.
 
-The layout is rebuilt from ``team.yaml`` / ``.runtime/team.json`` on every
-call (nothing is cached), so a change in a ship's seats shows up the next
-time someone runs ``view open``.
+Inside zellij (``$ZELLIJ`` set): each tab is added to the *current* session with
+``zellij action new-tab --layout <file>`` (a tab of that name already there is just focused).
 
-``attach`` and ``--new-session-with-layout`` are interactive TUIs that take
-over the terminal, so those two calls are made without capturing
-stdout/stderr (capturing would blank the screen). Every zellij call raises
-``YamatoError`` on a non-zero exit, except ``list-sessions``: zellij exits 1
-with "No active zellij sessions found." on stderr when there are none yet
-(the ordinary first-run case), so that one treats a non-zero exit as "no
-sessions" instead of failing.
+The layout is rebuilt from ``team.yaml`` / ``.runtime/team.json`` on every call (nothing is
+cached), so a change in a ship's seats shows up the next time someone runs ``yamato view``.
+
+``attach`` and ``--new-session-with-layout`` are interactive TUIs that take over the terminal, so
+those two calls are made without capturing stdout/stderr (capturing would blank the screen).
+Every zellij call raises ``YamatoError`` on a non-zero exit, except ``list-sessions``: zellij exits
+1 with "No active zellij sessions found." on stderr when there are none yet (the ordinary
+first-run case), so that one treats a non-zero exit as "no sessions" instead of failing.
 """
 from __future__ import annotations
 
@@ -44,12 +41,12 @@ def zellij_bin() -> str:
 
 
 def _refs(refs: list[str] | None) -> list[str]:
-    """Every registered ship, sorted by name, when none are named explicitly."""
-    return list(refs) if refs else sorted(admiral.all_ships())
-
-
-def _admiral_exists() -> bool:
-    return (admiral.admiral_dir() / "team.yaml").is_file()
+    """The tabs to show. None named: the admiral first (when ``_admiral/`` exists), then every
+    registered ship sorted by name."""
+    if refs:
+        return list(refs)
+    first = [layout.ADMIRAL_TAB] if (admiral.admiral_dir() / "team.yaml").is_file() else []
+    return first + sorted(admiral.all_ships())
 
 
 def _run_zellij(run, args: list[str], **kwargs):
@@ -89,65 +86,77 @@ def _session_exists(run, session: str) -> bool:
     return session in names
 
 
+def _tab_names(run, session: str | None) -> list[str]:
+    args = ["--session", session] if session else []
+    cp = _zellij(run, [*args, "action", "query-tab-names"])
+    return [line for line in (cp.stdout or "").splitlines() if line]
+
+
+def _new_tab(run, block: str, *, session: str | None = None) -> None:
+    """``new-tab --layout`` with the block as a one-tab layout in a temp file."""
+    fd, tmp = tempfile.mkstemp(prefix="yamato-view-", suffix=".kdl")
+    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+        f.write(layout.assemble([block]))
+    try:
+        _zellij(run, [*(["--session", session] if session else []), "action", "new-tab", "--layout", tmp])
+    finally:
+        # zellij has read the layout by the time new-tab returns (T-015); a
+        # failure to remove it must not fail the view open itself.
+        with contextlib.suppress(OSError):
+            os.remove(tmp)
+
+
+def _sync_session(run, session: str, tabs: list[tuple[str, str]], old: dict[str, str]) -> None:
+    """Bring the running session up to ``tabs``: add the missing ones, rebuild those whose block
+    differs from ``old`` (what was written last). Tabs it has that are not asked for stay."""
+    have = _tab_names(run, session)
+    for name, block in tabs:
+        if name not in have:
+            _new_tab(run, block, session=session)
+        elif old.get(name, block) != block:
+            # rename first, so the new tab can take the name (and the old one is closed by it)
+            _zellij(run, ["--session", session, "action", "go-to-tab-name", name])
+            _zellij(run, ["--session", session, "action", "rename-tab", "_stale"])
+            _new_tab(run, block, session=session)
+            _zellij(run, ["--session", session, "action", "go-to-tab-name", "_stale"])
+            _zellij(run, ["--session", session, "action", "close-tab"])
+
+
 def open_ships(refs: list[str] | None = None, *, command: str | None = None,
                output: str | None = None, session: str = DEFAULT_SESSION,
-               in_zellij: bool | None = None, run=subprocess.run,
-               admiral_tab: bool | None = None, admiral_only: bool = False) -> None:
-    """Build the layout(s) and open them in zellij.
+               in_zellij: bool | None = None, run=subprocess.run) -> None:
+    """Build the tabs and open them in zellij.
 
     ``in_zellij`` defaults to whether ``$ZELLIJ`` is set (tests pass it
     explicitly so they do not depend on the environment they run in).
-    ``admiral_tab``: put the admiral's tab ("admiral") first. Default: yes when no ship is
-    named (the whole fleet) and ``_admiral/`` exists. ``admiral_only`` (``yamato admiral``):
-    only that tab -- outside zellij the session is still built with every ship's tab, inside
-    it just the admiral's tab is added and focused.
-    ``output`` only applies outside zellij (a fixed file to attach); inside
-    zellij each ship's one-tab layout is written to its own temp file, since
-    ``new-tab --layout`` is called once per ship.
+    ``output`` only applies outside zellij (the file the layout is kept in, and what the next
+    call compares against); inside zellij each tab is written to its own temp file.
     """
-    if admiral_tab is None:
-        admiral_tab = not refs and _admiral_exists()
-    admiral_tab = admiral_tab or admiral_only
     refs = _refs(refs)
-    if not refs and not admiral_tab:
+    if not refs:
         raise YamatoError("開ける艦がありません (艦の登録がないか、引数で名前を渡してください)")
     if in_zellij is None:
         in_zellij = bool(os.environ.get("ZELLIJ"))
+    tabs = layout.tabs_for(refs, command)
 
     if in_zellij:
-        # (ref, with admiral tab): the admiral's own tab first, then one per ship
-        todo = ([(None, True)] if admiral_tab else []) + ([] if admiral_only else [(r, False) for r in refs])
-        for ref, is_admiral in todo:
-            text = layout.layout_for([] if is_admiral else [ref], command, admiral=is_admiral)
-            fd, tmp = tempfile.mkstemp(prefix="yamato-view-", suffix=".kdl")
-            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
-                f.write(text)
-            try:
-                _zellij(run, ["action", "new-tab", "--layout", tmp])
-            finally:
-                # zellij has read the layout by the time new-tab returns (T-015); a
-                # failure to remove it must not fail the view open itself.
-                with contextlib.suppress(OSError):
-                    os.remove(tmp)
+        have = _tab_names(run, None)
+        for name, block in tabs:
+            if name in have:
+                _zellij(run, ["action", "go-to-tab-name", name])
+            else:
+                _new_tab(run, block)
         return
 
-    text = layout.layout_for(refs, command, admiral=admiral_tab)
     path = Path(output) if output else yamato_home() / "view.kdl"
     path.parent.mkdir(parents=True, exist_ok=True)
-    old_text = path.read_text(encoding="utf-8") if path.exists() else None
-    path.write_text(text, encoding="utf-8", newline="\n")
-
+    old = layout.tabs_of(path.read_text(encoding="utf-8")) if path.exists() else {}
     if _session_exists(run, session):
-        if old_text == text:
-            if admiral_only:
-                # best effort: land on the admiral's tab, not wherever the last detach left us
-                with contextlib.suppress(FileNotFoundError):
-                    run([zellij_bin(), "--session", session, "action", "go-to-tab-name", layout.ADMIRAL_TAB],
-                        capture_output=True, text=True)
-            _zellij_interactive(run, ["attach", session])
-            return
-        # the crew (or the set of ships) changed since this session was created.
-        # its only panes are `view attach` processes, so nothing is lost by tearing
-        # it down and rebuilding from the new layout.
-        _zellij(run, ["delete-session", "--force", session])
+        _sync_session(run, session, tabs, old)
+        # the file keeps what the session now holds: the old tabs, with these replaced / added
+        merged = {**old, **dict(tabs)}
+        path.write_text(layout.assemble(list(merged.values())), encoding="utf-8", newline="\n")
+        _zellij_interactive(run, ["attach", session])
+        return
+    path.write_text(layout.assemble([b for _, b in tabs]), encoding="utf-8", newline="\n")
     _zellij_interactive(run, ["--session", session, "--new-session-with-layout", str(path)])

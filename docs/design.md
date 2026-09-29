@@ -478,7 +478,7 @@ zellij セッション
 - 各ペインでは小さなスクリプト (`seat-attach`) を動かす。`roster.json` からその席の今のセッションを探して attach し、席が入れ替わったら付け直す
 - レイアウトは zellij の KDL layout ファイルで宣言する。席を後から足すときは `zellij action new-pane` を使う
 - zellij を閉じても、チームは動き続ける (表示と実行を分ける)
-- **実装**: P2 の先行として、`bin/yamato-seat-attach` と `src/yamato/view/` (PR #2) が入っている。`bin/yamato-seat-attach --layout dev research -o ~/yamato/view.kdl` で layout を作り、`zellij --session yamato-view --new-session-with-layout ~/yamato/view.kdl` で開く。`yamato` コマンドへの組み込みは未 (§13)。艦の登録簿 (`ships.json`) はまだ引かない
+- **実装**: P2 の先行として、`bin/yamato-seat-attach` と `src/yamato/view/` (PR #2) が入っている。`bin/yamato-seat-attach --layout dev research -o ~/yamato/view.kdl` で layout を作り、`zellij --session yamato-view --new-session-with-layout ~/yamato/view.kdl` で開く。`yamato view [名前...]` (= `view open`。名前は艦か `admiral`、省くと admiral が先頭で全艦。セッションは yamato-view 1 つで、足りないタブを足して attach する、T-040) に組み込まれている。艦の登録簿 (`ships.json`) はまだ引かない
 
 **spike `spike-zellij-attach` で確認済み (2026-09-25, zellij 0.45.1 / Claude Code 2.1.282)**
 - `claude attach` は zellij のペインで正しく表示され、キー入力で返信もできる
@@ -498,7 +498,7 @@ zellij セッション
 ## 11. admiral (窓口)
 
 - 人間の窓口。仕事は**チームの作成・構成の変更、出撃と帰投、全チームの状況を一望し、owner の判断を代筆すること**
-- **admiral はどの艦にも属さない、常駐の Claude のセッション**である (owner の決定、D-011)。名前付きの bg セッション (`yamato.admiral`)。`yamato admiral` で、止まっていれば talk と同じ規則で起こしてから、zellij 経由で開く (admiral のタブが先頭。抜けるのは zellij の detach。`--direct` で直接 `claude attach`、T-040)。スマホからは Remote Control (`--remote-control`) で話せる
+- **admiral はどの艦にも属さない、常駐の Claude のセッション**である (owner の決定、D-011)。名前付きの bg セッション (`yamato.admiral`)。`yamato admiral` で、生きていれば attach、止まっていれば talk と同じ規則で起こしてから attach する。スマホからは Remote Control (`--remote-control`) で話せる
 - 記録は `~/yamato/_admiral/` (`$YAMATO_HOME/_admiral/`)。**`_admiral/` は「席 1 つ・deadline なしの特別な艦」として、既存の seat / inject / rotate / talk / inbox の仕組みを丸ごと使い回す** (D-013)。`ships.json` には登録せず、`yamato ships` の一覧にも出ない (名前が `_` 始まり)
 - **時間の上限は掛けない** (`time_limit: none`。§0 B4 の例外、D-013)。実装しておらず CLI を打って話すだけなので、上限を掛ける理由がない。長くなったら rotate (コンテキスト・compaction・日付) で入れ替える
 - **艦の中身の仕事には踏み込まない** (task の割り振り・実装・レビュー・merge。判断や方針の中身は owner と captain / planner が直接やる)。**これは admiral の役割プロンプトの約束で、CLI は admiral からの `send` や board の操作を拒否しない** (mechanism-not-policy)。艦に送るのは出撃と帰投に伴う定型のメッセージだけ

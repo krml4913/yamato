@@ -268,6 +268,10 @@ def main(argv: list[str] | None = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
     # 毎ターンの hook の経路は banner / view を import しない (引数の解析も hook だけの parser で行う)
+    if argv[:1] == ["view"]:
+        from .view import cli as view_cli
+
+        argv = view_cli.normalize(argv)
     args = _parser(hook_only=bool(argv) and argv[0] == "hook").parse_args(argv)
     try:
         if args.cmd == "hook":
@@ -299,11 +303,9 @@ def main(argv: list[str] | None = None) -> int:
 
             if args.force and not args.stop:
                 raise YamatoError("--force は --stop と一緒に使う")
-            if args.direct and args.stop:
-                raise YamatoError("--direct は --stop と一緒に使えない")
             if args.stop:
                 return admiral.admiral_stop(args.force)
-            return admiral.admiral_talk(args.direct)
+            return admiral.admiral_talk()
         if args.cmd in ("extend", "halt", "ships", "talk"):
             from . import admiral
 

@@ -1,7 +1,7 @@
 # admiral (窓口) の使い方
 
 - 対象: admiral を務める常駐の Claude のセッション (owner の決定 D-011。design-p1 §6、design.md §11)
-- 位置づけ: admiral は**どの艦にも属さない、常駐のセッション**。`yamato admiral` で zellij 経由で開く。記録は `~/yamato/_admiral/` (`$YAMATO_HOME/_admiral/`)。役割プロンプトは `roles/admiral.md` (`templates/admiral/`)
+- 位置づけ: admiral は**どの艦にも属さない、常駐のセッション**。`yamato admiral` で attach する。記録は `~/yamato/_admiral/` (`$YAMATO_HOME/_admiral/`)。役割プロンプトは `roles/admiral.md` (`templates/admiral/`)
 
 ## 約束 (コードでは縛らない)
 
@@ -13,13 +13,12 @@
 
 | したいこと | コマンド |
 |---|---|
-| 開く (無ければ作って起こす) | `yamato admiral`。止まっていれば talk と同じ規則 (send → 起こす) で起こしてから、zellij の `yamato-view` セッションを開く (admiral のタブが先頭、登録済みの全艦のタブも並ぶ。zellij の中なら admiral のタブを足して移る)。`_admiral/` が無ければ `admiral` ひな形から初回に作る (登録はしない。`ships` には出ない) |
-| 抜ける | **zellij の detach (Ctrl+O d)**。席は動き続ける。艦の席を覗いたあとに抜けるのと同じ。`/exit` は席を止めるので使わない |
-| zellij を使わずに attach する | `yamato admiral --direct`。端末で `claude attach` を前面に出す。zellij の無い環境 (Windows のネイティブなど) の逃げ道。抜けるのは ← か Ctrl+Z |
+| attach する (無ければ作って起こす) | `yamato admiral`。生きていれば attach、止まっていれば talk と同じ規則 (send → 起こす) で起こしてから attach する。`_admiral/` が無ければ `admiral` ひな形から初回に作る (登録はしない。`ships` には出ない) |
+| admiral と艦を開く | `yamato view` (絞るなら `yamato view admiral <艦>`)。admiral のタブが先頭、登録済みの全艦が続く 1 つの zellij セッション (`yamato-view`)。admiral が止まっていれば `yamato admiral` と同じ規則で起こしてから。抜けるのは **zellij の detach (Ctrl+O d)**、席は動き続ける。`/exit` は席を止める |
 | 引き継ぎを促して止める | `yamato admiral --stop`。引き継ぎ (handoff.md) を書いて `seat-stop` するよう admiral の inbox に伝える。これ自体はブロックしない |
 | それでも止まらなければ強制停止 | `yamato admiral --stop --force`。最大 `ADMIRAL_STOP_WAIT` 秒 (モジュール定数) 待って、それでも生きていれば `down --force` / `halt` と同じ強制停止に落ちる |
 
-**スマホからは Remote Control** (`roles.admiral.remote_control: true` / 起動時から `remoteControlAtStartup: true`) で話せる。owner の端末 (zellij のタブ) で開くのと同じセッションに、別経路でつながる。
+**スマホからは Remote Control** (`roles.admiral.remote_control: true` / 起動時から `remoteControlAtStartup: true`) で話せる。owner の端末で `claude attach` するのと同じセッションに、別経路でつながる。
 
 **時間の上限は掛けない** (`time_limit: none`。design.md §0 B4 の例外、D-013)。`--for` を付けない `up` は deadline を書かず、watchdog も立てない。`up`/`down`/`extend`/`halt` は admiral 自身にも効く (`up _admiral --for 3h` なら一時的に上限も掛けられ、そのあと `--for` なしの `up` で戻れば古い deadline は消える。`admiral --stop --force` は `down --force` に落ちる) が、admiral 自身には使わない約束で、`--for` を明示しない限り deadline は書かれない。長く続いたら「入れ替え」(下) で新しいシフトに切り替える。
 
@@ -42,7 +41,7 @@
 | owner を席につなぐ | `yamato talk <name> [<seat>]`。既定は team.yaml の `talk_default` (省略時 captain)。止まっている席は send と同じ規則で起こしてから `claude attach`。**端末を占有する**ので、owner の端末で打ってもらう (admiral のセッションの中では打たない) |
 | 入れ替えの印を立てる | `yamato rotate <ship> <seat>...`。止まっている persistent の席に「次のシフトは入れ替え」の印を立てる (design-drift D) |
 | 判断の代筆 | owner の言葉を受けて `yamato decide close <ship> <判断の id> --choice "<決定>" --reason "<owner の言葉をそのまま>" --by owner`。設計の根幹に触る判断は owner にはっきり確かめてから閉じる |
-| 表示 | `yamato view open [<艦名>...]` (zellij のタブで艦を並べて見る。あれば。艦名を省くと admiral のタブが先頭に付く) |
+| 表示 | `yamato view [admiral] [<艦名>...]` (zellij のタブで並べて見る。艦名を省くと admiral が先頭で全艦。`view open` と同じ) |
 
 ## 権限について (D-013)
 

@@ -35,9 +35,8 @@ cd ~/dev/myapp && claude    # trust のダイアログで承認して終了
 ./yamato down dev                # 終業を指示 (席は引き継ぎを書いて止まる。猶予を過ぎたら強制停止)
 ./yamato down dev --force        # 今すぐ止める (roster に「引き継ぎなしで終了」)
 
-# 5. zellij で席を覗く (艦ごとに 1 タブ、席ごとに 1 ペイン。窓を閉じても席は動き続ける)
-./yamato view layout dev -o ~/yamato/view.kdl
-zellij --session yamato-view --new-session-with-layout ~/yamato/view.kdl
+# 5. zellij で admiral と艦を開く (タブは admiral が先頭、艦ごとに 1 タブ、席ごとに 1 ペイン。窓を閉じても席は動き続ける)
+./yamato view                    # admiral と登録済みの全艦を yamato-view 1 セッションに。絞るなら ./yamato view admiral dev
 ```
 
 | コマンド | 内容 |
@@ -46,7 +45,7 @@ zellij --session yamato-view --new-session-with-layout ~/yamato/view.kdl
 | `up <ship> [--for 3h] [--seats <seat,...>]` | `.runtime/` を作り直し、deadline を書き、captain の席を起動 (persistent なら resume)。`--seats` の席も一緒に起こす。艦がすでに稼働中で `--for` を付けなければ、deadline は縮めない (`max(now + time_limit, 今の deadline)`。D-015)。`--for` を明示すればその値で上書きする (縮めたい意図を尊重) |
 | `down <ship> [--force]` | 終業 / 強制停止 |
 | `status [<ship>]` | 席ごとの状態。赤い席は `!!! <席>: ...` と出る (権限の確認待ち・API エラー (`state: failed`)・生きているのに `watch.stale_after` (既定 20m) より長く動いていない・per_task の席が生きているのに active の担当が無い)。`stopping` のまま 5 分を超えた席は止め直す (T-012) |
-| `admiral [--direct] [--stop [--force]]` | 常駐の admiral セッション (`_admiral/`、D-011) を **zellij 経由で開く**。止まっていれば talk と同じ規則 (send → 起こす) で起こしてから、admiral のタブを先頭に、登録済みの全艦のタブも並べた `yamato-view` セッションに入る (zellij の中なら admiral のタブを足して移る。layout が古いときは `view open` と同じく作り直す)。**抜けるのは zellij の detach (Ctrl+O d)。席は動き続ける。`/exit` は席を止める**。`--direct` は zellij を使わず端末で `claude attach` を前面に出す (zellij の無い環境の逃げ道。抜けるのは ← か Ctrl+Z)。`_admiral/` が無ければ `admiral` ひな形から初回に作る (登録はしない。`ships` には出ない)。`--stop` は引き継ぎを書いて `seat-stop` するよう admiral に伝えるだけで、それ自体はブロックしない。`--force` は自分で止まらなければ (最大 `ADMIRAL_STOP_WAIT` 秒待って) 強制停止する (`down --force` と同じ扱い) |
+| `admiral [--stop [--force]]` | 常駐の admiral セッション (`_admiral/`、D-011) に `claude attach` する。止まっていれば talk と同じ規則 (send → 起こす) で起こしてから。`_admiral/` が無ければ `admiral` ひな形から初回に作る (登録はしない。`ships` には出ない)。`--stop` は引き継ぎを書いて `seat-stop` するよう admiral に伝えるだけで、それ自体はブロックしない。`--force` は自分で止まらなければ (最大 `ADMIRAL_STOP_WAIT` 秒待って) 強制停止する (`down --force` と同じ扱い) |
 | `ships` | (admiral) 全艦を 1 行ずつ: 稼働中か・残り時間・captain の最終・赤い席の数・owner の判断待ちの数・今日の使用量・最新の日報の日付 |
 | `extend <ship> <期間>` | (admiral) deadline を延ばす (データの書き換えだけ。過ぎていれば今から数える) |
 | `halt <ship>` | (admiral) 緊急停止。猶予なしで全席を強制停止し、日報の安全網を通す |
@@ -70,6 +69,7 @@ zellij --session yamato-view --new-session-with-layout ~/yamato/view.kdl
 | `decide list <ship> [--decider <d>] [--stale 2d] [--all]` / `decide categories <ship>` | 待ちの判断の一覧 (待ち時間・期限・止めているタスクつき) / team.yaml の decisions の表 |
 | `seat-stop <ship> <seat> [--delivered] [--rotate]` | (席が使う) handoff.md の更新を確認して遅延 stop。`--rotate` は入れ替えの印を立てる (次の send で新しいシフト。その場では起こさない)。persistent の席の Stop hook は `rotate:` の条件 (文脈量・compaction・シフトの長さ) に当たると一度だけこれを促す |
 | `rotate <ship> <seat>... \| --all [--by <人>]` | 止まっている persistent の席に、`seat-stop --rotate` と同じ入れ替えの印を外から立てる (T-024。チーム構成を変えたときなど、席の中に入らず次の send を新しいシフトにする)。`--all` は persistent の席すべて。生きている席・per_task・headless の席には立てず、理由を返す (生きている席は `seat-stop --rotate` を促すか、止まってから実行する)。events に残す (`by` は既定で呼び出し元) |
+| `view [<名前>...]` (= `view open`) | **admiral と艦を開く本命**。名前は艦 (名前かパス) か `admiral` (`_admiral/`、タブ名 admiral)。省くと admiral のタブが先頭、登録済みの全艦が続く。セッションは `yamato-view` の 1 つ。zellij の外なら作るか、あれば足りないタブ (新しい艦・admiral) を足し、席の顔ぶれが変わった艦のタブを作り直してから attach。中なら今のセッションにタブを足す (あるタブはそこへ移るだけ)。admiral のペインは admiral が止まっていれば `yamato admiral` と同じ規則で起こしてから (艦の席は起こさない)。**抜けるのは zellij の detach (Ctrl+O d)。席は動き続ける。`/exit` は席を止める**。`-o FILE` / `--session NAME` / `--command PATH` |
 | `view layout <ship>... [-o FILE]` | 艦ごとに 1 タブ、席ごとに 1 ペインの zellij layout (KDL) を出力する。艦は名前 (`ships.json` → `~/yamato/<name>`) かパス |
 | `view attach <ship> <seat> [--poll SEC]` | (layout のペインの中身) 席の今のシフト (roster の sessionId) が生きていれば `claude attach`、シフトが替われば付け直す。止まっている席には attach しない |
 | `memo "<本文>" [--item T-1] [--scope role\|ship] [--ship <ship>] [--seat <seat>]` | memory の候補を 1 行、呼び出した席 (`$CLAUDE_CODE_SESSION_ID` の席) の `seats/<seat>/memory-inbox.md` に足す。席の外からは `--ship` と `--seat` で書く。席の中で `--seat` が違えば断る |
