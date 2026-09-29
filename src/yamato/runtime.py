@@ -7,6 +7,8 @@ path and the seat name as arguments, never as environment variables.
 from __future__ import annotations
 
 import json
+import os
+import re
 import shlex
 import sys
 from pathlib import Path
@@ -35,32 +37,77 @@ def agents_path(shipdir: Path) -> Path:
     return runtime_dir(shipdir) / "agents.json"
 
 
+def is_windows() -> bool:
+    """One place to ask (tests replace it): the rules below differ on Windows only."""
+    return os.name == "nt"
+
+
+def posix_path(path) -> str:
+    """The form a seat types on Windows: ``C:/Users/x`` (as_posix). Git Bash, the MSYS tools and
+    native exes all take it; ``C:\\Users\\x`` does not survive bash (W4, work/windows-research.md
+    §2.4). Unchanged elsewhere."""
+    s = str(path)
+    return s.replace("\\", "/") if is_windows() else s
+
+
+def rule_path(path) -> str:
+    """The path inside a ``Edit(//c/Users/x/...)`` rule: ``/c/Users/x`` (lowercase drive, ``/``
+    separators), so the rule starts with ``//``. Only this form was denied on a real Windows
+    machine (W0 [9]); ``/C:\\...`` and ``/C:/...`` were let through. Unchanged elsewhere."""
+    s = posix_path(path)
+    if is_windows():
+        m = re.match(r"^([A-Za-z]):(/.*|)$", s)
+        if m:
+            s = f"/{m.group(1).lower()}{m.group(2)}"
+    return s
+
+
+def ship_arg(path) -> str:
+    """A folder path as one shell word, in the form a seat types: as_posix, shell-quoted when it
+    has a space (a Windows home with a space). The prompt text and the ``Bash(...)`` rules
+    both use this, so an allow rule matches what the prompt tells the seat to type."""
+    return shlex.quote(posix_path(path))
+
+
+_PATH_SHIP = re.compile(r"(?<=/)\{\{ship\}\}")           # `/{{ship}}/...` in a path rule
+_WORD_SHIP = re.compile(r"\{\{ship\}\}(?!/)")            # a whole argument: `... {{ship}} ...`
+
+
+def _fill_ship(text: str, shipdir: Path, *, paths: bool) -> str:
+    """``{{ship}}`` as an argument becomes ``ship_arg``; ``{{ship}}/sub/path`` is a file path
+    the seat hands to a tool (Write, Read), so it stays unquoted. With ``paths`` (permission
+    rules) ``/{{ship}}`` is the ``//c/...`` form instead."""
+    if paths:
+        text = _PATH_SHIP.sub(lambda _m: rule_path(shipdir), text)
+    text = _WORD_SHIP.sub(lambda _m: ship_arg(shipdir), text)
+    return text.replace("{{ship}}", posix_path(shipdir))
+
+
 def yamato_invocation() -> str:
     """The two-word form of ``{{yamato}}``: the interpreter that is running this process,
-    plus the script, each shell-quoted. A seat's Bash tool can always run this (unlike the
-    bare script path), because it does not depend on the shebang being interpretable --
-    Windows Git Bash has no ``python3`` by default (W1, work/windows-research.md §2.1).
-    Used for both the role prompt text and the permission rules, so an allow rule always
-    matches what the prompt tells the seat to type."""
-    return f"{shlex.quote(sys.executable)} {shlex.quote(str(YAMATO_BIN))}"
+    plus the script, each shell-quoted (as_posix on Windows). A seat's Bash tool can always
+    run this (unlike the bare script path), because it does not depend on the shebang being
+    interpretable -- Windows Git Bash has no ``python3`` by default (W1, work/windows-research.md
+    §2.1). Used for both the role prompt text and the permission rules, so an allow rule
+    always matches what the prompt tells the seat to type."""
+    return f"{shlex.quote(posix_path(sys.executable))} {shlex.quote(posix_path(YAMATO_BIN))}"
 
 
 def render_prompt(text: str, shipdir: Path, team: dict) -> str:
-    return (text.replace("{{yamato}}", yamato_invocation())
-                .replace("{{ship}}", str(shipdir))
-                .replace("{{ship_name}}", team["name"])
-                .replace("{{hub}}", team["hub"]))
+    return _fill_ship(text.replace("{{yamato}}", yamato_invocation()), shipdir, paths=False) \
+        .replace("{{ship_name}}", team["name"]).replace("{{hub}}", team["hub"])
 
 
 def render_rule(rule: str, shipdir: Path, seat: str) -> str:
     """A permission rule of team.yaml: ``{{ship}}`` / ``{{yamato}}`` / ``{{seat}}`` are filled in.
 
     Absolute paths are written as ``/{{ship}}/...`` so the rule starts with ``//``
-    (verify-p1-d V1). No ``$VAR`` is expanded here or by Claude Code. ``{{yamato}}`` is the
-    same two-word form ``render_prompt`` uses (see ``yamato_invocation``)."""
-    return (rule.replace("{{ship}}", str(Path(shipdir)))
-                .replace("{{yamato}}", yamato_invocation())
-                .replace("{{seat}}", seat))
+    (verify-p1-d V1); on Windows that is ``//c/Users/...`` (W0 [9]). Inside ``Bash(...)`` the
+    ship is the same string the prompt tells the seat to type (``ship_arg``). No ``$VAR`` is
+    expanded here or by Claude Code. ``{{yamato}}`` is the same two-word form ``render_prompt``
+    uses (see ``yamato_invocation``)."""
+    return _fill_ship(rule.replace("{{yamato}}", yamato_invocation()), shipdir, paths=True) \
+        .replace("{{seat}}", seat)
 
 
 def build_agents(shipdir: Path, team: dict) -> dict:

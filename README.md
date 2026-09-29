@@ -141,7 +141,9 @@ Windows ネイティブの Claude Code と、Git for Windows の Git Bash から
 - 改行と文字コード: リポジトリは `.gitattributes` で LF に固定してある (`core.autocrlf=true` でも `yamato` の shebang は壊れない)。yamato は標準入出力を UTF-8 にし (入口で `reconfigure`)、子プロセスの出力も UTF-8 で読み、記録は LF で書く。日本語の Windows (cp932) でも化けない
 - Git Bash の MSYS のパス変換: `/` で始まる引数 (`yamato log <艦> <席> "/review 済み"` など) は Windows のパスに書き換えられる。止めたいときは `MSYS_NO_PATHCONV=1`
 - `notify.command` は Windows では `cmd.exe` で動く (シェルの書き方は艦の設定で決める)
-- まだ動かないもの (W3 以降、W0 の実機検証のあと): 席の切り離し起動・生死の判定・停止・遅延 stop・`admiral talk`・permission 規則のパスの形。**deny が実機で当たることを確かめるまで、Windows で無人の席を出さない**
+- パスの書き方 (W4): Windows では、規則の絶対パス `/{{ship}}/...` は `//c/Users/...` (小文字のドライブ、`/` 区切り) に、`Bash(...)` の中とプロンプトの `{{ship}}` は `C:/Users/...` (as_posix) に描く。W0 の実機で、docs の `//c/...` の形だけが deny に当たった (`/C:\...` は素通り)。艦のパスにスペースがあると、引数として置く `{{ship}}` は `'C:/Users/John Doe/...'` と引用して描く (プロンプトと allow の規則は同じ文字列)。`{{ship}}/work/...` のようにファイルのパスとして置くときは引用しない。`{{yamato}}` の interpreter と script も as_posix。zellij のペインは `python.exe <script> view attach ...` で起動する
+- **`python3` は使えない**: Windows の `python3` は WindowsApps の stub (W0 [1])。`python` か `py -3` を使う
+- まだ動かないもの (W3 以降、W0 の実機検証のあと): 席の切り離し起動・生死の判定・停止・遅延 stop・`admiral talk`。PowerShell ツールの扱いは owner の判断 (D-051) 待ち — 席は自分から PowerShell を使い、`Bash(...)` の規則は PowerShell の同じコマンドには当たらない。**W4 が入っても、実機 (W5) で deny が当たることを確かめるまで、Windows で無人の席を出さない**
 
 ## テストの実行
 
