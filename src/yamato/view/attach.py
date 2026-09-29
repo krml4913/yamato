@@ -131,7 +131,7 @@ def run(resolve: Resolver, label: str, *, poll: float = DEFAULT_POLL, out=None,
                 continue
 
             say(f"attach {sid}")
-            proc = spawn([claude.claude_bin(), "attach", sid])
+            proc = spawn([*claude.claude_cmd(), "attach", sid])
             replaced = watch(proc, sid, resolve, poll=poll)
             code = proc.returncode
             proc = None

@@ -264,6 +264,7 @@ class HeadlessTest(_Base):
         self.assertFalse(headless.stop_orphan(self.shipdir, "researcher", "x"))
         self.assertIsNone(other.poll())
 
+    @unittest.skipUnless(os.name == "posix", "SIGTERM to the wrapper is POSIX only (Windows: CTRL_BREAK, docs/verify/verify-win-w5.md)")
     def test_sigterm_to_the_wrapper_is_forwarded_and_the_shift_is_closed(self):
         self.set_fake_mode(p_sleep=60)
         yamato = Path(__file__).resolve().parents[1] / "yamato"

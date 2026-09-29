@@ -276,3 +276,25 @@ def append_log(shipdir: Path, seat: str, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a", encoding="utf-8", newline="\n") as f:
         f.write(f"- {time.strftime('%H:%M:%S')} {text}\n")
+
+
+def env_command(name: str, default: str) -> list[str]:
+    """``$name`` as a command line: a list, ``[program, *leading args]`` (``YAMATO_CLAUDE=
+    "python fake_claude.py"`` -- Windows cannot run a ``.py`` directly, so the tests hand
+    over the interpreter too). A value that already names one program -- a path that
+    exists (spaces and all) or something ``shutil.which`` finds -- is taken whole, never
+    split. The program is resolved with ``which`` (npm's ``claude.cmd`` shim, W1)."""
+    import shlex
+    import shutil
+    raw = os.environ.get(name) or default
+    if shutil.which(raw) or os.path.exists(raw):
+        return [shutil.which(raw) or raw]
+    try:
+        parts = shlex.split(raw, posix=os.name != "nt")
+    except ValueError:
+        return [raw]
+    if os.name == "nt":   # non-POSIX split keeps the quotes on
+        parts = [p[1:-1] if len(p) > 1 and p[0] == p[-1] and p[0] in "\"'" else p for p in parts]
+    if not parts:
+        return [default]
+    return [shutil.which(parts[0]) or parts[0], *parts[1:]]

@@ -287,7 +287,7 @@ def talk(shipdir: Path, name: str | None, *, execvp=os.execvp) -> int:
     """Attach to a seat in the foreground (woken first if stopped, see ``_wake_for_attach``)."""
     team, name, short = _wake_for_attach(shipdir, name)
     out(f"claude attach {short} ({team['name']}.{name})")
-    return procs.run_foreground([claude.claude_bin(), "attach", short], execvp=execvp)
+    return procs.run_foreground([*claude.claude_cmd(), "attach", short], execvp=execvp)
 
 
 # --- yamato admiral: bootstrap, attach, stop (D-011, T-021) ---------------------------

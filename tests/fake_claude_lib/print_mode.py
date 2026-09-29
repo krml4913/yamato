@@ -66,8 +66,11 @@ def _transcript(sid, cwd):
 def run(argv, mode):
     signal.signal(signal.SIGTERM, lambda *a: sys.exit(143))
     # a SIGTERM that comes early waits until the transcript is written: the time-limit
-    # tests use short limits and count usage from the transcript
-    signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM})
+    # tests use short limits and count usage from the transcript (POSIX only: Windows has
+    # no pthread_sigmask, and terminate() there is not a SIGTERM)
+    _mask = getattr(signal, "pthread_sigmask", None)
+    if _mask:
+        _mask(signal.SIG_BLOCK, {signal.SIGTERM})
     sid = _arg(argv, "--session-id") or str(uuid.uuid4())
     name = _arg(argv, "--name") or ""
     ship = _arg(argv, "--add-dir")
@@ -79,7 +82,8 @@ def run(argv, mode):
                "hook_name": "SessionStart:startup", "exit_code": 0, "outcome": "success", "session_id": sid})
     _emit({"type": "system", "subtype": "init", "session_id": sid, "model": _arg(argv, "--model")})
     _transcript(sid, os.getcwd())
-    signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGTERM})
+    if _mask:
+        _mask(signal.SIG_UNBLOCK, {signal.SIGTERM})
     for _ in range(2):
         _emit({"type": "assistant", "message": {"id": "msg_fake_1", "content": []}, "session_id": sid})
     _emit({"type": "rate_limit_event", "rate_limit_info": {

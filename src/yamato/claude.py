@@ -14,14 +14,13 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
 
 from . import procs
-from .util import YamatoError
+from .util import YamatoError, env_command
 
 # The caller's session identity must not leak into a new seat (technical, not
 # policy). What else to drop (GH_TOKEN, ...) is team.yaml `env_unset`.
@@ -44,18 +43,23 @@ def claude_bin() -> str:
     shim that ``subprocess.run([...], shell=False)`` cannot spawn directly on Windows
     (W1, work/windows-research.md §2.1). Falls back to the bare name when ``which`` finds
     nothing, so the usual "not found" error still fires from ``_run``."""
-    raw = os.environ.get("YAMATO_CLAUDE", "claude")
-    return shutil.which(raw) or raw
+    return claude_cmd()[0]
+
+
+def claude_cmd() -> list[str]:
+    """``$YAMATO_CLAUDE`` as a command line (``[program, *leading args]``, default
+    ``["claude"]``): the leading args let a test run ``python fake_claude.py`` on Windows."""
+    return env_command("YAMATO_CLAUDE", "claude")
 
 
 def _claude_argv(args: list[str]) -> list[str]:
-    """``[claude_bin(), *args]``, routed through ``cmd /c`` when the resolved binary is a
+    """``[*claude_cmd(), *args]``, routed through ``cmd /c`` when the resolved binary is a
     ``.cmd`` / ``.bat`` shim (Windows only): those need a shell to run at all, so this is
     the one place that shell is introduced, never for the rest of the command line."""
-    bin_path = claude_bin()
-    if sys.platform == "win32" and bin_path.lower().endswith((".cmd", ".bat")):
-        return ["cmd", "/c", bin_path, *args]
-    return [bin_path, *args]
+    cmd = claude_cmd()
+    if sys.platform == "win32" and cmd[0].lower().endswith((".cmd", ".bat")):
+        return ["cmd", "/c", *cmd, *args]
+    return [*cmd, *args]
 
 
 def _run(args: list[str], *, cwd: str | None = None, env: dict | None = None, timeout: int = 120):

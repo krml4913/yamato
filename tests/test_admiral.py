@@ -385,7 +385,7 @@ class AdmiralTest(ShipTestCase):
         calls = []
         self.run_cmd(admiral.talk, self.shipdir, None, execvp=lambda f, a: calls.append(a))
         short = roster.seat(self.shipdir, "pm")["shortId"]
-        self.assertEqual(calls, [[claude.claude_bin(), "attach", short]])
+        self.assertEqual(calls, [[*claude.claude_cmd(), "attach", short]])
         self.assertEqual(self.bg_names(), ["t1.pm"])
 
     def test_talk_default_comes_from_team_yaml(self):
@@ -411,7 +411,7 @@ class AdmiralTest(ShipTestCase):
         self.run_cmd(admiral.talk, self.shipdir, "pm", execvp=lambda f, a: calls.append(a))
         resumes = [c for c in self.fake()["calls"] if "--resume" in c["argv"]]
         self.assertEqual(resumes[0]["argv"][resumes[0]["argv"].index("--resume") + 1], sid)
-        self.assertEqual(calls, [[claude.claude_bin(), "attach", sid[:8]]])
+        self.assertEqual(calls, [[*claude.claude_cmd(), "attach", sid[:8]]])
         self.assertIn("talk", inbox.unread(self.shipdir, "pm")[-1]["text"])
 
     def test_talk_does_not_attach_when_the_ship_is_not_up(self):
@@ -540,7 +540,7 @@ class AdmiralUpCommandTest(ShipTestCase):
         admdir = self.admdir()
         rec = roster.seat(admdir, "admiral")
         self.assertEqual(rec["state"], roster.ON_SHIFT)
-        self.assertEqual(calls, [[claude.claude_bin(), "attach", rec["shortId"]]])
+        self.assertEqual(calls, [[*claude.claude_cmd(), "attach", rec["shortId"]]])
         self.assertIn("claude attach", out)
         launched = [c for c in self.fake()["calls"] if "--bg" in c["argv"]][-1]["argv"]
         self.assertIn("--remote-control", launched)
@@ -555,7 +555,7 @@ class AdmiralUpCommandTest(ShipTestCase):
         self.run_cmd(admiral.admiral_talk, execvp=lambda f, a: calls.append(a))
         self.assertEqual(roster.seat(admdir, "admiral")["sessionId"], before)
         self.assertEqual(len([c for c in self.fake()["calls"] if "--bg" in c["argv"]]), 1)
-        self.assertEqual(calls, [[claude.claude_bin(), "attach", roster.seat(admdir, "admiral")["shortId"]]])
+        self.assertEqual(calls, [[*claude.claude_cmd(), "attach", roster.seat(admdir, "admiral")["shortId"]]])
 
     def test_admiral_wakes_a_stopped_seat_even_with_no_deadline_ever(self):
         # D-013: there is no `up` for the admiral, so talk()'s usual "艦は稼働時間の外" gate

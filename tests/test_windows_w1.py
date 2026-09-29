@@ -171,7 +171,7 @@ class ClaudeBinTest(unittest.TestCase):
 
     def resolve(self, found, platform="win32", name="claude"):
         with mock.patch.dict(os.environ, {"YAMATO_CLAUDE": name}), \
-                mock.patch.object(claude.shutil, "which", return_value=found) as which, \
+                mock.patch("shutil.which", return_value=found) as which, \
                 mock.patch.object(claude.sys, "platform", platform):
             argv = claude._claude_argv(["agents", "--json"])
         which.assert_called_with(name)
@@ -199,13 +199,13 @@ class ClaudeBinTest(unittest.TestCase):
         kw = dict(session_id="s", name="n", role="r", agents_json="{}", model="m", settings="/s.json",
                   add_dir="/d", prompt="go")
         with mock.patch.dict(os.environ, {"YAMATO_CLAUDE": "claude"}), \
-                mock.patch.object(claude.shutil, "which", return_value=self.WIN_CMD), \
+                mock.patch("shutil.which", return_value=self.WIN_CMD), \
                 mock.patch.object(claude.sys, "platform", "win32"):
             argv = claude.headless_argv(**kw)
         self.assertEqual(argv[:4], ["cmd", "/c", self.WIN_CMD, "-p"])
         self.assertEqual(argv[-3:], ["/d", "--", "go"])
         with mock.patch.dict(os.environ, {"YAMATO_CLAUDE": "claude"}), \
-                mock.patch.object(claude.shutil, "which", return_value="/usr/bin/claude"):
+                mock.patch("shutil.which", return_value="/usr/bin/claude"):
             argv = claude.headless_argv(**kw)
         self.assertEqual(argv[:2], ["/usr/bin/claude", "-p"])
 
