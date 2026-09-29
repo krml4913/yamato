@@ -25,7 +25,9 @@ python -m unittest discover -v 2>&1 | grep "skipped"
 ```
 export YAMATO_NO_BANNER=1
 Y="python <yamato の checkout>/yamato"
-$Y ship create --help          # 引数を確かめてから、~/yamato-verify-w5/ship を dev ひな形で作る
+mkdir -p ~/yamato-verify-w5/ws && (cd ~/yamato-verify-w5/ws && git init -q -b main && git commit -q --allow-empty -m init)
+$Y ship create w5 --workspace ~/yamato-verify-w5/ws --path ~/yamato-verify-w5/ship
+# 以降の <ship> は ~/yamato-verify-w5/ship
 ```
 
 - team.yaml の `time_limit` は短く (例 `--for 10m`) して `up` する。workspace は空の git repo (`~/yamato-verify-w5/ws`) で、`cd` して `claude` を 1 回起動し trust を承認しておく
