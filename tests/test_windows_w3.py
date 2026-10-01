@@ -199,7 +199,7 @@ class StopTest(WinCase):
         self.win()
         with mock.patch.object(signal, "CTRL_BREAK_EVENT", 1, create=True), \
                 mock.patch.object(os, "kill") as kill, mock.patch.object(subprocess, "run"):
-            procs.soft_stop(5)
+            procs.soft_stop(5, group=True)
             procs.hard_kill(5)
         self.assertEqual([c.args[1] for c in kill.call_args_list], [1])
 

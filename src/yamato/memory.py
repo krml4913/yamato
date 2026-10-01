@@ -656,7 +656,7 @@ def _watch(proc, started: float, max_duration: int) -> str | None:
     while proc.poll() is None:
         now = time.time()
         if killed_at is None and now >= started + max_duration:
-            procs.soft_stop(proc.pid)
+            procs.soft_stop(proc.pid, group=True)
             killed_at, reason = now, "max-duration"
         elif killed_at is not None and now - killed_at > KILL_WAIT:
             procs.hard_kill(proc.pid)
