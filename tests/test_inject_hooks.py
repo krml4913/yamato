@@ -10,6 +10,7 @@ from unittest import mock
 
 from tests.helpers import ShipTestCase
 from yamato import board, deadline, hooks, inbox, inject, pretool, roster, runtime, seat
+from yamato.runtime import ship_arg
 from yamato.util import YAMATO_BIN
 
 
@@ -41,7 +42,7 @@ class InjectTest(ShipTestCase):
         inbox.append(self.shipdir, "impl", "pm", "T-001 を頼む")
         text, cur = self.build()
         for s in ("あなたの席: impl", "前回: T-001 途中", "T-001 [open] impl: 関数を足す",
-                  "T-001 を頼む", str(self.shipdir)):
+                  "T-001 を頼む", ship_arg(self.shipdir)):
             self.assertIn(s, text)
         self.assertEqual(cur, 1)
         # the role's memory and knowledge.md are the other hook's (verify-p0-c Q1)

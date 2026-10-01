@@ -94,13 +94,13 @@ def run(argv, mode):
     if text and ship and not marker.exists():
         marker.write_text("1")
         box = Path(ship) / "seats" / seat / "inbox.jsonl"
-        n = sum(1 for line in box.read_text().splitlines() if line.strip()) + 1 if box.exists() else 1
-        with open(box, "a") as f:
+        n = sum(1 for line in box.read_text(encoding="utf-8").splitlines() if line.strip()) + 1 if box.exists() else 1
+        with open(box, "a", encoding="utf-8", newline="\n") as f:
             f.write(json.dumps({"n": n, "ts": time.time(), "from": "pm", "text": text}, ensure_ascii=False) + "\n")
     if mode.get("p_sleep"):
         time.sleep(float(mode["p_sleep"]))
     if mode.get("p_seat_stop") and ship:
-        (Path(ship) / "seats" / seat / "handoff.md").write_text("# 引き継ぎ\n- 次: なし\n")
+        (Path(ship) / "seats" / seat / "handoff.md").write_text("# 引き継ぎ\n- 次: なし\n", encoding="utf-8")
         yamato = Path(__file__).resolve().parents[2] / "yamato"
         subprocess.run([sys.executable, str(yamato), "seat-stop", ship, seat],
                        env=dict(os.environ, CLAUDE_CODE_SESSION_ID=sid), capture_output=True, text=True, encoding="utf-8", errors="replace")

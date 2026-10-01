@@ -76,9 +76,15 @@ def _handoff(shipdir: Path, seat: str) -> Path:
     return inbox.seat_dir(shipdir, seat) / "handoff.md"
 
 
+# Windows のファイルの mtime は時計の刻み (約 16ms) で丸められ、time.time() (精密) より少し前に見える。
+# シフト開始の直後に書いた handoff が「古い」と断られるので、Windows だけ刻みぶんの余裕を持たせる
+WINDOWS_MTIME_SLACK = 0.1
+
+
 def handoff_written_since(shipdir: Path, seat: str, since: float | None) -> bool:
+    slack = WINDOWS_MTIME_SLACK if procs.is_windows() else 0
     try:
-        return _handoff(shipdir, seat).stat().st_mtime >= (since or 0)
+        return _handoff(shipdir, seat).stat().st_mtime >= (since or 0) - slack
     except FileNotFoundError:
         return False
 

@@ -89,12 +89,8 @@ class GitShipTestCase(ShipTestCase):
         remote, ws = self._template
         shutil.copytree(remote, self.remote, symlinks=True)
         shutil.copytree(ws, self.workspace, symlinks=True, dirs_exist_ok=True)
-        config = self.workspace / ".git" / "config"
-        text = config.read_text(encoding="utf-8")
-        # Windows の git は URL を C:/... の形で持つので、両方の書き方を直す (T-050。実機では未確認)
-        for old, new in ((str(remote), str(self.remote)), (remote.as_posix(), self.remote.as_posix())):
-            text = text.replace(old, new)
-        config.write_text(text, encoding="utf-8")
+        # config の URL を書き換えず set-url で向ける (Windows の git は \ を \\ にエスケープして書くので、文字列の置換は当たらない)
+        run("git", "remote", "set-url", "origin", str(self.remote), cwd=self.workspace, env=env)
         from yamato import pr
 
         p = mock.patch.object(pr, "subprocess", _InProcessGh())

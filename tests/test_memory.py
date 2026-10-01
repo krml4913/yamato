@@ -10,6 +10,7 @@ from unittest import mock
 from tests.helpers import ShipTestCase
 from yamato import cli, events, inbox, inject, memory, roster, runtime, seat
 from yamato.team import validate
+from yamato.runtime import rule_path, ship_arg
 from yamato.util import YAMATO_BIN, YamatoError
 
 YAMATO = str(YAMATO_BIN)
@@ -292,7 +293,7 @@ class CurateTest(_Curated):
         self.assertNotIn("テストは", note["text"])   # fixed form: none of the shift's output
         impl = next(x for x in memory.status_lines(self.shipdir, self.t) if x.startswith("impl:"))
         self.assertIn(f"棚卸し案あり (+2 / -1 行): `", impl)
-        self.assertIn(f"memory apply {self.shipdir} impl` で反映", impl)
+        self.assertIn(f"memory apply {ship_arg(self.shipdir)} impl` で反映", impl)
 
     def test_an_answer_without_the_markers_fails_without_a_proposal(self):
         self.set_fake_mode(p_result="すみません、できませんでした", p_no_hook=True)
@@ -325,9 +326,12 @@ class CurateTest(_Curated):
         from yamato import headless
 
         lock = headless._try_lock(runtime.runtime_dir(self.shipdir) / "memory-curate-impl.lock")
-        self.addCleanup(headless._release, lock)
-        with self.assertRaises(YamatoError):
-            memory.run_curate(self.shipdir, self.t, "impl")
+        try:
+            with self.assertRaises(YamatoError):
+                memory.run_curate(self.shipdir, self.t, "impl")
+        finally:
+            # addCleanup だと tearDown (一時ディレクトリの削除) のあとになり、Windows は開いたファイルを消せない (WinError 32)
+            headless._release(lock)
 
     def test_without_a_role_the_roles_with_candidates_are_curated(self):
         self.set_fake_mode(p_result=PROPOSAL)
@@ -342,7 +346,9 @@ class CurateTest(_Curated):
             memory.curate(self.shipdir, self.t, "impl", out=lambda *_: None)
         argv = popen.call_args[0][0]
         self.assertEqual(argv[-3:], ["_memory-curate", str(self.shipdir), "impl"])
-        self.assertTrue(popen.call_args[1]["start_new_session"])
+        kw = popen.call_args[1]
+        # POSIX は start_new_session、Windows は creationflags (procs.spawn_detached)
+        self.assertTrue(kw.get("start_new_session") or kw.get("creationflags"))
 
     def test_nothing_to_curate(self):
         for s in ("impl-1", "impl-2"):
@@ -455,12 +461,12 @@ class TemplateTest(_Base):
         self.assertNotIn(memory.CURATOR, agents)                 # not a seat's role
         for role in ("pm", "impl"):
             text = agents[role]["prompt"]
-            self.assertIn(f"memo \"<本文>\" --ship {self.shipdir}", text)
+            self.assertIn(f"memo \"<本文>\" --ship {ship_arg(self.shipdir)}", text)
             self.assertNotIn("詰まり / memory 候補", text)
-        self.assertIn(f"memory curate {self.shipdir}", agents["pm"]["prompt"])
-        self.assertIn(f"memory apply {self.shipdir} --knowledge", agents["pm"]["prompt"])
+        self.assertIn(f"memory curate {ship_arg(self.shipdir)}", agents["pm"]["prompt"])
+        self.assertIn(f"memory apply {ship_arg(self.shipdir)} --knowledge", agents["pm"]["prompt"])
         deny = json.loads(runtime.settings_path(self.shipdir, "impl-1").read_text(encoding="utf-8"))["permissions"]["deny"]
-        self.assertIn(f"Write(/{self.shipdir}/roles/*/memory.md)", deny)
+        self.assertIn(f"Write(/{rule_path(self.shipdir)}/roles/*/memory.md)", deny)
 
 
 class ResearchTemplateTest(ShipTestCase):
@@ -488,5 +494,5 @@ class ResearchTemplateTest(ShipTestCase):
         from tests.test_research import decide
 
         st = json.loads(runtime.settings_path(self.rdir, "researcher-1").read_text(encoding="utf-8"))
-        cmd = f'{runtime.yamato_invocation()} memo "よい出典は公式の文書" --ship {self.rdir} --item T-1 --scope ship'
+        cmd = f'{runtime.yamato_invocation()} memo "よい出典は公式の文書" --ship {ship_arg(self.rdir)} --item T-1 --scope ship'
         self.assertEqual(decide(st, "Bash", cmd, self.rdir), "allow")

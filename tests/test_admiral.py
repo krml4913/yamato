@@ -409,7 +409,7 @@ class AdmiralTest(ShipTestCase):
         self.run_cmd(seat.up, self.shipdir, "1h")
         calls = []
         self.run_cmd(admiral.talk, self.shipdir, None, execvp=lambda f, a: calls.append(a))
-        self.assertEqual(calls[0][2], roster.seat(self.shipdir, "impl")["shortId"])
+        self.assertEqual(calls[0][len(claude.claude_cmd()) + 1], roster.seat(self.shipdir, "impl")["shortId"])
 
     def test_talk_default_must_be_a_seat(self):
         ty = self.shipdir / "team.yaml"
@@ -582,7 +582,7 @@ class AdmiralUpCommandTest(ShipTestCase):
         self.run_cmd(admiral.admiral_talk, execvp=lambda f, a: calls.append(a))
         resumes = [c for c in self.fake()["calls"] if "--resume" in c["argv"]]
         self.assertTrue(resumes)
-        self.assertEqual(calls[0][1], "attach")
+        self.assertEqual(calls[0][len(claude.claude_cmd())], "attach")
 
     def test_wake_admiral_wakes_a_stopped_seat_without_attaching(self):
         # view の admiral ペインは view attach なので、起こすのは wake_admiral (execvp しない)
