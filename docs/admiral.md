@@ -14,7 +14,7 @@
 | したいこと | コマンド |
 |---|---|
 | attach する (無ければ作って起こす) | `yamato admiral`。生きていれば attach、止まっていれば talk と同じ規則 (send → 起こす) で起こしてから attach する。`_admiral/` が無ければ `admiral` ひな形から初回に作る (登録はしない。`ships` には出ない) |
-| admiral と艦を開く | `yamato view` (絞るなら `yamato view admiral <艦>`)。admiral のタブが先頭、登録済みの全艦が続く 1 つの zellij セッション (`yamato-view`)。admiral が止まっていれば `yamato admiral` と同じ規則で起こしてから。抜けるのは **zellij の detach (Ctrl+O d)**、席は動き続ける。`/exit` は席を止める |
+| admiral と艦を開く | `yamato view` (絞るなら `yamato view admiral <艦>`)。admiral のタブ (`admiral`) が先頭、登録済みの全艦 (タブ名 `ship:<艦>`) が続く 1 つの zellij セッション (`yamato-view`)。admiral が止まっていれば `yamato admiral` と同じ規則で起こしてから。抜けるのは **zellij の detach (Ctrl+O d)**、席は動き続ける。`/exit` は席を止める |
 | 引き継ぎを促して止める | `yamato admiral --stop`。引き継ぎ (handoff.md) を書いて `seat-stop` するよう admiral の inbox に伝える。これ自体はブロックしない |
 | それでも止まらなければ強制停止 | `yamato admiral --stop --force`。最大 `ADMIRAL_STOP_WAIT` 秒 (モジュール定数) 待って、それでも生きていれば `down --force` / `halt` と同じ強制停止に落ちる |
 

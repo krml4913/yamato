@@ -230,7 +230,7 @@ class LayoutForTest(ShipTestCase):
         by_name = layout.layout_for(["t1"], "yamato")
         by_path = layout.layout_for([str(self.shipdir)], "yamato")
         self.assertEqual(by_name, by_path)
-        self.assertIn('tab name="t1" focus=true {', by_name)
+        self.assertIn('tab name="ship:t1" focus=true {', by_name)
         self.assertIn(f'args "view" "attach" "{self.shipdir.resolve()}" "pm"', by_name)
         self.assertEqual(by_name.count("pane name="), 4)   # dev template: pm + impl + reviewer + planner
 
@@ -272,7 +272,7 @@ class RegistryTest(ShipTestCase):
 
     def test_layout_by_name(self):
         kdl = layout.layout_for(["mine"], "yamato")
-        self.assertIn('tab name="mine" focus=true {', kdl)      # the team's name, not the directory's
+        self.assertIn('tab name="ship:mine" focus=true {', kdl)      # the team's name, not the directory's
         self.assertIn(f'args "view" "attach" "{self.elsewhere.resolve()}" "impl"', kdl)
 
     def test_attach_by_name(self):
@@ -331,12 +331,12 @@ class OpenerTest(ShipTestCase):
         dest = self.tmp / "view.kdl"
         opener.open_ships(command="yamato", output=str(dest), run=run, in_zellij=False)
         text = dest.read_text()
-        self.assertIn('tab name="t1"', text)
-        self.assertIn('tab name="other"', text)
+        self.assertIn('tab name="ship:t1"', text)
+        self.assertIn('tab name="ship:other"', text)
 
     def test_outside_zellij_attaches_an_existing_session(self):
         # same layout as last time (dest already holds it) -> attach, no rebuild
-        run = FakeZellijRun(sessions="yamato-view [Created ...]\n", tabs="t1\n")
+        run = FakeZellijRun(sessions="yamato-view [Created ...]\n", tabs="ship:t1\n")
         dest = self.tmp / "view.kdl"
         dest.write_text(layout.layout_for(["t1"], "yamato"))
         opener.open_ships(["t1"], command="yamato", output=str(dest), run=run, in_zellij=False)
@@ -361,7 +361,7 @@ class OpenerTest(ShipTestCase):
         # attach / --new-session-with-layout are interactive TUIs: capturing their
         # stdout/stderr would blank the screen, so they must be called without it.
         # list-sessions is non-interactive and keeps capture_output=True.
-        run = FakeZellijRun(sessions="yamato-view\n", tabs="t1\n")
+        run = FakeZellijRun(sessions="yamato-view\n", tabs="ship:t1\n")
         dest = self.tmp / "view.kdl"
         dest.write_text(layout.layout_for(["t1"], "yamato"))
         opener.open_ships(["t1"], command="yamato", output=str(dest), run=run, in_zellij=False)
@@ -378,20 +378,20 @@ class OpenerTest(ShipTestCase):
     def test_existing_session_gets_the_missing_tabs_then_attach(self):
         # one session, never a second: a new ship's tab is added to the running yamato-view
         ship.create("other", str(self.workspace), None, "dev")
-        run = FakeZellijRun(sessions="yamato-view\n", tabs="t1\n")
+        run = FakeZellijRun(sessions="yamato-view\n", tabs="ship:t1\n")
         dest = self.tmp / "view.kdl"
         dest.write_text(layout.layout_for(["t1"], "yamato"))
         opener.open_ships(["t1", "other"], command="yamato", output=str(dest), run=run, in_zellij=False)
         self.assertEqual([c[3:5] for c in run.calls if "new-tab" in c], [["action", "new-tab"]])
         self.assertEqual(len(run.layouts), 1)
-        self.assertIn('tab name="other"', run.layouts[0])
+        self.assertIn('tab name="ship:other"', run.layouts[0])
         self.assertNotIn("delete-session", [w for c in run.calls for w in c])
         self.assertEqual(run.calls[-1], ["zellij", "attach", "yamato-view"])
-        self.assertIn('tab name="other"', dest.read_text())   # the file keeps what the session holds
-        self.assertIn('tab name="t1"', dest.read_text())
+        self.assertIn('tab name="ship:other"', dest.read_text())   # the file keeps what the session holds
+        self.assertIn('tab name="ship:t1"', dest.read_text())
 
     def test_existing_session_rebuilds_the_tab_whose_crew_changed(self):
-        run = FakeZellijRun(sessions="yamato-view\n", tabs="t1\n")
+        run = FakeZellijRun(sessions="yamato-view\n", tabs="ship:t1\n")
         dest = self.tmp / "view.kdl"
         dest.write_text(layout.layout_for(["t1"], "yamato").replace('"pm"', '"gone"'))
         opener.open_ships(["t1"], command="yamato", output=str(dest), run=run, in_zellij=False)
@@ -403,7 +403,7 @@ class OpenerTest(ShipTestCase):
         self.assertNotIn("gone", dest.read_text())
 
     def test_existing_session_keeps_tabs_not_asked_for_and_unknown_ones(self):
-        run = FakeZellijRun(sessions="yamato-view\n", tabs="elsewhere\nt1\n")
+        run = FakeZellijRun(sessions="yamato-view\n", tabs="ship:elsewhere\nship:t1\n")
         dest = self.tmp / "view.kdl"   # no file: nothing known about t1's old crew -> left alone
         opener.open_ships(["t1"], command="yamato", output=str(dest), run=run, in_zellij=False)
         self.assertEqual([c[4] for c in run.calls if c[3:4] == ["action"]], ["list-tabs"])
@@ -422,11 +422,11 @@ class OpenerTest(ShipTestCase):
         self.assertEqual(run.calls[-1], ["zellij", "--session", "yamato-view", "--new-session-with-layout", str(dest)])
         self.assertNotIn("attach", [c[1] for c in run.calls])
         text = dest.read_text()
-        self.assertIn('tab name="t1"', text)
-        self.assertIn('tab name="elsewhere"', text)
+        self.assertIn('tab name="ship:t1"', text)
+        self.assertIn('tab name="ship:elsewhere"', text)
 
     def test_failed_rebuild_action_also_falls_back(self):
-        run = FakeZellijRun(sessions="yamato-view\n", tabs="t1\n",
+        run = FakeZellijRun(sessions="yamato-view\n", tabs="ship:t1\n",
                             rc_for=lambda argv: 1 if "close-tab-by-id" in argv else 0)
         dest = self.tmp / "view.kdl"
         dest.write_text(layout.layout_for(["t1"], "yamato").replace('"pm"', '"gone"'))
@@ -473,8 +473,8 @@ class OpenerTest(ShipTestCase):
         # each ship's own tab landed in its own file (content read at call time -- T-015
         # removes the file once new-tab returns, so it is gone by the time we get here)
         self.assertEqual([t.count("tab name=") for t in run.layouts], [1, 1])
-        self.assertTrue(any('tab name="t1"' in t for t in run.layouts))
-        self.assertTrue(any('tab name="other"' in t for t in run.layouts))
+        self.assertTrue(any('tab name="ship:t1"' in t for t in run.layouts))
+        self.assertTrue(any('tab name="ship:other"' in t for t in run.layouts))
 
     # --- the admiral's tab, and `yamato view` with no `open` (T-040) ---
 
@@ -485,7 +485,7 @@ class OpenerTest(ShipTestCase):
     def test_admiral_names_the_admiral_dir_and_its_tab_is_called_admiral(self):
         self.make_admiral()
         text = layout.layout_for(["admiral", "t1"], "yamato")
-        self.assertLess(text.index('tab name="admiral"'), text.index('tab name="t1"'))
+        self.assertLess(text.index('tab name="admiral"'), text.index('tab name="ship:t1"'))
         self.assertEqual(text.count("focus=true"), 1)
         self.assertIn("_admiral", text)
 
@@ -499,22 +499,22 @@ class OpenerTest(ShipTestCase):
         dest = self.tmp / "view.kdl"
         opener.open_ships(command="yamato", output=str(dest), run=FakeZellijRun(), in_zellij=False)
         names = list(layout.tabs_of(dest.read_text()))
-        self.assertEqual(names, ["admiral", "other", "t1"])
+        self.assertEqual(names, ["admiral", "ship:other", "ship:t1"])
 
     def test_no_names_without_an_admiral_dir_shows_the_ships_only(self):
         dest = self.tmp / "view.kdl"
         opener.open_ships(command="yamato", output=str(dest), run=FakeZellijRun(), in_zellij=False)
-        self.assertEqual(list(layout.tabs_of(dest.read_text())), ["t1"])
+        self.assertEqual(list(layout.tabs_of(dest.read_text())), ["ship:t1"])
 
     def test_named_ships_are_only_those(self):
         self.make_admiral()
         dest = self.tmp / "view.kdl"
         opener.open_ships(["t1"], command="yamato", output=str(dest), run=FakeZellijRun(), in_zellij=False)
-        self.assertEqual(list(layout.tabs_of(dest.read_text())), ["t1"])
+        self.assertEqual(list(layout.tabs_of(dest.read_text())), ["ship:t1"])
 
     def test_the_admiral_tab_is_added_to_a_running_session(self):
         self.make_admiral()
-        run = FakeZellijRun(sessions="yamato-view\n", tabs="t1\n")
+        run = FakeZellijRun(sessions="yamato-view\n", tabs="ship:t1\n")
         dest = self.tmp / "view.kdl"
         dest.write_text(layout.layout_for(["t1"], "yamato"))
         opener.open_ships(command="yamato", output=str(dest), run=run, in_zellij=False)
@@ -523,10 +523,40 @@ class OpenerTest(ShipTestCase):
         self.assertEqual(run.calls[-1], ["zellij", "attach", "yamato-view"])
 
     def test_in_zellij_a_tab_that_is_already_there_is_focused_not_duplicated(self):
+        run = FakeZellijRun(tabs="ship:t1\n")
+        opener.open_ships(["t1"], command="yamato", run=run, in_zellij=True)
+        self.assertEqual(run.layouts, [])
+        self.assertIn(["zellij", "action", "go-to-tab-name", "ship:t1"], run.calls)
+
+    def test_a_ship_called_admiral_does_not_clash_with_the_admiral_tab(self):
+        self.make_admiral()
+        ship.create("admiral", str(self.workspace), None, "dev")
+        text = layout.layout_for(["admiral", str(resolve_ship("admiral"))], "yamato")
+        self.assertEqual(list(layout.tabs_of(text)), ["admiral", "ship:admiral"])
+
+    def test_legacy_unprefixed_tab_is_replaced_in_a_running_session(self):
+        run = FakeZellijRun(sessions="yamato-view\n", tabs="t1\n")
+        dest = self.tmp / "view.kdl"
+        dest.write_text(layout.build([("t1", "/x", ["pm"])], "yamato"), encoding="utf-8")
+        opener.open_ships(["t1"], command="yamato", output=str(dest), run=run, in_zellij=False)
+        acts = [c[3:] for c in run.calls if c[3:4] == ["action"]]
+        self.assertEqual([a[1] for a in acts], ["list-tabs", "new-tab", "close-tab-by-id"])
+        self.assertEqual(acts[2], ["action", "close-tab-by-id", "10"])
+        self.assertIn('tab name="ship:t1"', run.layouts[0])
+        self.assertEqual(list(layout.tabs_of(dest.read_text())), ["ship:t1"])   # no stale "t1"
+
+    def test_legacy_admiral_named_tab_is_left_alone(self):
+        # "admiral" is the admiral's tab, never a ship's old name
+        self.assertIsNone(layout.legacy_tab_name("ship:admiral"))
+        self.assertEqual(layout.legacy_tab_name("ship:t1"), "t1")
+        self.assertIsNone(layout.legacy_tab_name("admiral"))
+
+    def test_in_zellij_a_legacy_tab_is_renamed_not_duplicated(self):
         run = FakeZellijRun(tabs="t1\n")
         opener.open_ships(["t1"], command="yamato", run=run, in_zellij=True)
         self.assertEqual(run.layouts, [])
         self.assertIn(["zellij", "action", "go-to-tab-name", "t1"], run.calls)
+        self.assertIn(["zellij", "action", "rename-tab", "ship:t1"], run.calls)
 
     def test_tabs_of_round_trips_a_layout(self):
         text = layout.build([("a \"q\"", "/x", ["s1", "s2", "s3"]), ("b", "/y", ["s"])], "yamato")

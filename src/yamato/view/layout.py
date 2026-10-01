@@ -104,6 +104,16 @@ def build(ships: list[tuple[str, str, list[str]]], command: str) -> str:
 ADMIRAL_TAB = "admiral"   # the name that stands for ``$YAMATO_HOME/_admiral`` (D-011) in ``yamato view``
 
 
+SHIP_TAB_PREFIX = "ship:"   # a ship's tab is ``ship:<name>``, so a ship called "admiral" does not clash with ADMIRAL_TAB
+
+
+def legacy_tab_name(tab: str) -> str | None:
+    """The pre-T-046 name (no prefix) of a ship tab, or None (not a ship tab / would be the admiral's)."""
+    if tab.startswith(SHIP_TAB_PREFIX) and tab[len(SHIP_TAB_PREFIX):] != ADMIRAL_TAB:
+        return tab[len(SHIP_TAB_PREFIX):]
+    return None
+
+
 def _tab_for(ref: str) -> tuple[str, str, list[str]]:
     if ref == ADMIRAL_TAB:
         from ..admiral import admiral_dir
@@ -114,12 +124,13 @@ def _tab_for(ref: str) -> tuple[str, str, list[str]]:
         return ADMIRAL_TAB, str(shipdir.resolve()), list(runtime_team(shipdir)["seats"])
     shipdir = resolve_ship(ref)
     team = runtime_team(shipdir)
-    return team["name"], str(shipdir.resolve()), list(team["seats"])
+    return SHIP_TAB_PREFIX + team["name"], str(shipdir.resolve()), list(team["seats"])
 
 
 def tabs_for(refs: list[str], command: str | None = None) -> list[tuple[str, str]]:
     """[(tab name, ``tab_block`` text)] for ships given by name (registry, then ``$YAMATO_HOME``) or
-    path; ``admiral`` is the admiral's tab (``_admiral/``, named "admiral").
+    path; ``admiral`` is the admiral's tab (``_admiral/``, named "admiral"); a ship's tab is
+    ``ship:<name>``.
 
     Every pane gets the ship's absolute path: the panes run in the zellij
     server's environment, which may not have this shell's YAMATO_HOME.
