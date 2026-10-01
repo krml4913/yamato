@@ -55,6 +55,12 @@ class AdmiralTemplateTest(ShipTestCase):
     def test_time_limit_is_none(self):
         self.assertIsNone(self.ateam["time_limit"])
 
+    def test_rotate_hours_is_off(self):
+        from yamato.team import rotate_conf
+
+        # 常駐で時間の上限がない席が、シフト 8h 超の rotate で自分で止まらないように (drift H)
+        self.assertIsNone(rotate_conf(self.ateam, "admiral")["hours"])
+
     # --- D-011 Q2: auto + WebFetch/WebSearch allowed, ~/dev/yamato read-only --
 
     def test_admiral_runs_auto_with_web_allowed(self):

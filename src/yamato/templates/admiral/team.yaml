@@ -23,10 +23,10 @@ roles:
     inject: [handoff, log_tail, last_report, inbox, memory, knowledge, fleet]
     description: owner の窓口。艦を作り・構成 (team.yaml・役割プロンプト・charter) を変え・出撃/延長/帰投/緊急停止させ、
       全艦を一望し、owner の判断を代筆する。艦の中の仕事 (task の割り振り・実装・レビュー・merge) には踏み込まない (D-011)
-    rotate:                   # 常駐なので入れ替えの目安は dev ひな形の captain と同じにしておく
+    rotate:                   # 常駐で時間の上限がないので、時間 (hours) では入れ替えない。context / compaction / idle / new_day は残す
       context: 30%
       compaction: true
-      hours: 8h
+      hours: off
       idle: 1h
       new_day: true
 
