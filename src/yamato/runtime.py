@@ -184,6 +184,11 @@ def build_settings(shipdir: Path, team: dict, seat: str) -> dict:
         # a bg seat runs in the daemon's environment, so the caller's `env -u` misses it
         # (e2e-p1 D). The settings' `env` reaches the seat's tools: blank the names there
         mech["env"] = {k: "" for k in team["env_unset"]}
+    if is_windows():
+        # D-051 A: a Windows seat would reach for the PowerShell tool, which the `Bash(...)` rules
+        # do not cover. Only Windows has the tool by default, so macOS settings stay as they were.
+        # The settings' `env` is what a bg seat's tools see (the daemon's environment is not ours)
+        mech["env"] = {**mech.get("env", {}), "CLAUDE_CODE_USE_POWERSHELL_TOOL": "0"}
     if needs_no_isolation(shipdir, team):
         mech["worktree"] = {"bgIsolation": "none"}
     # team.yaml `settings:` goes underneath; yamato's own keys win

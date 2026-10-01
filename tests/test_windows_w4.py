@@ -174,6 +174,23 @@ class CuratorOnWindowsTest(ShipTestCase):
         self.assertIn("'C:/Users/John Doe/ships/t1'", deny[1])
 
 
+class PowerShellToolTest(ShipTestCase):
+    """D-051 A: the seat's settings `env` turns the PowerShell tool off on Windows only."""
+
+    def test_env_is_set_on_windows_and_kept_with_env_unset(self):
+        team = load_team(self.shipdir)
+        team["env_unset"] = ["GH_TOKEN"]
+        with on_windows(), mock.patch.object(runtime.sys, "executable", EXE):
+            env = runtime.build_settings(self.shipdir, team, "impl")["env"]
+        self.assertEqual(env["CLAUDE_CODE_USE_POWERSHELL_TOOL"], "0")
+        self.assertEqual(env["GH_TOKEN"], "")
+
+    def test_env_is_absent_elsewhere(self):
+        team = load_team(self.shipdir)
+        with mock.patch.object(runtime, "is_windows", return_value=False):
+            self.assertNotIn("env", runtime.build_settings(self.shipdir, team, "impl"))
+
+
 class LayoutOnWindowsTest(unittest.TestCase):
     def test_pane_runs_python_exe_with_the_script_as_its_first_arg(self):
         with on_windows(), mock.patch.object(layout.sys, "executable", EXE), \

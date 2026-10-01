@@ -144,7 +144,7 @@ Windows ネイティブの Claude Code と、Git for Windows の Git Bash から
 - パスの書き方 (W4): Windows では、規則の絶対パス `/{{ship}}/...` は `//c/Users/...` (小文字のドライブ、`/` 区切り) に、`Bash(...)` の中とプロンプトの `{{ship}}` は `C:/Users/...` (as_posix) に描く。W0 の実機で、docs の `//c/...` の形だけが deny に当たった (`/C:\...` は素通り)。艦のパスにスペースがあると、引数として置く `{{ship}}` は `'C:/Users/John Doe/...'` と引用して描く (プロンプトと allow の規則は同じ文字列)。`{{ship}}/work/...` のようにファイルのパスとして置くときは引用しない。`{{yamato}}` の interpreter と script も as_posix。zellij のペインは `python.exe <script> view attach ...` で起動する
 - **`python3` は使えない**: Windows の `python3` は WindowsApps の stub (W0 [1])。`python` か `py -3` を使う
 - プロセス (W3): 席の生死は `OpenProcess` + `GetExitCodeProcess`、切り離しは `CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW`、headless の停止は `CTRL_BREAK_EVENT` → `taskkill /T /F`、`admiral talk` は exec せず待って終了コードを返す (OS 差分は `src/yamato/procs.py` の 1 か所)。遅延 stop は Git Bash の `sh`・`sleep` をそのまま使う
-- まだ動かないもの (W5 の実機確認まで): PowerShell ツールの扱いは owner の判断 (D-051) 待ち — 席は自分から PowerShell を使い、`Bash(...)` の規則は PowerShell の同じコマンドには当たらない。**実機 (W5) で deny が当たることを確かめるまで、Windows で無人の席を出さない**
+- まだ動かないもの (W5 の実機確認まで): PowerShell ツールは席の settings の env `CLAUDE_CODE_USE_POWERSHELL_TOOL=0` で切る (D-051 A、Windows だけ。`Bash(...)` の規則は PowerShell の同じコマンドには当たらないので切る)。この env が本当に効くかは W5 の実機で見る。**実機 (W5) で deny が当たることを確かめるまで、Windows で無人の席を出さない**
 
 ## テストの実行
 
