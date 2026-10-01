@@ -17,6 +17,7 @@ Modes (state["mode"]):
 """
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -52,7 +53,7 @@ def _run_session_start(settings, sid):
 
 
 def _transcript(sid, cwd):
-    base = Path(os.environ["CLAUDE_CONFIG_DIR"]) / "projects" / cwd.replace("/", "-")
+    base = Path(os.environ["CLAUDE_CONFIG_DIR"]) / "projects" / re.sub(r"[^A-Za-z0-9]", "-", cwd)   # like the real one: one level, no drive/backslash (a Windows abs path would escape projects/)
     base.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     usage = {"input_tokens": 7, "output_tokens": 11, "cache_creation_input_tokens": 100, "cache_read_input_tokens": 200}
@@ -75,13 +76,13 @@ def run(argv, mode):
     name = _arg(argv, "--name") or ""
     ship = _arg(argv, "--add-dir")
     seat = name.split(".", 1)[1] if "." in name else name
+    _transcript(sid, os.getcwd())   # before the hooks: where a signal cannot be held off (Windows) it is the first thing written
     if not mode.get("p_no_hook"):
         _emit({"type": "system", "subtype": "hook_started", "hook_event": "SessionStart", "session_id": sid})
         _run_session_start(_arg(argv, "--settings"), sid)
         _emit({"type": "system", "subtype": "hook_response", "hook_event": "SessionStart",
                "hook_name": "SessionStart:startup", "exit_code": 0, "outcome": "success", "session_id": sid})
     _emit({"type": "system", "subtype": "init", "session_id": sid, "model": _arg(argv, "--model")})
-    _transcript(sid, os.getcwd())
     if _mask:
         _mask(signal.SIG_UNBLOCK, {signal.SIGTERM})
     for _ in range(2):
