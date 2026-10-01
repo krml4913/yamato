@@ -190,7 +190,7 @@ class StopTest(WinCase):
         with mock.patch.object(signal, "CTRL_BREAK_EVENT", brk, create=True), \
                 mock.patch.object(os, "kill") as kill, \
                 mock.patch.object(subprocess, "run") as run:
-            ok = procs.terminate(77, 0.03, alive=lambda: True, kill_wait=0.03)
+            ok = procs.terminate(77, 0.03, alive=lambda: True, kill_wait=0.03, group=True)
         kill.assert_called_once_with(77, brk)
         self.assertEqual(run.call_args[0][0], ["taskkill", "/PID", "77", "/T", "/F"])
         self.assertFalse(ok)
