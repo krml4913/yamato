@@ -1,3 +1,4 @@
+# yaml-language-server: $schema={{schema}}
 # yamato の艦の定義 (research ひな形: 調査艦)。書式は docs/design.md §5、docs/design-p1.md §7 と README を参照
 # repo の無い艦。席の作業ディレクトリは艦フォルダ自身で、成果物は work/<項目>/ と reports/ に置く
 name: {{name}}

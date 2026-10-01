@@ -1,3 +1,4 @@
+# yaml-language-server: $schema={{schema}}
 # yamato の艦の定義 (admiral ひな形。D-011/D-013)。owner にはどの艦にも属さない常駐の
 # Claude セッション 1 つを持たせる。`$YAMATO_HOME/_admiral/` に他の艦と同じ形で作る
 # (ship.create(..., register=False) で ships.json には載らず、`yamato ships` の一覧にも出ない。

@@ -1,3 +1,4 @@
+# yaml-language-server: $schema={{schema}}
 # yamato の艦の定義 (dev ひな形)。書式は docs/design.md §5 と README を参照
 name: {{name}}
 hub: pm                      # captain を務める役割
