@@ -36,15 +36,20 @@ def _run_piped_through_head(stub_code: str, argv_tail: list[str]) -> str:
         driver_path = f.name
     try:
         env = dict(os.environ, PYTHONPATH=SRC)
-        r = subprocess.run(
-            f"{sys.executable} {driver_path} | head -c 1 >/dev/null",
-            shell=True,
-            capture_output=True,
-            text=True,
-            env=env,
-            timeout=30,
-        )
-        return r.stderr
+        # シェルの `| head -c 1` は Windows に無い。読み手 (このテスト) が 1 byte 読んで閉じる
+        proc = subprocess.Popen([sys.executable, driver_path], stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, env=env)
+        try:
+            proc.stdout.read(1)
+            proc.stdout.close()
+            err = proc.stderr.read()
+            proc.wait(timeout=30)
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
+            proc.stderr.close()
+        return (err or b"").decode("utf-8", errors="replace")
     finally:
         Path(driver_path).unlink(missing_ok=True)
 

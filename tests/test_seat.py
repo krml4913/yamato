@@ -3,6 +3,7 @@ import io
 import json
 import os
 import shlex
+import sys
 import time
 import unittest
 from contextlib import redirect_stdout
@@ -217,7 +218,11 @@ class SeatTest(_SeatBase):
     def test_send_to_owner_records_and_notifies(self):
         marker = self.tmp / "notified"
         ty = self.shipdir / "team.yaml"
-        ty.write_text(ty.read_text(encoding="utf-8").replace("  via: []", f'  via: [command, slack]\n  command: "echo $YAMATO_MESSAGE > {marker}"'), encoding="utf-8")
+        # シェルの構文 (echo $VAR) は OS で違う。python のスクリプトを呼ぶ。YAML の二重引用は json.dumps で (Windows のパスの \ )
+        notifier = self.tmp / "notifier.py"
+        notifier.write_text("import os, sys\nopen(sys.argv[1], 'w', encoding='utf-8').write(os.environ['YAMATO_MESSAGE'])\n", encoding="utf-8")
+        command = json.dumps(f'"{sys.executable}" "{notifier}" "{marker}"')
+        ty.write_text(ty.read_text(encoding="utf-8").replace("  via: []", f'  via: [command, slack]\n  command: {command}'), encoding="utf-8")
         self.up()
         with mock.patch.dict(os.environ):
             os.environ.pop("YAMATO_SLACK_WEBHOOK", None)   # never reach a real webhook from a test
@@ -695,6 +700,19 @@ class SeatTest(_SeatBase):
             self.run_cmd(seat.seat_stop, self.shipdir, "impl", 10)  # no handoff, report unread
         rec = roster.seat(self.shipdir, "impl")
         self.assertEqual((rec["state"], rec["handoffWritten"]), (roster.STOPPING, False))
+
+    def test_handoff_mtime_slack_is_windows_only(self):
+        # Windows の mtime は時計の刻みで丸められ、シフト開始の直後に書いた handoff が前に見える。
+        # 余裕は Windows だけ (is_windows の差し替えで mac でも確かめる)
+        h = self.shipdir / "seats/impl/handoff.md"
+        h.parent.mkdir(parents=True, exist_ok=True)
+        h.write_text("# impl\n", encoding="utf-8")
+        since = h.stat().st_mtime + 0.05            # シフト開始の時刻が mtime より 50ms 後
+        with mock.patch.object(seat.procs, "is_windows", return_value=False):
+            self.assertFalse(seat.handoff_written_since(self.shipdir, "impl", since))
+        with mock.patch.object(seat.procs, "is_windows", return_value=True):
+            self.assertTrue(seat.handoff_written_since(self.shipdir, "impl", since))
+            self.assertFalse(seat.handoff_written_since(self.shipdir, "impl", since + 5))   # 前のシフトの古い handoff
 
     def test_seat_stop_delivered_flag(self):
         self.up()

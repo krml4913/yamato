@@ -14,7 +14,7 @@ from unittest import mock
 
 from tests.fake_claude_lib.print_mode import RESULT_TEXT
 from tests.helpers import ShipTestCase
-from yamato import board, deadline, events, headless, inbox, roster, runtime, seat
+from yamato import board, deadline, events, headless, inbox, procs, roster, runtime, seat
 from yamato.team import validate
 from yamato.util import YamatoError
 
@@ -193,7 +193,8 @@ class HeadlessTest(_Base):
         rec = roster.seat(self.shipdir, "researcher")
         self.assertEqual(rec["endReason"], "max-duration")
         self.assertEqual(rec["outcome"], headless.TIMEOUT)
-        self.assertEqual(rec["exitCode"], 143)
+        # POSIX は SIGTERM の 143、Windows は CTRL_BREAK の STATUS_CONTROL_C_EXIT (0xC000013A)
+        self.assertEqual(rec["exitCode"], 0xC000013A if os.name == "nt" else 143)
         [u] = self.usage_lines()
         self.assertEqual(u["source"], "transcript")
         self.assertIsNone(u["total_cost_usd"])
@@ -234,7 +235,7 @@ class HeadlessTest(_Base):
         self.addCleanup(_reap, child)
         roster.start_shift(self.shipdir, "researcher", session_id=sid, short_id=sid[:8],
                            session_name="t1.researcher", how="headless")
-        roster.update(self.shipdir, "researcher", pid=child.pid)
+        roster.update(self.shipdir, "researcher", pid=child.pid, pidStart=procs.start_time(child.pid))
         return child
 
     def test_reconcile_stops_an_orphaned_p_and_closes_the_shift(self):

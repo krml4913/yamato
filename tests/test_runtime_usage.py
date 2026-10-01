@@ -93,8 +93,8 @@ class RuntimeTest(ShipTestCase):
         self.assertEqual(agents["impl"]["model"], "sonnet")
         for p in (a["prompt"] for a in agents.values()):
             self.assertNotIn("{{", p)
-            self.assertIn(str(YAMATO_BIN), p)
-            self.assertIn(str(self.shipdir), p)
+            self.assertIn(runtime.posix_path(YAMATO_BIN), p)
+            self.assertIn(runtime.posix_path(self.shipdir), p)
             self.assertIn("SendMessage", p)
             self.assertIn("seat-stop", p)
             self.assertIn("push", p)

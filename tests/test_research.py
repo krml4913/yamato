@@ -123,7 +123,7 @@ class ResearchShipTest(ShipTestCase):
         for s in EXTERNAL_SEATS:
             st = self.settings(s)
             self.assertEqual(st["permissions"]["defaultMode"], "dontAsk", s)
-            self.assertIn(f"Write(/{self.rdir}/seats/{s}/handoff.md)", st["permissions"]["allow"])
+            self.assertIn(f"Write(/{runtime.rule_path(self.rdir)}/seats/{s}/handoff.md)", st["permissions"]["allow"])
             self.assertIn("Read(~/.ssh/**)", st["permissions"]["deny"])
             # hooks and the rest of yamato's mechanism are unchanged
             self.assertIn("PermissionRequest", st["hooks"])
@@ -179,9 +179,9 @@ class ResearchShipTest(ShipTestCase):
                   ("Write", self.rdir / "seats" / s / "inbox.jsonl"), ("Write", self.rdir / "roles/editor.md"),
                   ("Write", self.rdir / "seats" / other / "handoff.md"), ("Write", self.rdir / "reports/x.md"),
                   ("Read", Path.home() / ".ssh/id_ed25519"),
-                  ("Bash", f"{runtime.yamato_invocation()} send {self.rdir} editor \"hi\" --from {s}"),
-                  ("Bash", f"{runtime.yamato_invocation()} board set {self.rdir} T-001 state=done --by {s}"),
-                  ("Bash", f"{runtime.yamato_invocation()} inbox {self.rdir} editor"),
+                  ("Bash", f"{runtime.yamato_invocation()} send {runtime.ship_arg(self.rdir)} editor \"hi\" --from {s}"),
+                  ("Bash", f"{runtime.yamato_invocation()} board set {runtime.ship_arg(self.rdir)} T-001 state=done --by {s}"),
+                  ("Bash", f"{runtime.yamato_invocation()} inbox {runtime.ship_arg(self.rdir)} editor"),
                   ("Bash", "curl -s https://example.com"), ("Bash", "python3 -c 'print(1)'")]
             for tool, arg in ng:
                 with self.subTest(seat=s, tool=tool, arg=arg):
