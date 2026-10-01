@@ -122,8 +122,14 @@ def terminate(shipdir: Path, seat: str, reason: str, timeout: float = 30) -> boo
         # Windows の soft_stop は CTRL_BREAK。pid が再利用されていると同じコンソールの別プロセスを落とすので、
         # pidStart で確かめられた pid にしか送らない
         if not procs.is_windows() or live_pid(rec):
-            procs.soft_stop(pid)
+            procs.soft_stop(pid, group=_grouped(rec))
     return wait_idle(shipdir, seat, timeout)
+
+
+def _grouped(rec: dict) -> bool:
+    """起動のとき group_kwargs を使った (= pid が自分のグループの先頭) と roster に記録された pid か。
+    印が無い pid に Windows で CTRL_BREAK を送るとコンソール全体に届くので、soft_stop は hard_kill に回す。"""
+    return rec.get("group") is True
 
 
 def live_pid(rec: dict) -> int | None:
@@ -158,7 +164,7 @@ def stop_orphan(shipdir: Path, seat: str, reason: str, timeout: float = 10) -> b
     pid = live_pid(rec)
     if pid is None:
         return False
-    procs.terminate(pid, timeout, alive=lambda: live_pid(rec) is not None)
+    procs.terminate(pid, timeout, alive=lambda: live_pid(rec) is not None, group=_grouped(rec))
     append_log(shipdir, seat, f"headless: ラッパーが居ないまま claude -p (pid {pid}) が残っていたので止めた ({reason})")
     events.emit(shipdir, events.FORCE_STOP, seat=seat, summary=f"孤児の claude -p を停止 ({reason})",
                 data={"reason": reason, "shiftNo": rec.get("shiftNo"), "sessionId": rec.get("sessionId"),
@@ -294,7 +300,7 @@ def run_shift(shipdir: Path, team: dict, seat: str) -> dict:
     except OSError as e:
         launch_error = f"claude -p を起動できない: {e}"
     else:
-        roster.update(shipdir, seat, pid=proc.pid, pidStart=procs.start_time(proc.pid),
+        roster.update(shipdir, seat, pid=proc.pid, pidStart=procs.start_time(proc.pid), group=True,
                       wrapperPid=os.getpid(), forceStop=None)
         stream.src = proc.stdout
         reader = threading.Thread(target=stream, daemon=True)
