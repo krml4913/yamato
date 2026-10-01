@@ -187,8 +187,12 @@ def build_settings(shipdir: Path, team: dict, seat: str) -> dict:
     if is_windows():
         # D-051 A: a Windows seat would reach for the PowerShell tool, which the `Bash(...)` rules
         # do not cover. Only Windows has the tool by default, so macOS settings stay as they were.
-        # The settings' `env` is what a bg seat's tools see (the daemon's environment is not ours)
-        mech["env"] = {**mech.get("env", {}), "CLAUDE_CODE_USE_POWERSHELL_TOOL": "0"}
+        # The settings' `env` is what a bg seat's tools see (the daemon's environment is not ours).
+        # Only a default: a ship that wants the tool (a .NET project) sets the name in
+        # team.yaml `settings.env` and that value stays
+        key = "CLAUDE_CODE_USE_POWERSHELL_TOOL"
+        if key not in ((team.get("settings") or {}).get("env") or {}):
+            mech["env"] = {**mech.get("env", {}), key: "0"}
     if needs_no_isolation(shipdir, team):
         mech["worktree"] = {"bgIsolation": "none"}
     # team.yaml `settings:` goes underneath; yamato's own keys win

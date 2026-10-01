@@ -185,6 +185,13 @@ class PowerShellToolTest(ShipTestCase):
         self.assertEqual(env["CLAUDE_CODE_USE_POWERSHELL_TOOL"], "0")
         self.assertEqual(env["GH_TOKEN"], "")
 
+    def test_team_yaml_settings_env_wins(self):
+        team = load_team(self.shipdir)
+        team["settings"] = {"env": {"CLAUDE_CODE_USE_POWERSHELL_TOOL": "1"}}
+        with on_windows(), mock.patch.object(runtime.sys, "executable", EXE):
+            env = runtime.build_settings(self.shipdir, team, "impl")["env"]
+        self.assertEqual(env["CLAUDE_CODE_USE_POWERSHELL_TOOL"], "1")
+
     def test_env_is_absent_elsewhere(self):
         team = load_team(self.shipdir)
         with mock.patch.object(runtime, "is_windows", return_value=False):
