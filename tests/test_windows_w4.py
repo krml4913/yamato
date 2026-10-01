@@ -36,9 +36,10 @@ class FormsTest(unittest.TestCase):
     def test_nothing_changes_off_windows(self):
         with mock.patch.object(runtime, "is_windows", return_value=False):
             p = Path("/Users/x/ships/t1")
-            self.assertEqual(runtime.posix_path(p), "/Users/x/ships/t1")
-            self.assertEqual(runtime.rule_path(p), "/Users/x/ships/t1")
-            self.assertEqual(runtime.render_rule("Edit(/{{ship}}/team.yaml)", p, "s"), "Edit(//Users/x/ships/t1/team.yaml)")
+            q = str(p)   # a WindowsPath spells it with `\\`; this test is about "unchanged"
+            self.assertEqual(runtime.posix_path(p), q)
+            self.assertEqual(runtime.rule_path(p), q)
+            self.assertEqual(runtime.render_rule("Edit(/{{ship}}/team.yaml)", p, "s"), f"Edit(/{q}/team.yaml)")
 
     def test_rule_kinds(self):
         with on_windows():

@@ -289,6 +289,14 @@ def env_command(name: str, default: str) -> list[str]:
     raw = os.environ.get(name) or default
     if shutil.which(raw) or os.path.exists(raw):
         return [shutil.which(raw) or raw]
+    if '"' not in raw and "'" not in raw:
+        # an unquoted path with spaces (`C:\\Users\\A B\\python.exe a.py`): the longest
+        # leading run of words that is an existing file is the program
+        words = raw.split()
+        for i in range(len(words), 0, -1):
+            head = " ".join(words[:i])
+            if os.path.isfile(head):
+                return [head, *words[i:]]
     try:
         parts = shlex.split(raw, posix=os.name != "nt")
     except ValueError:

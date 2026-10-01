@@ -39,7 +39,15 @@ def create(name: str, workspace: str | None, path: str | None, template: str, *,
         dst.parent.mkdir(parents=True, exist_ok=True)
         text = src.read_text(encoding="utf-8")
         if ws is not None:
-            text = text.replace("{{workspace}}", str(ws))
+            # both spots sit in YAML "..." strings, so `\` and `"` need escaping (W5);
+            # `/{{workspace}}/**` is a permission rule (Windows: `//c/Users/x`)
+            from .runtime import rule_path
+
+            def esc(v: str) -> str:
+                return v.replace("\\", "\\\\").replace('"', '\\"')
+
+            text = text.replace("/{{workspace}}/", "/" + esc(rule_path(ws)) + "/")
+            text = text.replace("{{workspace}}", esc(str(ws)))
         dst.write_text(text.replace("{{name}}", name), encoding="utf-8", newline="\n")
 
     team = load_team(shipdir)  # the template must validate as written
