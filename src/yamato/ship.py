@@ -7,6 +7,7 @@ from .team import load_team
 from .util import YamatoError, check_name, register_ship, yamato_home
 
 TEMPLATES = Path(__file__).resolve().parent / "templates"
+SCHEMA = Path(__file__).resolve().parent / "schema" / "team.schema.json"   # team.yaml's JSON Schema (T-057)
 
 
 def create(name: str, workspace: str | None, path: str | None, template: str, *,
@@ -48,6 +49,9 @@ def create(name: str, workspace: str | None, path: str | None, template: str, *,
 
             text = text.replace("/{{workspace}}/", "/" + esc(rule_path(ws)) + "/")
             text = text.replace("{{workspace}}", esc(str(ws)))
+        # the schema is addressed by the checkout's absolute path (the repo is private, so no URL);
+        # as_uri() also gives a Windows path the file:///C:/... form the YAML extension reads
+        text = text.replace("{{schema}}", SCHEMA.as_uri())
         dst.write_text(text.replace("{{name}}", name), encoding="utf-8", newline="\n")
 
     team = load_team(shipdir)  # the template must validate as written

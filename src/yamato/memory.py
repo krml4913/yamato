@@ -42,6 +42,7 @@ MEMORY_CURATE = "memory_curate"
 MEMORY_APPLY = "memory_apply"
 
 SCOPES = ("role", "ship")
+MEMORY_KEYS = {"applier", "curate_every", "curate_at", "max_duration", "limits"}
 LIMIT_KEYS = ("memory_lines", "memory_chars", "knowledge_lines", "knowledge_chars")
 RENAMED_LIMITS = {"memory_bytes": "memory_chars", "knowledge_bytes": "knowledge_chars"}   # before #26
 # only what a ship without a `memory:` section gets; the template spells them out. The limits
@@ -76,7 +77,7 @@ def _days(value, where: str) -> int:
 def validate_conf(raw, roles: dict) -> dict:
     """``memory:`` of team.yaml (design-p1 §0.4, §3.4, §3.5)."""
     raw = raw or {}
-    keys = {"applier", "curate_every", "curate_at", "max_duration", "limits"}
+    keys = MEMORY_KEYS
     if not isinstance(raw, dict) or set(raw) - keys:
         raise YamatoError(f"team.yaml: memory の項目は {', '.join(sorted(keys))}")
     applier = raw.get("applier")
