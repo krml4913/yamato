@@ -17,6 +17,7 @@ Modes (state["mode"]):
 """
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -52,7 +53,7 @@ def _run_session_start(settings, sid):
 
 
 def _transcript(sid, cwd):
-    base = Path(os.environ["CLAUDE_CONFIG_DIR"]) / "projects" / cwd.replace("/", "-")
+    base = Path(os.environ["CLAUDE_CONFIG_DIR"]) / "projects" / re.sub(r"[^A-Za-z0-9]", "-", cwd)   # like the real one: one level, no drive/backslash (a Windows abs path would escape projects/)
     base.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     usage = {"input_tokens": 7, "output_tokens": 11, "cache_creation_input_tokens": 100, "cache_read_input_tokens": 200}

@@ -184,9 +184,7 @@ class HeadlessTest(_Base):
         def short_limit(shipdir):   # 1s is the shortest team.yaml can say
             team = load(shipdir)
             self.assertEqual(team["roles"]["researcher"]["max_duration"], 1)
-            # Windows has no way to hold CTRL_BREAK off (the fake's pthread_sigmask): the process start and
-            # the SessionStart hooks take longer than 0.2s there, so give it time to write the transcript
-            team["roles"]["researcher"]["max_duration"] = 3 if os.name == "nt" else 0.2
+            team["roles"]["researcher"]["max_duration"] = 0.2
             return team
         t0 = time.time()
         with mock.patch.object(seat, "current_team", short_limit):
