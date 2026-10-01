@@ -15,17 +15,18 @@ from unittest import mock
 
 from tests import fake_gh
 from tests.helpers import HERE, ShipTestCase, fake_command
+from yamato import runtime
 from yamato.util import YamatoError
 
 
 def run(*args, cwd, env=None):
-    return subprocess.run(list(args), cwd=str(cwd), check=True, capture_output=True, text=True,
+    return subprocess.run(list(args), cwd=str(cwd), check=True, capture_output=True, text=True, encoding="utf-8",
                           env=env).stdout.strip()
 
 
 def git_env(tmp: Path) -> dict:
     gitconfig = tmp / "gitconfig"
-    gitconfig.write_text("")
+    gitconfig.write_text("", encoding="utf-8")
     return {
         "GIT_CONFIG_GLOBAL": str(gitconfig), "GIT_CONFIG_NOSYSTEM": "1",
         "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com",
@@ -68,7 +69,7 @@ class GitShipTestCase(ShipTestCase):
         run("git", "init", "-q", "--bare", "-b", "main", str(remote), cwd=tmp, env=env)
         ws.mkdir()
         run("git", "init", "-q", "-b", "main", cwd=ws, env=env)
-        (ws / "README.md").write_text("hello\n")
+        (ws / "README.md").write_text("hello\n", encoding="utf-8")
         run("git", "add", ".", cwd=ws, env=env)
         run("git", "commit", "-q", "-m", "init", cwd=ws, env=env)
         run("git", "remote", "add", "origin", str(remote), cwd=ws, env=env)
@@ -89,7 +90,11 @@ class GitShipTestCase(ShipTestCase):
         shutil.copytree(remote, self.remote, symlinks=True)
         shutil.copytree(ws, self.workspace, symlinks=True, dirs_exist_ok=True)
         config = self.workspace / ".git" / "config"
-        config.write_text(config.read_text().replace(str(remote), str(self.remote)))
+        text = config.read_text(encoding="utf-8")
+        # Windows の git は URL を C:/... の形で持つので、両方の書き方を直す (T-050。実機では未確認)
+        for old, new in ((str(remote), str(self.remote)), (remote.as_posix(), self.remote.as_posix())):
+            text = text.replace(old, new)
+        config.write_text(text, encoding="utf-8")
         from yamato import pr
 
         p = mock.patch.object(pr, "subprocess", _InProcessGh())
@@ -115,14 +120,14 @@ class GitShipTestCase(ShipTestCase):
 
     def gh(self) -> dict:
         try:
-            return json.loads((self.tmp / "gh.json").read_text())
+            return json.loads((self.tmp / "gh.json").read_text(encoding="utf-8"))
         except FileNotFoundError:
             return {"prs": {}, "calls": []}
 
     def set_gh(self, **kw):
         st = self.gh()
         st.update(kw)
-        (self.tmp / "gh.json").write_text(json.dumps(st))
+        (self.tmp / "gh.json").write_text(json.dumps(st), encoding="utf-8")
 
     def quiet(self, fn, *a, **kw):
         buf = io.StringIO()
@@ -162,7 +167,7 @@ class WorktreeTest(GitShipTestCase):
         # origin/main moves ahead of the local main: the new branch starts from origin
         other = self.tmp / "other"
         run("git", "clone", "-q", str(self.remote), str(other), cwd=self.tmp)
-        (other / "new.txt").write_text("x\n")
+        (other / "new.txt").write_text("x\n", encoding="utf-8")
         run("git", "add", ".", cwd=other)
         run("git", "commit", "-q", "-m", "ahead", cwd=other)
         run("git", "push", "-q", "origin", "main", cwd=other)
@@ -176,7 +181,7 @@ class WorktreeTest(GitShipTestCase):
         from yamato import worktree
 
         first = run("git", "rev-parse", "HEAD", cwd=self.workspace)
-        (self.workspace / "b.txt").write_text("b\n")
+        (self.workspace / "b.txt").write_text("b\n", encoding="utf-8")
         run("git", "add", ".", cwd=self.workspace)
         run("git", "commit", "-q", "-m", "b", cwd=self.workspace)
         tid = self.item()
@@ -192,7 +197,7 @@ class WorktreeTest(GitShipTestCase):
 
         tid = self.item()
         wt, _ = worktree.add(self.shipdir, self.team(), tid)
-        (wt / "gcd.py").write_text("def gcd(a, b): ...\n")
+        (wt / "gcd.py").write_text("def gcd(a, b): ...\n", encoding="utf-8")
         with self.assertRaisesRegex(YamatoError, "commit していない変更"):
             worktree.rm(self.shipdir, self.team(), tid)
         run("git", "add", ".", cwd=wt)
@@ -220,7 +225,7 @@ class WorktreeTest(GitShipTestCase):
 
         tid = self.item()
         wt, _ = worktree.add(self.shipdir, self.team(), tid)
-        (wt / "junk").write_text("j")
+        (wt / "junk").write_text("j", encoding="utf-8")
         worktree.rm(self.shipdir, self.team(), tid, force=True)
         self.assertFalse(wt.exists())
 
@@ -266,7 +271,7 @@ class WorktreeTest(GitShipTestCase):
         self.assertEqual((added["item"], added["seat"], added["by"]), (tid, "impl", "impl"))
         self.assertEqual(added["data"], {"path": str(wt), "branch": f"yamato/t1/{tid}"})
         # refused: the reason is on the line, and so is --force
-        (wt / "junk").write_text("j")
+        (wt / "junk").write_text("j", encoding="utf-8")
         with self.assertRaises(YamatoError):
             worktree.rm(self.shipdir, self.team(), tid, by="pm")
         (refused,) = self.recorded(worktree.WORKTREE_RM_FAILED)
@@ -332,10 +337,10 @@ class PrTest(GitShipTestCase):
 
     def set_requires(self, reqs):
         ty = self.shipdir / "team.yaml"
-        text = ty.read_text()
+        text = ty.read_text(encoding="utf-8")
         start = text.index("  merge_requires:")
         end = text.index("\n", start)
-        ty.write_text(text[:start] + f"  merge_requires: {json.dumps(reqs)}" + text[end:])
+        ty.write_text(text[:start] + f"  merge_requires: {json.dumps(reqs)}" + text[end:], encoding="utf-8")
 
     def test_open_records_the_pr_and_tells_the_hub(self):
         from yamato import inbox, pr
@@ -370,12 +375,12 @@ class PrTest(GitShipTestCase):
 
     def team_columns(self):
         ty = self.shipdir / "team.yaml"
-        ty.write_text(ty.read_text().replace("board:\n", "board:\n  columns:\n"
+        ty.write_text(ty.read_text(encoding="utf-8").replace("board:\n", "board:\n  columns:\n"
                                              "    - {name: todo, state: open}\n"
                                              "    - {name: doing, state: active}\n"
                                              "    - {name: review, state: active}\n"
                                              "    - {name: rebase, state: active}\n"
-                                             "    - {name: done, state: done}\n", 1))
+                                             "    - {name: done, state: done}\n", 1), encoding="utf-8")
 
     def test_open_needs_a_branch(self):
         from yamato import pr
@@ -415,7 +420,7 @@ class PrTest(GitShipTestCase):
 
         self.set_requires([])
         ty = self.shipdir / "team.yaml"
-        ty.write_text(ty.read_text().replace("strategy: squash", "strategy: rebase"))
+        ty.write_text(ty.read_text(encoding="utf-8").replace("strategy: squash", "strategy: rebase"), encoding="utf-8")
         tid = self.ready()
         _, out = self.quiet(pr.merge_pr, self.shipdir, self.team(), tid, by="impl")
         self.assertIn("(rebase)", out)
@@ -563,7 +568,7 @@ class PrTest(GitShipTestCase):
 
         self.set_requires([])
         ty = self.shipdir / "team.yaml"
-        ty.write_text(ty.read_text().replace("conflict: author", "conflict: pm"))
+        ty.write_text(ty.read_text(encoding="utf-8").replace("conflict: author", "conflict: pm"), encoding="utf-8")
         first = self.ready()
         second = self.ready()
         st = self.gh()
@@ -607,7 +612,7 @@ class TeamGitTest(ShipTestCase):
         deny = self.team()["deny"]
         self.assertNotIn("Bash(git push*)", deny)          # own-branch push is part of the flow
         for rule in ("Bash(git push --force*)", "Bash(git push -f*)", "Bash(git push *+*)", "Bash(gh pr create*)",
-                     "Bash(gh pr merge*)", f"Edit(/{self.workspace}/**)", f"Write(/{self.workspace}/**)"):
+                     "Bash(gh pr merge*)", f"Edit(/{runtime.rule_path(self.workspace)}/**)", f"Write(/{runtime.rule_path(self.workspace)}/**)"):
             self.assertIn(rule, deny)
 
     def test_validation(self):

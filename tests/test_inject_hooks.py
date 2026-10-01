@@ -35,8 +35,8 @@ class InjectTest(ShipTestCase):
         return rest if end == -1 else rest[:end]
 
     def test_sections_present(self):
-        (self.sdir / "handoff.md").write_text("前回: T-001 途中")
-        (self.rdir / "memory.md").write_text("モックは 30 日で切れる")
+        (self.sdir / "handoff.md").write_text("前回: T-001 途中", encoding="utf-8")
+        (self.rdir / "memory.md").write_text("モックは 30 日で切れる", encoding="utf-8")
         board.Board(self.shipdir, self.t).add("関数を足す", {"assignee": "impl"})
         inbox.append(self.shipdir, "impl", "pm", "T-001 を頼む")
         text, cur = self.build()
@@ -52,8 +52,8 @@ class InjectTest(ShipTestCase):
         self.assertNotIn("T-001", knowledge)
 
     def test_parts_follow_team_yaml(self):
-        (self.sdir / "handoff.md").write_text("HANDOFF-X")
-        (self.shipdir / "knowledge.md").write_text("KNOW-X")
+        (self.sdir / "handoff.md").write_text("HANDOFF-X", encoding="utf-8")
+        (self.shipdir / "knowledge.md").write_text("KNOW-X", encoding="utf-8")
         self.t["roles"]["impl"]["inject"] = ["knowledge"]
         text, _ = self.build()
         self.assertNotIn("HANDOFF-X", text)
@@ -66,14 +66,14 @@ class InjectTest(ShipTestCase):
         self.assertEqual(inject.build_knowledge(self.shipdir, self.t, "impl"), "")
 
     def test_limits_from_team_yaml(self):
-        (self.sdir / "handoff.md").write_text("\n".join(f"line{i}" for i in range(100)))
+        (self.sdir / "handoff.md").write_text("\n".join(f"line{i}" for i in range(100)), encoding="utf-8")
         self.t["inject"]["limits"]["handoff"] = [3, 1000]
         text, _ = self.build()
         self.assertIn("line2", text)
         self.assertNotIn("line3", text)
 
     def test_handoff_capped_by_lines(self):
-        (self.sdir / "handoff.md").write_text("\n".join(f"line{i}" for i in range(100)))
+        (self.sdir / "handoff.md").write_text("\n".join(f"line{i}" for i in range(100)), encoding="utf-8")
         text, _ = self.build(handoff=(40, 10000))
         self.assertIn("line39", text)
         self.assertNotIn("line40", text)
@@ -81,8 +81,8 @@ class InjectTest(ShipTestCase):
 
     def test_memory_and_knowledge_capped_by_memory_limits(self):
         """One set of limits: where memory apply refuses is where the injection cuts."""
-        (self.rdir / "memory.md").write_text("m" * 5000)
-        (self.shipdir / "knowledge.md").write_text("k" * 6000)
+        (self.rdir / "memory.md").write_text("m" * 5000, encoding="utf-8")
+        (self.shipdir / "knowledge.md").write_text("k" * 6000, encoding="utf-8")
         text = inject.build_knowledge(self.shipdir, self.t, "impl")
         self.assertIn("m" * 4000 + "\n…(memory.md が上限を超えている (5000 文字 (上限 4000 文字))", text)
         self.assertNotIn("m" * 4001, text)
@@ -157,7 +157,7 @@ class InjectTest(ShipTestCase):
         考え) — handoff など本業の部品は出た上で、fleet だけ読めない旨に置き換わること。"""
         from yamato.util import YamatoError
 
-        (self.sdir / "handoff.md").write_text("HANDOFF-Y")
+        (self.sdir / "handoff.md").write_text("HANDOFF-Y", encoding="utf-8")
         self.t["roles"]["impl"]["inject"] = [*self.t["inject"]["parts"], "fleet"]
         with mock.patch("yamato.claude.agents", side_effect=YamatoError("タイムアウトしました")):
             text, _ = self.build()
@@ -186,10 +186,10 @@ class InjectTest(ShipTestCase):
         self.assertIn("inbox", text)
 
     def test_total_cap(self):
-        (self.sdir / "handoff.md").write_text("h" * 3000)
+        (self.sdir / "handoff.md").write_text("h" * 3000, encoding="utf-8")
         for i in range(10):
             inbox.append(self.shipdir, "impl", "pm", "x" * 390)
-        (self.shipdir / "knowledge.md").write_text("k" * 3000)
+        (self.shipdir / "knowledge.md").write_text("k" * 3000, encoding="utf-8")
         text, cur = self.build(total_chars=3000, handoff=(40, 1500))
         self.assertLessEqual(len(text), 3000)
         shown = text.count("from pm")
@@ -197,19 +197,19 @@ class InjectTest(ShipTestCase):
         self.assertNotIn("k" * 100, text)   # knowledge.md is the other hook's
 
     def test_total_cap_keeps_the_whole_text_to_read(self):
-        (self.sdir / "handoff.md").write_text("\n".join(f"h{i:04d}" for i in range(1000)))
+        (self.sdir / "handoff.md").write_text("\n".join(f"h{i:04d}" for i in range(1000)), encoding="utf-8")
         text, _ = self.build(total_chars=500, handoff=(1000, 100000))
         full = self.shipdir / ".runtime" / "inject-impl-records.md"
         self.assertLessEqual(len(text), 500)
         self.assertTrue(text.endswith(f"…(注入の上限 500 文字で切った。全文は `{full}` を Read せよ)"))
-        self.assertIn("h0999", full.read_text())
+        self.assertIn("h0999", full.read_text(encoding="utf-8"))
 
     def test_no_handoff_shift_shows_log_tail(self):
         roster.start_shift(self.shipdir, "impl", session_id="a" * 36, short_id="aaaaaaaa",
                            session_name="t1.impl", how="new")
         roster.start_shift(self.shipdir, "impl", session_id="b" * 36, short_id="bbbbbbbb",
                            session_name="t1.impl", how="new")
-        (self.sdir / "log" / "2026-01-01.md").write_text("\n".join(f"- ev{i}" for i in range(50)))
+        (self.sdir / "log" / "2026-01-01.md").write_text("\n".join(f"- ev{i}" for i in range(50)), encoding="utf-8")
         text, _ = self.build()
         self.assertIn("引き継ぎなしで終わった", text)
         self.assertIn("ev49", text)
@@ -249,7 +249,7 @@ class HookTest(ShipTestCase):
         self.assertEqual(inbox.unread(self.shipdir, "impl"), [])
 
     def test_session_start_knowledge_is_its_own_hook(self):
-        (self.shipdir / "knowledge.md").write_text("KNOW-X")
+        (self.shipdir / "knowledge.md").write_text("KNOW-X", encoding="utf-8")
         code, out, _ = self.run_hook(hooks.session_start, {})
         self.assertNotIn("KNOW-X", json.loads(out)["hookSpecificOutput"]["additionalContext"])
         code, out, _ = self.run_hook(hooks.session_start_knowledge, {})
@@ -258,7 +258,7 @@ class HookTest(ShipTestCase):
         self.assertEqual(data["hookEventName"], "SessionStart")
         self.assertIn("KNOW-X", data["additionalContext"])
         # two hooks with different commands (one command twice would be merged into one)
-        settings = json.loads(runtime.settings_path(self.shipdir, "impl").read_text())
+        settings = json.loads(runtime.settings_path(self.shipdir, "impl").read_text(encoding="utf-8"))
         cmds = [(h["command"], tuple(h["args"])) for g in settings["hooks"]["SessionStart"] for h in g["hooks"]]
         self.assertEqual(len(set(cmds)), 2)
         self.assertTrue(any("session-start-knowledge" in args for _, args in cmds))
@@ -291,7 +291,10 @@ class HookTest(ShipTestCase):
     def test_wait_deadline_single_watcher(self):
         deadline.write(self.shipdir, limit=0, grace=600, token="t", now=time.time() - 1)
         pidfile = self.shipdir / ".runtime" / "wait-impl.pid"
-        pidfile.write_text("1\n")  # launchd: always alive
+        sleeper = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        self.addCleanup(sleeper.wait)
+        self.addCleanup(sleeper.kill)
+        pidfile.write_text(f"{sleeper.pid}\n", encoding="utf-8")   # 別の生きたプロセス (pid 1 は Windows に無い)
         self.assertEqual(self.run_hook(hooks.wait_deadline, {})[0], 0)
 
     def test_wait_deadline_exits_when_not_up(self):
@@ -302,7 +305,7 @@ class HookTest(ShipTestCase):
 
     def _make_no_time_limit(self):
         ty = self.shipdir / "team.yaml"
-        ty.write_text(ty.read_text().replace("time_limit: 3h", "time_limit: none"))
+        ty.write_text(ty.read_text(encoding="utf-8").replace("time_limit: 3h", "time_limit: none"), encoding="utf-8")
         runtime.generate(self.shipdir, self.team())
 
     def test_wait_deadline_wakes_for_inbox_with_no_deadline_at_all(self):
@@ -353,16 +356,16 @@ class HookTest(ShipTestCase):
     def test_wait_deadline_leaves_when_the_pidfile_names_another_watcher(self):
         self._make_no_time_limit()
         pidfile = self.shipdir / ".runtime" / "wait-impl.pid"
-        sleep, calls = self._stop_after(1, lambda: pidfile.write_text("1 1\n"))
+        sleep, calls = self._stop_after(1, lambda: pidfile.write_text("1 1\n", encoding="utf-8"))
         with mock.patch.object(hooks.time, "sleep", side_effect=sleep):
             self.assertEqual(self.run_hook(hooks.wait_deadline, {})[0], 0)
         self.assertEqual(len(calls), 1)
-        self.assertEqual(pidfile.read_text(), "1 1\n")   # the other watcher's file is not ours to remove
+        self.assertEqual(pidfile.read_text(encoding="utf-8"), "1 1\n")   # the other watcher's file is not ours to remove
 
     def test_wait_deadline_takes_over_from_a_live_watcher_of_an_older_shift(self):
         self._make_no_time_limit()
         pidfile = self.shipdir / ".runtime" / "wait-impl.pid"
-        pidfile.write_text("1 0\n")   # launchd: always alive, but for shift 0
+        pidfile.write_text("1 0\n", encoding="utf-8")   # launchd: always alive, but for shift 0
         inbox.append(self.shipdir, "impl", "owner", "hello")
         self.assertEqual(self.run_hook(hooks.wait_deadline, {})[0], 2)
 
@@ -402,9 +405,9 @@ class HookTest(ShipTestCase):
     def test_wait_deadline_takes_a_team_json_without_time_limit_as_a_normal_ship(self):
         # not "none": an older / hand-edited runtime team.json has no key at all
         path = self.shipdir / ".runtime" / "team.json"
-        team = json.loads(path.read_text())
+        team = json.loads(path.read_text(encoding="utf-8"))
         team.pop("time_limit", None)
-        path.write_text(json.dumps(team))
+        path.write_text(json.dumps(team), encoding="utf-8")
         self.assertIsNone(deadline.read(self.shipdir))
         inbox.append(self.shipdir, "impl", "owner", "hello")
         self.assertEqual(self.run_hook(hooks.wait_deadline, {})[0], 0)   # no deadline yet → returns, as before ``up``
@@ -476,7 +479,7 @@ class HookTest(ShipTestCase):
         first = hooks.take_inbox_wake(self.shipdir, "impl", seats)
         self.assertEqual(len(first), 1)
         ipath = inbox.path(self.shipdir, "impl")
-        offset_after_first = json.loads((self.shipdir / ".runtime" / "inbox-wake-impl.json").read_text())["offset"]
+        offset_after_first = json.loads((self.shipdir / ".runtime" / "inbox-wake-impl.json").read_text(encoding="utf-8"))["offset"]
         self.assertEqual(offset_after_first, ipath.stat().st_size)
         inbox.append(self.shipdir, "impl", "owner", "2件目")
         # 前回までの範囲をもう一度パースしていないことを確かめる: 追記後のバイトだけ読む
@@ -508,7 +511,7 @@ class HookTest(ShipTestCase):
         inbox.mark_read(self.shipdir, "impl", 1)
         inbox.append(self.shipdir, "impl", "owner", "2件目")
         hooks.take_inbox_wake(self.shipdir, "impl", seats)
-        pending = json.loads((self.shipdir / ".runtime" / "inbox-wake-impl.json").read_text())["pending"]
+        pending = json.loads((self.shipdir / ".runtime" / "inbox-wake-impl.json").read_text(encoding="utf-8"))["pending"]
         self.assertEqual([e["n"] for e in pending], [2])   # 読まれた #1 はキャッシュから落ちている
 
     # --- the time limit inside a long turn (§0 B4) ---
@@ -597,7 +600,7 @@ class HookTest(ShipTestCase):
             with mock.patch.object(hooks.time, "time", return_value=time.time() + hooks.FORCE_STOP_RETRY):
                 self.run_hook(hooks.pre_tool_use, {"session_id": "t" * 36})
         self.assertEqual(spawn.call_count, 4)
-        self.assertIn("強制停止", next((self.shipdir / "seats/impl/log").glob("*.md")).read_text())
+        self.assertIn("強制停止", next((self.shipdir / "seats/impl/log").glob("*.md")).read_text(encoding="utf-8"))
 
     def test_pre_tool_use_denies_even_if_the_stop_cannot_be_set(self):
         self.past(-1)
@@ -645,12 +648,12 @@ class HookTest(ShipTestCase):
         spawn.assert_called_once()
 
     def test_pre_tool_use_hook_is_wired_and_skips_the_cli(self):
-        settings = json.loads(runtime.settings_path(self.shipdir, "impl").read_text())
+        settings = json.loads(runtime.settings_path(self.shipdir, "impl").read_text(encoding="utf-8"))
         [h] = [h for g in settings["hooks"]["PreToolUse"] for h in g["hooks"]]
         self.assertEqual(h["args"][1:3], ["hook", "pre-tool-use"])
         deadline.write(self.shipdir, limit=600, grace=60, token="t")
         cp = subprocess.run([sys.executable, "-X", "importtime", str(YAMATO_BIN), "hook", "pre-tool-use",
-                             str(self.shipdir), "impl"], capture_output=True, text=True, stdin=subprocess.DEVNULL)
+                             str(self.shipdir), "impl"], capture_output=True, text=True, encoding="utf-8", stdin=subprocess.DEVNULL)
         self.assertEqual((cp.returncode, cp.stdout), (0, ""))
         loaded = [ln.rsplit("|", 1)[-1].strip() for ln in cp.stderr.splitlines() if "yamato" in ln]
         self.assertEqual(loaded, ["yamato", "yamato.pretool"])
@@ -659,7 +662,7 @@ class HookTest(ShipTestCase):
         code, out, _ = self.run_hook(hooks.deny_dialog, {"tool_name": "Write", "tool_input": {"file_path": "x"}})
         d = json.loads(out)["hookSpecificOutput"]
         self.assertEqual(d["decision"]["behavior"], "deny")
-        log = next((self.shipdir / "seats/impl/log").glob("*.md")).read_text()
+        log = next((self.shipdir / "seats/impl/log").glob("*.md")).read_text(encoding="utf-8")
         self.assertIn("自動で拒否: Write", log)
 
 

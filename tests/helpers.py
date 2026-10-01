@@ -124,7 +124,7 @@ class ShipTestCase(unittest.TestCase):
         self.config = self.tmp / "claude-config"
         self.config.mkdir()
         (self.config / ".claude.json").write_text(json.dumps(
-            {"projects": {str(self.workspace): {"hasTrustDialogAccepted": True}}}))
+            {"projects": {str(self.workspace): {"hasTrustDialogAccepted": True}}}), encoding="utf-8")
         self.fake_state = self.tmp / "fake.json"
         self._env = {
             "YAMATO_HOME": str(self.tmp / "home"),
@@ -143,7 +143,7 @@ class ShipTestCase(unittest.TestCase):
         self.shipdir, self.create_warnings = ship.create("t1", str(self.workspace), None, "dev")
         if self.team_yaml_extra:
             ty = self.shipdir / "team.yaml"
-            ty.write_text(ty.read_text() + self.team_yaml_extra)
+            ty.write_text(ty.read_text(encoding="utf-8") + self.team_yaml_extra, encoding="utf-8")
 
     def tearDown(self):
         for k, v in self._old.items():
@@ -160,11 +160,11 @@ class ShipTestCase(unittest.TestCase):
 
     def fake(self) -> dict:
         try:
-            return json.loads(self.fake_state.read_text())
+            return json.loads(self.fake_state.read_text(encoding="utf-8"))
         except FileNotFoundError:
             return {"sessions": [], "calls": []}
 
     def set_fake_mode(self, **mode):
         st = self.fake()
         st["mode"] = mode
-        self.fake_state.write_text(json.dumps(st))
+        self.fake_state.write_text(json.dumps(st), encoding="utf-8")

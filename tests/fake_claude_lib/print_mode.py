@@ -47,7 +47,7 @@ def _run_session_start(settings, sid):
         for h in group.get("hooks", []):
             # exec form (`args` present): command + args, no shell; otherwise a shell string
             argv, shell = ([h["command"], *h["args"]], False) if "args" in h else (h["command"], True)
-            subprocess.run(argv, shell=shell, env=env, capture_output=True, text=True,
+            subprocess.run(argv, shell=shell, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace",
                            input=json.dumps({"session_id": sid, "source": "startup"}))
 
 
@@ -103,7 +103,7 @@ def run(argv, mode):
         (Path(ship) / "seats" / seat / "handoff.md").write_text("# 引き継ぎ\n- 次: なし\n")
         yamato = Path(__file__).resolve().parents[2] / "yamato"
         subprocess.run([sys.executable, str(yamato), "seat-stop", ship, seat],
-                       env=dict(os.environ, CLAUDE_CODE_SESSION_ID=sid), capture_output=True, text=True)
+                       env=dict(os.environ, CLAUDE_CODE_SESSION_ID=sid), capture_output=True, text=True, encoding="utf-8", errors="replace")
     if mode.get("p_no_result"):
         return 1
     status = mode.get("p_api_error")

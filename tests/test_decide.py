@@ -164,7 +164,7 @@ class OpenTest(DecideTestCase):
         meta, out = self.open(blocks=[t1["id"], t2["id"]], due="2026-10-01")
         self.assertEqual(meta["id"], "D-001")
         path = self.shipdir / "board/items/D-001.md"
-        m, body = board.loads(path.read_text())
+        m, body = board.loads(path.read_text(encoding="utf-8"))
         self.assertEqual({k: m[k] for k in ("kind", "category", "decider", "opened_by", "state", "due", "links")},
                          {"kind": "decision", "category": "design", "decider": "pm", "opened_by": "impl",
                           "state": "open", "due": "2026-10-01", "links": ["T-001", "T-002"]})
@@ -251,7 +251,7 @@ class OpenTest(DecideTestCase):
         self.assertIn("通知 mac: exit 0", out)
 
         ty = self.shipdir / "team.yaml"
-        ty.write_text(ty.read_text().replace("decisions: digest", "decisions: each"))
+        ty.write_text(ty.read_text(encoding="utf-8").replace("decisions: digest", "decisions: each"), encoding="utf-8")
         with mock.patch.object(decide.notify, "notify", return_value=[]) as n:
             self.open(category="merge", title="1 件ずつ")
         n.assert_called_once()
@@ -271,7 +271,7 @@ class CloseTest(DecideTestCase):
         self.assertTrue(result["by_decider"])
 
         self.assertFalse((self.shipdir / "board/items/D-001.md").exists())
-        m, body = board.loads((self.shipdir / "board/archive/D-001.md").read_text())
+        m, body = board.loads((self.shipdir / "board/archive/D-001.md").read_text(encoding="utf-8"))
         self.assertEqual((m["state"], m["closed_by"], m["on_behalf_of"]), ("done", "pm", "pm"))
         self.assertIn("## 決定\n- 決定: JWT\n- 理由: モバイルからも使う\n- 決めた人: pm\n- 閉じた席: pm", body)
         self.assertNotIn("(閉じるときに yamato が書く)", body)
@@ -289,7 +289,7 @@ class CloseTest(DecideTestCase):
         self.assertEqual(inbox.entries(self.shipdir, "pm")[1:], [])   # [0] is the open request
         self.assertIn("閉じた本人なので送らない", out)
 
-        log = (self.shipdir / "decisions/log.md").read_text()
+        log = (self.shipdir / "decisions/log.md").read_text(encoding="utf-8")
         self.assertIn("## D-001 認証方式 (", log)
         self.assertIn(", pm)\n- 決定: JWT\n- 理由: モバイルからも使う\n- 止まっていたもの: T-001, T-002\n"
                       "- 項目: board/archive/D-001.md", log)
@@ -320,8 +320,8 @@ class CloseTest(DecideTestCase):
         m, body, _ = self.brd.read("D-001")
         self.assertEqual((m["closed_by"], m["on_behalf_of"]), ("pm", "owner"))
         self.assertIn("決めた人: owner (代筆: pm)", body)
-        self.assertIn("## D-001 入れるか (", (self.shipdir / "decisions/log.md").read_text())
-        self.assertIn(", owner / 代筆 pm)", (self.shipdir / "decisions/log.md").read_text())
+        self.assertIn("## D-001 入れるか (", (self.shipdir / "decisions/log.md").read_text(encoding="utf-8"))
+        self.assertIn(", owner / 代筆 pm)", (self.shipdir / "decisions/log.md").read_text(encoding="utf-8"))
 
     def test_a_non_decider_may_close_and_it_is_recorded(self):
         self.open(sid=SID_PM, category="merge")   # decider owner
@@ -330,7 +330,7 @@ class CloseTest(DecideTestCase):
         m, body, _ = self.brd.read("D-001")
         self.assertEqual(m["state"], "done")
         self.assertIn("注意: decider (owner) 以外が閉じた", body)
-        self.assertIn("注意: decider (owner) 以外が閉じた", (self.shipdir / "decisions/log.md").read_text())
+        self.assertIn("注意: decider (owner) 以外が閉じた", (self.shipdir / "decisions/log.md").read_text(encoding="utf-8"))
         [e] = events.read(self.shipdir, kinds=events.DECISION_CLOSE)
         self.assertFalse(e["data"]["by_decider"])
         self.assertIn("以外が閉じた", e["summary"])
@@ -372,7 +372,7 @@ class CloseTest(DecideTestCase):
     def test_decider_is_fixed_when_opened(self):
         self.open(category="design")    # pm
         ty = self.shipdir / "team.yaml"
-        ty.write_text(ty.read_text().replace("design:       { decider: pm,", "design:       { decider: owner,"))
+        ty.write_text(ty.read_text(encoding="utf-8").replace("design:       { decider: pm,", "design:       { decider: owner,"), encoding="utf-8")
         self.assertEqual(self.team()["decisions"]["design"]["decider"], "owner")
         result, _ = self.close("D-001", sid=SID_PM)
         self.assertTrue(result["by_decider"])
@@ -390,11 +390,11 @@ class CloseTest(DecideTestCase):
         d2, _ = self.open(supersedes="D-001")
         self.assertEqual(d2["supersedes"], "D-001")
         self.close(d2["id"])
-        self.assertIn("覆したもの: D-001", (self.shipdir / "decisions/log.md").read_text())
+        self.assertIn("覆したもの: D-001", (self.shipdir / "decisions/log.md").read_text(encoding="utf-8"))
 
     def test_board_archive_moves_closed_decisions_too(self):
         ty = self.shipdir / "team.yaml"
-        ty.write_text(ty.read_text().replace("archive_on_done: true", "archive_on_done: false"))
+        ty.write_text(ty.read_text(encoding="utf-8").replace("archive_on_done: true", "archive_on_done: false"), encoding="utf-8")
         self.open()
         self.close("D-001")
         self.assertTrue((self.shipdir / "board/items/D-001.md").exists())
@@ -453,7 +453,7 @@ class CliTest(DecideTestCase):
         ship = str(self.shipdir)
         self.task(assignee="impl", state="active")
         body = self.tmp / "body.md"
-        body.write_text("## 背景\nb\n")
+        body.write_text("## 背景\nb\n", encoding="utf-8")
         code, out, _ = self.run_cli("decide", "open", ship, "--category", "design", "--title", "API の形",
                                     "--blocks", "T-001", "--body-file", str(body), "--urgent")
         self.assertEqual(code, 0)
@@ -489,7 +489,7 @@ class EventsReviewNitsTest(DecideTestCase):
         self.assertEqual(events.emit(self.shipdir, events.SEND, now=0.0)["ts"], 0.0)
 
     def test_lines_without_a_numeric_ts_are_skipped(self):
-        with open(events.path(self.shipdir), "a") as f:
+        with open(events.path(self.shipdir), "a", encoding="utf-8") as f:
             for ts in ('"yesterday"', "null", "true"):
                 f.write(json.dumps({"kind": "x"})[:-1] + f', "ts": {ts}}}\n')
             f.write('{"kind": "y"}\n')

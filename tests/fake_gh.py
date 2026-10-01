@@ -26,18 +26,18 @@ def main(argv, *, cwd=None, env=None, out=None, err=None) -> int:
     path = env["FAKE_GH_STATE"]
 
     def locked(fn):
-        with open(path + ".lock", "a") as lk:
+        with open(path + ".lock", "a", encoding="utf-8") as lk:
             lock_file(lk)
             try:
                 try:
-                    with open(path) as f:
+                    with open(path, encoding="utf-8") as f:
                         st = json.load(f)
                 except (FileNotFoundError, ValueError):
                     st = {}
                 st.setdefault("prs", {})
                 st.setdefault("calls", [])
                 result = fn(st)
-                with open(path, "w") as f:
+                with open(path, "w", encoding="utf-8") as f:
                     json.dump(st, f)
                 return result
             finally:

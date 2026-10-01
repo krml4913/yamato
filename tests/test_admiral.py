@@ -1,4 +1,5 @@
 """admiral の CLI (design-p1 §6) against tests/fake_claude.py."""
+import contextlib
 import io
 import json
 import subprocess
@@ -9,9 +10,22 @@ from contextlib import redirect_stdout
 from unittest import mock
 
 from tests.helpers import ShipTestCase
-from yamato import admiral, board, claude, cli, deadline, events, headless, inbox, report, roster, seat, ship
+from yamato import admiral, board, claude, cli, deadline, events, headless, inbox, procs, report, roster, seat, ship
 from yamato.team import load_team
 from yamato.util import YamatoError, load_registry, yamato_home
+
+
+@contextlib.contextmanager
+def posix_foreground():
+    """``run_foreground`` の中だけ POSIX の枝 (execvp を呼ぶ) にする。Windows 機では差し替えた
+    execvp が無視され、本物の ``claude attach`` を走らせてしまう (T-050)。"""
+    real = procs.run_foreground
+
+    def fg(argv, **kw):
+        with mock.patch.object(procs, "is_windows", return_value=False):
+            return real(argv, **kw)
+    with mock.patch.object(procs, "run_foreground", fg):
+        yield
 
 
 class AdmiralTest(ShipTestCase):
@@ -27,7 +41,7 @@ class AdmiralTest(ShipTestCase):
 
     def run_cmd(self, fn, *args, **kw):
         buf = io.StringIO()
-        with redirect_stdout(buf):
+        with redirect_stdout(buf), posix_foreground():
             fn(*args, **kw)
         return buf.getvalue()
 
@@ -50,14 +64,14 @@ class AdmiralTest(ShipTestCase):
         for s in st["sessions"]:
             if s["sessionId"] == roster.seat(self.shipdir, name)["sessionId"]:
                 s["pid"] = None
-        self.fake_state.write_text(json.dumps(st))
+        self.fake_state.write_text(json.dumps(st), encoding="utf-8")
 
     def set_session(self, name, **fields):
         st = self.fake()
         for s in st["sessions"]:
             if s["sessionId"] == roster.seat(self.shipdir, name)["sessionId"]:
                 s.update(fields)
-        self.fake_state.write_text(json.dumps(st))
+        self.fake_state.write_text(json.dumps(st), encoding="utf-8")
 
     # --- up --seats ---
 
@@ -75,9 +89,9 @@ class AdmiralTest(ShipTestCase):
 
     def add_headless_role(self):
         ty = self.shipdir / "team.yaml"
-        ty.write_text(ty.read_text().replace(
-            "roles:\n", "roles:\n  researcher:\n    shift: headless\n    description: 調査担当\n", 1))
-        (self.shipdir / "roles" / "researcher.md").write_text("あなたは researcher です。\n")
+        ty.write_text(ty.read_text(encoding="utf-8").replace(
+            "roles:\n", "roles:\n  researcher:\n    shift: headless\n    description: 調査担当\n", 1), encoding="utf-8")
+        (self.shipdir / "roles" / "researcher.md").write_text("あなたは researcher です。\n", encoding="utf-8")
         seat.prepare(self.shipdir)
 
     def test_up_seats_starts_a_headless_seat(self):
@@ -90,7 +104,7 @@ class AdmiralTest(ShipTestCase):
 
     def test_up_seats_wakes_the_rest_when_one_seat_fails(self):
         ty = self.shipdir / "team.yaml"
-        ty.write_text(ty.read_text().replace("    count: 1 ", "    count: 3 ", 1))
+        ty.write_text(ty.read_text(encoding="utf-8").replace("    count: 1 ", "    count: 3 ", 1), encoding="utf-8")
         real = seat.wake
 
         def wake(shipdir, team, s, reason="send"):
@@ -183,7 +197,7 @@ class AdmiralTest(ShipTestCase):
         self.run_cmd(seat.up, self.shipdir, "20m")
         self.run_cmd(seat.down, self.shipdir, False)   # deadline = now
         notice = self.shipdir / ".runtime" / "wrapup-pm.json"
-        notice.write_text(json.dumps({"shiftNo": 1, "count": 3}))
+        notice.write_text(json.dumps({"shiftNo": 1, "count": 3}), encoding="utf-8")
         out = self.run_cmd(admiral.extend, self.shipdir, "30m")
         dl = deadline.read(self.shipdir)
         self.assertEqual(deadline.phase(dl), deadline.RUNNING)
@@ -270,7 +284,7 @@ class AdmiralTest(ShipTestCase):
 
     def test_stale_after_is_set_in_team_yaml(self):
         ty = self.shipdir / "team.yaml"
-        ty.write_text(ty.read_text().replace("stale_after: 20m", "stale_after: 30m"))
+        ty.write_text(ty.read_text(encoding="utf-8").replace("stale_after: 20m", "stale_after: 30m"), encoding="utf-8")
         self.run_cmd(seat.up, self.shipdir, "1h")
         with mock.patch.object(seat, "_last_active", return_value=time.time() - 25 * 60):
             out = self.run_cmd(seat.status, self.shipdir)
@@ -327,14 +341,14 @@ class AdmiralTest(ShipTestCase):
     def test_ships_one_line_per_ship(self):
         self.cli("up", str(self.shipdir), "--for", "1h")
         (self.shipdir / "board" / "items" / "D-1.md").write_text(
-            "---\nid: D-1\ntitle: 認証\nkind: decision\nstate: open\ndecider: owner\n---\n")
+            "---\nid: D-1\ntitle: 認証\nkind: decision\nstate: open\ndecider: owner\n---\n", encoding="utf-8")
         (self.shipdir / "board" / "items" / "D-2.md").write_text(
-            "---\nid: D-2\ntitle: 内部\nkind: decision\nstate: open\ndecider: pm\n---\n")
-        with open(self.shipdir / "usage.jsonl", "a") as f:
+            "---\nid: D-2\ntitle: 内部\nkind: decision\nstate: open\ndecider: pm\n---\n", encoding="utf-8")
+        with open(self.shipdir / "usage.jsonl", "a", encoding="utf-8") as f:
             f.write(json.dumps({"ts": time.time(), "total_tokens": 12000}) + "\n")
             f.write(json.dumps({"ts": time.time() - 3 * 86400, "total_tokens": 99000}) + "\n")
         (self.shipdir / "reports" / "daily").mkdir(parents=True)
-        (self.shipdir / "reports" / "daily" / "2026-09-25.md").write_text("# x\n")
+        (self.shipdir / "reports" / "daily" / "2026-09-25.md").write_text("# x\n", encoding="utf-8")
         self.set_fake_mode(waitingFor="permission prompt")
         self.cli("send", str(self.shipdir), "impl", "go")   # impl comes up waiting on a prompt
 
@@ -390,7 +404,7 @@ class AdmiralTest(ShipTestCase):
 
     def test_talk_default_comes_from_team_yaml(self):
         ty = self.shipdir / "team.yaml"
-        ty.write_text(ty.read_text().replace("talk_default: pm", "talk_default: impl"))
+        ty.write_text(ty.read_text(encoding="utf-8").replace("talk_default: pm", "talk_default: impl"), encoding="utf-8")
         seat.prepare(self.shipdir)
         self.run_cmd(seat.up, self.shipdir, "1h")
         calls = []
@@ -399,7 +413,7 @@ class AdmiralTest(ShipTestCase):
 
     def test_talk_default_must_be_a_seat(self):
         ty = self.shipdir / "team.yaml"
-        ty.write_text(ty.read_text().replace("talk_default: pm", "talk_default: nope"))
+        ty.write_text(ty.read_text(encoding="utf-8").replace("talk_default: pm", "talk_default: nope"), encoding="utf-8")
         with self.assertRaises(YamatoError):
             self.team()
 
@@ -445,7 +459,7 @@ class AdmiralTest(ShipTestCase):
         subprocess.run([*git, "-C", str(repo), "worktree", "add", "-q", str(wt)], check=True)
         self.assertFalse(claude.is_trusted(wt))
         (self.config / ".claude.json").write_text(json.dumps(
-            {"projects": {str(repo.resolve()): {"hasTrustDialogAccepted": True}}}))
+            {"projects": {str(repo.resolve()): {"hasTrustDialogAccepted": True}}}), encoding="utf-8")
         self.assertTrue(claude.is_trusted(wt))
         from yamato import ship
 
@@ -480,16 +494,16 @@ class AdmiralUpCommandTest(ShipTestCase):
         self.addCleanup(p2.stop)
         # the admiral's workspace is `_admiral/` itself (template `workspace: .`): trust it
         # too, the same way ShipTestCase already trusts `self.workspace` for "t1"
-        cc = json.loads((self.config / ".claude.json").read_text())
+        cc = json.loads((self.config / ".claude.json").read_text(encoding="utf-8"))
         cc["projects"][str(self.admdir())] = {"hasTrustDialogAccepted": True}
-        (self.config / ".claude.json").write_text(json.dumps(cc))
+        (self.config / ".claude.json").write_text(json.dumps(cc), encoding="utf-8")
 
     def admdir(self):
         return yamato_home() / "_admiral"
 
     def run_cmd(self, fn, *args, **kw):
         buf = io.StringIO()
-        with redirect_stdout(buf):
+        with redirect_stdout(buf), posix_foreground():
             fn(*args, **kw)
         return buf.getvalue()
 
@@ -509,7 +523,7 @@ class AdmiralUpCommandTest(ShipTestCase):
         for s in st["sessions"]:
             if s["sessionId"] == sid:
                 s["pid"] = None
-        self.fake_state.write_text(json.dumps(st))
+        self.fake_state.write_text(json.dumps(st), encoding="utf-8")
 
     # --- ensure_admiral: built once, unregistered ---
 
@@ -633,7 +647,7 @@ class AdmiralUpCommandTest(ShipTestCase):
             out = self.run_cmd(admiral.admiral_stop, True)
         self.assertIn("強制停止した: admiral", out)
         self.assertFalse(self.alive_seat(admdir, "admiral"))
-        self.assertIn("force_stop", (admdir / "events.jsonl").read_text())
+        self.assertIn("force_stop", (admdir / "events.jsonl").read_text(encoding="utf-8"))
 
     # --- rotate: 艦の席と同じ roles.<role>.rotate が効く (T-021 の完了条件 4) ---
 
@@ -651,7 +665,7 @@ class AdmiralUpCommandTest(ShipTestCase):
         self.run_cmd(admiral.admiral_talk, execvp=lambda f, a: None)
         admdir = self.admdir()
         sid = roster.seat(admdir, "admiral")["sessionId"]
-        (admdir / "seats" / "admiral" / "handoff.md").write_text("引き継ぎ\n")
+        (admdir / "seats" / "admiral" / "handoff.md").write_text("引き継ぎ\n", encoding="utf-8")
         with mock.patch.dict("os.environ", {"CLAUDE_CODE_SESSION_ID": sid}):
             rc, out = self.cli("seat-stop", str(admdir), "admiral", "--delivered")
         self.assertEqual(rc, 0)
