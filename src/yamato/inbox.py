@@ -58,7 +58,7 @@ def append(shipdir: Path, seat: str, sender: str, text: str) -> dict:
 
 def cursor(shipdir: Path, seat: str) -> int:
     try:
-        return int(_cursor(shipdir, seat).read_text().strip() or 0)
+        return int(_cursor(shipdir, seat).read_text(encoding="utf-8").strip() or 0)
     except (FileNotFoundError, ValueError):
         return 0
 

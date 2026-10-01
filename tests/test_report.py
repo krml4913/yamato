@@ -194,12 +194,12 @@ class MakeAndSendTest(ReportTestCase):
     def test_make_does_not_overwrite_the_captains_text(self):
         path = report.make(self.shipdir, self.team(), DATE)
         self.assertEqual(path, self.shipdir / "reports" / "daily" / f"{DATE}.md")
-        path.write_text(path.read_text().replace(report.CAPTAIN_BLANK, "書いた", 1))
+        path.write_text(path.read_text(encoding="utf-8").replace(report.CAPTAIN_BLANK, "書いた", 1), encoding="utf-8")
         with self.assertRaises(YamatoError):
             report.make(self.shipdir, self.team(), DATE)
-        self.assertIn("書いた", path.read_text())
+        self.assertIn("書いた", path.read_text(encoding="utf-8"))
         report.make(self.shipdir, self.team(), DATE, force=True)
-        self.assertNotIn("書いた", path.read_text())
+        self.assertNotIn("書いた", path.read_text(encoding="utf-8"))
         made = events.read(self.shipdir, kinds=report.REPORT_MADE)
         self.assertEqual([e["data"]["date"] for e in made], [DATE, DATE])
 
@@ -222,7 +222,7 @@ class MakeAndSendTest(ReportTestCase):
 
     def test_send_notifies_with_the_file_contents(self):
         path = report.make(self.shipdir, self.team(), DATE)
-        path.write_text(path.read_text().replace(report.CAPTAIN_BLANK, "T-042 は merge 待ち", 1))
+        path.write_text(path.read_text(encoding="utf-8").replace(report.CAPTAIN_BLANK, "T-042 は merge 待ち", 1), encoding="utf-8")
         with mock.patch("yamato.report.notify.notify", return_value=["通知 slack: 送った"]) as n:
             self.assertEqual(report.send(self.shipdir, self.team(), DATE), ["通知 slack: 送った"])
         [call] = n.call_args_list
@@ -246,15 +246,15 @@ class SafetyNetTest(ReportTestCase):
             self.assertEqual(report.safety_net(self.shipdir, self.team(), "again", DATE), [])
         self.assertEqual(n.call_count, 1)
         self.assertIn("captain が書けなかった (理由: 強制停止 (down-force))",
-                      report.report_path(self.shipdir, DATE).read_text())
+                      report.report_path(self.shipdir, DATE).read_text(encoding="utf-8"))
 
     def test_sends_the_captains_unsent_report_as_is(self):
         path = report.make(self.shipdir, self.team(), DATE)
-        path.write_text(path.read_text().replace(report.CAPTAIN_BLANK, "captain の一言", 1))
+        path.write_text(path.read_text(encoding="utf-8").replace(report.CAPTAIN_BLANK, "captain の一言", 1), encoding="utf-8")
         with mock.patch("yamato.report.notify.notify", return_value=[]) as n:
             self.assertEqual(report.safety_net(self.shipdir, self.team(), "x", DATE), [])
         self.assertIn("captain の一言", n.call_args.args[2])
-        self.assertIn("captain の一言", path.read_text())
+        self.assertIn("captain の一言", path.read_text(encoding="utf-8"))
 
     def test_nothing_after_the_captain_sent(self):
         report.make(self.shipdir, self.team(), DATE)
@@ -267,8 +267,8 @@ class SafetyNetTest(ReportTestCase):
         # e2e-p1 E: the captain reported at its first stop; work went on afterwards
         day = time.strftime("%Y-%m-%d")
         path = report.make(self.shipdir, self.team(), day)
-        path.write_text(path.read_text().replace(report.CAPTAIN_BLANK, "一言 A", 1)
-                        .replace(report.CAPTAIN_BLANK, "明日 B\n- 二行目", 1))
+        path.write_text(path.read_text(encoding="utf-8").replace(report.CAPTAIN_BLANK, "一言 A", 1)
+                        .replace(report.CAPTAIN_BLANK, "明日 B\n- 二行目", 1), encoding="utf-8")
         with mock.patch("yamato.report.notify.notify", return_value=[]):
             report.send(self.shipdir, self.team(), day)
         events.emit(self.shipdir, events.SHIFT_END, seat="pm", data={"shiftNo": 1, "handoffWritten": True})
@@ -282,7 +282,7 @@ class SafetyNetTest(ReportTestCase):
         self.assertIn("事実の節を作り直した", lines[0])
         [call] = n.call_args_list
         self.assertEqual(call.args[1], f"yamato t1: 日報 {day} (更新)")
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
         self.assertIn("D-009 merge する?", text)
         secs = report.sections(text)
         self.assertEqual((secs[report.S_WORD], secs[report.S_TOMORROW]), ("一言 A", "明日 B\n- 二行目"))
@@ -293,7 +293,7 @@ class SafetyNetTest(ReportTestCase):
 
         day = time.strftime("%Y-%m-%d")
         path = report.make(self.shipdir, self.team(), day)
-        path.write_text(path.read_text().replace(report.CAPTAIN_BLANK, "一言 A", 1))
+        path.write_text(path.read_text(encoding="utf-8").replace(report.CAPTAIN_BLANK, "一言 A", 1), encoding="utf-8")
         report.send(self.shipdir, self.team(), day)
         with redirect_stdout(io.StringIO()) as out:
             self.assertEqual(cli.main(["report", "daily", str(self.shipdir)]), 0)
@@ -302,7 +302,7 @@ class SafetyNetTest(ReportTestCase):
         with redirect_stdout(io.StringIO()) as out:
             self.assertEqual(cli.main(["report", "daily", str(self.shipdir)]), 0)
         self.assertIn("「更新」", out.getvalue())
-        self.assertIn("一言 A", path.read_text())
+        self.assertIn("一言 A", path.read_text(encoding="utf-8"))
         with mock.patch("yamato.report.notify.notify", return_value=[]) as n:
             report.send(self.shipdir, self.team(), day)
         self.assertTrue(n.call_args.args[1].endswith("(更新)"))
@@ -327,7 +327,7 @@ class SafetyNetTest(ReportTestCase):
         today = time.strftime("%Y-%m-%d")
         self.assertTrue(report.report_path(self.shipdir, today).exists())
         self.assertIn("事実だけで作った", out.getvalue())
-        self.assertIn("captain が動いていなかった", report.report_path(self.shipdir, today).read_text())
+        self.assertIn("captain が動いていなかった", report.report_path(self.shipdir, today).read_text(encoding="utf-8"))
 
     def test_down_of_a_ship_not_up_makes_nothing(self):
         from yamato import seat
@@ -342,10 +342,10 @@ class InjectTest(ReportTestCase):
     def test_captain_reads_only_three_sections_of_the_latest_report(self):
         d = report.reports_dir(self.shipdir)
         d.mkdir(parents=True)
-        (d / "2026-09-25.md").write_text("# old\n## 一言\n古い\n")
+        (d / "2026-09-25.md").write_text("# old\n## 一言\n古い\n", encoding="utf-8")
         (d / f"{DATE}.md").write_text(
             "# t1 日報\n## 一言\n新しい一言\n\n## owner の判断待ち (1 件)\n- D-007 認証\n\n"
-            "## 今日終わったもの\n- T-041 ヘッダー\n\n## 異常\n- なし\n\n## 明日\n- T-044 から\n")
+            "## 今日終わったもの\n- T-041 ヘッダー\n\n## 異常\n- なし\n\n## 明日\n- T-044 から\n", encoding="utf-8")
         text, _ = inject.build(self.shipdir, self.team(), "pm")
         part = text.split("## 前回の日報")[1]
         self.assertIn(f"({DATE}。全文: {d / (DATE + '.md')})", part)
@@ -371,10 +371,10 @@ class ConfigAndCliTest(ReportTestCase):
         from yamato.team import load_team
 
         ty = self.shipdir / "team.yaml"
-        base = ty.read_text()
-        ty.write_text(base.replace("daily: on_down", "daily: off"))
+        base = ty.read_text(encoding="utf-8")
+        ty.write_text(base.replace("daily: on_down", "daily: off"), encoding="utf-8")
         self.assertEqual(load_team(self.shipdir)["report"], {"daily": "off"})
-        ty.write_text(base.replace("daily: on_down", "daily: always"))
+        ty.write_text(base.replace("daily: on_down", "daily: always"), encoding="utf-8")
         with self.assertRaises(YamatoError):
             load_team(self.shipdir)
 
@@ -398,4 +398,4 @@ class ConfigAndCliTest(ReportTestCase):
             self.assertEqual(cli.main(["report", "daily", str(self.shipdir), "--date", DATE, "--facts-only",
                                        "--reason", "手で"]), 0)
         self.assertTrue(report.was_sent(self.shipdir, DATE))
-        self.assertIn("captain が書けなかった (理由: 手で)", report.report_path(self.shipdir, DATE).read_text())
+        self.assertIn("captain が書けなかった (理由: 手で)", report.report_path(self.shipdir, DATE).read_text(encoding="utf-8"))

@@ -56,7 +56,7 @@ def _lock_path(shipdir: Path, seat: str, kind: str) -> Path:
 
 def _try_lock(path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
-    f = open(path, "a")
+    f = open(path, "a", encoding="utf-8")
     if try_lock_file(f):
         return f
     f.close()
@@ -65,7 +65,7 @@ def _try_lock(path: Path):
 
 def _lock(path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
-    f = open(path, "a")
+    f = open(path, "a", encoding="utf-8")
     lock_file(f)
     return f
 
@@ -98,7 +98,7 @@ def wait_idle(shipdir: Path, seat: str, timeout: float) -> bool:
 def spawn(shipdir: Path, seat: str) -> None:
     log = inbox.seat_dir(shipdir, seat) / "headless" / "wrapper.log"
     log.parent.mkdir(parents=True, exist_ok=True)
-    with open(log, "a") as f:
+    with open(log, "a", encoding="utf-8") as f:
         procs.spawn_detached([sys.executable, str(YAMATO_BIN), "run-headless", str(shipdir), seat],
                              env=claude.seat_env(), stdout=f, stderr=f)
 
@@ -131,10 +131,10 @@ def live_pid(rec: dict) -> int | None:
         return None
     if procs.is_windows():
         # Git Bash の ps には -o が無い。pid + 起動時刻 (roster の pidStart) で pid の再利用を見分ける
-        if not procs.pid_alive(pid):
-            return None
+        # 起動時刻の印 (pidStart) が無い pid は、yamato が CREATE_NEW_PROCESS_GROUP で起こしたと確かめられない。
+        # 生きた claude -p とみなすと stop_orphan が CTRL_BREAK を送り、同じコンソールの全員 (owner のシェル) を落とす
         started = rec.get("pidStart")
-        if started is not None and procs.start_time(pid) != started:
+        if started is None or not procs.pid_alive(pid) or procs.start_time(pid) != started:
             return None
         return int(pid)
     try:

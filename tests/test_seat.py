@@ -2,6 +2,7 @@
 import io
 import json
 import os
+import shlex
 import time
 import unittest
 from contextlib import redirect_stdout
@@ -50,7 +51,7 @@ class _SeatBase(ShipTestCase):
         for s in st["sessions"]:
             if s["sessionId"] == roster.seat(self.shipdir, name)["sessionId"]:
                 s["pid"] = None
-        self.fake_state.write_text(json.dumps(st))
+        self.fake_state.write_text(json.dumps(st), encoding="utf-8")
 
 
 class SeatTest(_SeatBase):
@@ -119,7 +120,7 @@ class SeatTest(_SeatBase):
         # レビュー指摘 (T-014 差し戻し): 知らせは安全網。board が壊れていても up は captain を
         # 起こす (知らせだけ諦めて注意を出す)。
         self._retire()
-        (self.shipdir / "board" / "items" / "T-999.md").write_text("frontmatter がない壊れた項目")
+        (self.shipdir / "board" / "items" / "T-999.md").write_text("frontmatter がない壊れた項目", encoding="utf-8")
         out = self.up()
         self.assertIn("古い席の確かめに失敗", out)
         self.assertTrue(self.bg_calls() or self.resume_calls())
@@ -156,7 +157,7 @@ class SeatTest(_SeatBase):
         # T-020 / D-013: the admiral-only exception. No --for: no deadline is written, no
         # watchdog is spawned, and §0 B4's enforcement stays permanently a no-op.
         ty = self.shipdir / "team.yaml"
-        ty.write_text(ty.read_text().replace("time_limit: 3h", "time_limit: none"))
+        ty.write_text(ty.read_text(encoding="utf-8").replace("time_limit: 3h", "time_limit: none"), encoding="utf-8")
         out = self.run_cmd(seat.up, self.shipdir, None)
         self.assertIn("稼働時間の上限なし", out)
         self.assertIsNone(deadline.read(self.shipdir))
@@ -166,7 +167,7 @@ class SeatTest(_SeatBase):
 
     def test_up_with_time_limit_none_still_honors_an_explicit_for(self):
         ty = self.shipdir / "team.yaml"
-        ty.write_text(ty.read_text().replace("time_limit: 3h", "time_limit: none"))
+        ty.write_text(ty.read_text(encoding="utf-8").replace("time_limit: 3h", "time_limit: none"), encoding="utf-8")
         out = self.run_cmd(seat.up, self.shipdir, "20m")
         self.assertIn("deadline", out)
         dl = deadline.read(self.shipdir)
@@ -177,7 +178,7 @@ class SeatTest(_SeatBase):
         # review: an explicit --for leaves a deadline behind; a later plain `up` (no --for)
         # must clear it, or the old (possibly expired) deadline keeps driving phase/enforce
         ty = self.shipdir / "team.yaml"
-        ty.write_text(ty.read_text().replace("time_limit: 3h", "time_limit: none"))
+        ty.write_text(ty.read_text(encoding="utf-8").replace("time_limit: 3h", "time_limit: none"), encoding="utf-8")
         self.run_cmd(seat.up, self.shipdir, "20m")
         self.assertIsNotNone(deadline.read(self.shipdir))
         self.run_cmd(seat.down, self.shipdir, False)   # deadline.end_now: the old file still exists (expired)
@@ -197,7 +198,7 @@ class SeatTest(_SeatBase):
         os.environ["GH_TOKEN"] = "secret"
         self.addCleanup(os.environ.pop, "GH_TOKEN", None)
         ty = self.shipdir / "team.yaml"
-        ty.write_text(ty.read_text() + "\nenv_unset: [GH_TOKEN, GITHUB_TOKEN]\n")
+        ty.write_text(ty.read_text(encoding="utf-8") + "\nenv_unset: [GH_TOKEN, GITHUB_TOKEN]\n", encoding="utf-8")
         os.environ["CLAUDE_CODE_SESSION_ID"] = "caller"
         self.addCleanup(os.environ.pop, "CLAUDE_CODE_SESSION_ID", None)
         self.up()
@@ -216,7 +217,7 @@ class SeatTest(_SeatBase):
     def test_send_to_owner_records_and_notifies(self):
         marker = self.tmp / "notified"
         ty = self.shipdir / "team.yaml"
-        ty.write_text(ty.read_text().replace("  via: []", f'  via: [command, slack]\n  command: "echo $YAMATO_MESSAGE > {marker}"'))
+        ty.write_text(ty.read_text(encoding="utf-8").replace("  via: []", f'  via: [command, slack]\n  command: "echo $YAMATO_MESSAGE > {marker}"'), encoding="utf-8")
         self.up()
         with mock.patch.dict(os.environ):
             os.environ.pop("YAMATO_SLACK_WEBHOOK", None)   # never reach a real webhook from a test
@@ -226,7 +227,7 @@ class SeatTest(_SeatBase):
         self.assertIn("通知 slack: 失敗 (環境変数 YAMATO_SLACK_WEBHOOK が空)", out)   # the command still went out
         [failed] = events.read(self.shipdir, kinds="notify_failed")
         self.assertEqual(failed["data"]["via"], "slack")
-        self.assertEqual(marker.read_text().strip(), "判断ください")
+        self.assertEqual(marker.read_text(encoding="utf-8").strip(), "判断ください")
         from yamato import inbox
         self.assertEqual(inbox.unread(self.shipdir, "owner")[0]["from"], "pm")
         self.assertTrue((self.shipdir / "owner" / "inbox.jsonl").is_file())
@@ -238,7 +239,7 @@ class SeatTest(_SeatBase):
         self.assertIn("すでに動いている", out)
 
     def test_up_refuses_untrusted_workspace(self):
-        (self.config / ".claude.json").write_text(json.dumps({"projects": {}}))
+        (self.config / ".claude.json").write_text(json.dumps({"projects": {}}), encoding="utf-8")
         with self.assertRaises(YamatoError) as cm:
             self.up()
         self.assertIn("trust", str(cm.exception))
@@ -249,7 +250,7 @@ class SeatTest(_SeatBase):
 
         cfg = self.config / ".claude.json"
         for text in ("{broken", "[]", json.dumps({"projects": []}), json.dumps({"other": {}})):
-            cfg.write_text(text)
+            cfg.write_text(text, encoding="utf-8")
             self.assertIsNone(claude.is_trusted(self.workspace), text)
         cfg.unlink()
         self.assertIsNone(claude.is_trusted(self.workspace))
@@ -257,7 +258,7 @@ class SeatTest(_SeatBase):
 
         _, warnings = ship.create("t9", str(self.workspace), None, "dev")
         self.assertTrue([w for w in warnings if "確かめられなかった" in w])
-        cfg.write_text(json.dumps({"projects": {str(self.workspace): "odd"}}))
+        cfg.write_text(json.dumps({"projects": {str(self.workspace): "odd"}}), encoding="utf-8")
         self.assertFalse(claude.is_trusted(self.workspace))
 
     def test_trust_key_missing_from_an_existing_entry_is_unknown(self):
@@ -267,7 +268,7 @@ class SeatTest(_SeatBase):
         from yamato import claude
 
         cfg = self.config / ".claude.json"
-        cfg.write_text(json.dumps({"projects": {str(self.workspace): {}}}))
+        cfg.write_text(json.dumps({"projects": {str(self.workspace): {}}}), encoding="utf-8")
         self.assertIsNone(claude.is_trusted(self.workspace))
         out = self.up()
         self.assertIn("確かめられなかった", out)
@@ -281,7 +282,7 @@ class SeatTest(_SeatBase):
         (self.config / ".claude.json").write_text(json.dumps({"projects": {
             str(self.tmp / "other"): {"hasTrustDialogAccepted": True},
             str(self.workspace): {},
-        }}))
+        }}), encoding="utf-8")
         self.assertFalse(claude.is_trusted(self.workspace))
         with self.assertRaises(YamatoError) as cm:
             self.up()
@@ -292,14 +293,14 @@ class SeatTest(_SeatBase):
         from yamato import claude
 
         (self.config / ".claude.json").write_text(json.dumps(
-            {"projects": {str(self.workspace): {"hasTrustDialogAccepted": True}}}))
+            {"projects": {str(self.workspace): {"hasTrustDialogAccepted": True}}}), encoding="utf-8")
         self.assertTrue(claude.is_trusted(self.workspace))
 
     def test_trust_key_present_false_is_still_a_clear_refusal(self):
         from yamato import claude
 
         (self.config / ".claude.json").write_text(json.dumps(
-            {"projects": {str(self.workspace): {"hasTrustDialogAccepted": False}}}))
+            {"projects": {str(self.workspace): {"hasTrustDialogAccepted": False}}}), encoding="utf-8")
         self.assertFalse(claude.is_trusted(self.workspace))
         with self.assertRaises(YamatoError) as cm:
             self.up()
@@ -313,7 +314,7 @@ class SeatTest(_SeatBase):
         self.assertEqual(len(self.bg_calls()), 1)
 
     def test_up_with_unknown_trust_stops_on_claudes_answer(self):
-        (self.config / ".claude.json").write_text("{broken")
+        (self.config / ".claude.json").write_text("{broken", encoding="utf-8")
         self.set_fake_mode(untrusted=True)
         with self.assertRaises(YamatoError) as cm:
             self.up()
@@ -498,7 +499,7 @@ class SeatTest(_SeatBase):
         st = self.fake()
         st["sessions"][0].update(pid=None, state="failed", detail="API error")
         st["mode"] = {"resume_lag": 3, "session": {"state": "working", "detail": None}}
-        self.fake_state.write_text(json.dumps(st))
+        self.fake_state.write_text(json.dumps(st), encoding="utf-8")
         self.run_cmd(seat.send, self.shipdir, "pm", "x", "impl")
         rec = roster.seat(self.shipdir, "pm")
         self.assertEqual((rec["shiftNo"], rec["how"], rec.get("launchFailed")), (2, "resume", None))
@@ -547,7 +548,7 @@ class SeatTest(_SeatBase):
         out = self.run_cmd(seat.send, self.shipdir, "impl", "more work", "pm")
         self.assertEqual(len(self.bg_calls()), 1)
         self.assertIn("上限を過ぎている", out)
-        self.assertIn(f"seat-stop {self.shipdir} pm", out)
+        self.assertIn(f"seat-stop {runtime.ship_arg(self.shipdir)} pm", out)
 
     # --- ending shifts ---
 
@@ -564,7 +565,7 @@ class SeatTest(_SeatBase):
             self.assertEqual((rec["state"], rec["endReason"], rec["note"]),
                              (roster.OFF, "grace-exceeded", "引き継ぎなしで終了"))
         self.assertTrue(all(s["pid"] is None for s in self.fake()["sessions"]))
-        usage_lines = (self.shipdir / "usage.jsonl").read_text().splitlines()
+        usage_lines = (self.shipdir / "usage.jsonl").read_text(encoding="utf-8").splitlines()
         self.assertEqual(len(usage_lines), 2)
 
     def test_down_force(self):
@@ -595,7 +596,7 @@ class SeatTest(_SeatBase):
             with self.assertRaises(YamatoError) as cm:
                 seat.seat_stop(self.shipdir, "pm", 10)
             self.assertIn("handoff.md", str(cm.exception))
-            (self.shipdir / "seats/pm/handoff.md").write_text("# pm 引き継ぎ\n- 次: なし\n")
+            (self.shipdir / "seats/pm/handoff.md").write_text("# pm 引き継ぎ\n- 次: なし\n", encoding="utf-8")
             out = self.run_cmd(seat.seat_stop, self.shipdir, "pm", 7)
         self.assertIn("7 秒後", out)
         self.assertEqual(roster.seat(self.shipdir, "pm")["state"], roster.STOPPING)
@@ -618,7 +619,7 @@ class SeatTest(_SeatBase):
         seat is not stuck retrying the same call), but the failure is not silent."""
         self.up()
         rec = roster.seat(self.shipdir, "pm")
-        (self.shipdir / "seats/pm/handoff.md").write_text("次: なし")
+        (self.shipdir / "seats/pm/handoff.md").write_text("次: なし", encoding="utf-8")
         with mock.patch.object(seat, "_spawn_detached", side_effect=OSError("boom")):
             with mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": rec["sessionId"]}):
                 out = self.run_cmd(seat.seat_stop, self.shipdir, "pm", 7)
@@ -638,7 +639,7 @@ class SeatTest(_SeatBase):
         [args] = self.spawned
         self.assertIn(f"sleep 5; ", args[2])
         self.assertIn(f" stop {rec['sessionId'][:8]}; ", args[2])
-        self.assertTrue(args[2].endswith(f"_shift-ended {self.shipdir} pm {rec['sessionId']} --forced"))
+        self.assertTrue(args[2].endswith(f"_shift-ended {shlex.quote(str(self.shipdir))} pm {rec['sessionId']} --forced"))
         self.stop_session("pm")
         with mock.patch.object(report, "safety_net") as net:
             seat.shift_ended(self.shipdir, "pm", rec["sessionId"], forced=True)
@@ -654,7 +655,7 @@ class SeatTest(_SeatBase):
         self.up()
         self.run_cmd(seat.send, self.shipdir, "impl", "T-001", "pm")
         impl = roster.seat(self.shipdir, "impl")
-        (self.shipdir / "seats/impl/handoff.md").write_text("# impl\n")
+        (self.shipdir / "seats/impl/handoff.md").write_text("# impl\n", encoding="utf-8")
         self.run_cmd(seat.send, self.shipdir, "pm", "T-001 done", "impl")  # pm alive: SendMessage owed
         with mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": impl["sessionId"]}):
             with self.assertRaises(YamatoError) as cm:
@@ -668,8 +669,8 @@ class SeatTest(_SeatBase):
 
     def test_seat_stop_checks_can_be_turned_off_in_team_yaml(self):
         ty = self.shipdir / "team.yaml"
-        ty.write_text(ty.read_text().replace("require_handoff: true", "require_handoff: false")
-                      .replace("require_delivery: true", "require_delivery: false"))
+        ty.write_text(ty.read_text(encoding="utf-8").replace("require_handoff: true", "require_handoff: false")
+                      .replace("require_delivery: true", "require_delivery: false"), encoding="utf-8")
         self.up()
         self.run_cmd(seat.send, self.shipdir, "impl", "T-001", "pm")
         self.run_cmd(seat.send, self.shipdir, "pm", "done", "impl")
@@ -683,7 +684,7 @@ class SeatTest(_SeatBase):
         self.up()
         self.run_cmd(seat.send, self.shipdir, "impl", "T-001", "pm")
         impl = roster.seat(self.shipdir, "impl")
-        (self.shipdir / "seats/impl/handoff.md").write_text("# impl\n")
+        (self.shipdir / "seats/impl/handoff.md").write_text("# impl\n", encoding="utf-8")
         self.run_cmd(seat.send, self.shipdir, "pm", "T-001 done", "impl")
         with mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": impl["sessionId"]}):
             self.run_cmd(seat.seat_stop, self.shipdir, "impl", 10, True)
@@ -716,10 +717,10 @@ class SeatTest(_SeatBase):
 
     def test_long_handoff_warns_with_the_inject_limit_but_does_not_fail(self):
         ty = self.shipdir / "team.yaml"
-        ty.write_text(ty.read_text().replace("handoff: [40, 2000]", "handoff: [5, 2000]"))
+        ty.write_text(ty.read_text(encoding="utf-8").replace("handoff: [40, 2000]", "handoff: [5, 2000]"), encoding="utf-8")
         self.up()
         rec = roster.seat(self.shipdir, "pm")
-        (self.shipdir / "seats/pm/handoff.md").write_text("\n".join(f"l{i}" for i in range(8)))
+        (self.shipdir / "seats/pm/handoff.md").write_text("\n".join(f"l{i}" for i in range(8)), encoding="utf-8")
         with mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": rec["sessionId"]}):
             out = self.run_cmd(seat.seat_stop, self.shipdir, "pm", 10)
         self.assertIn("8 行ある (注入の上限 5 行)", out)
@@ -741,7 +742,7 @@ class SeatTest(_SeatBase):
 
         roster.start_shift(self.shipdir, "impl", session_id="s" * 36, short_id="ssssssss",
                            session_name="t1.impl", how="new")
-        (self.shipdir / "seats" / "impl" / "handoff.md").write_text("引き継ぎ")
+        (self.shipdir / "seats" / "impl" / "handoff.md").write_text("引き継ぎ", encoding="utf-8")
         order = []
         real_lock = seat.ship_lock
 
@@ -771,7 +772,7 @@ class SeatTest(_SeatBase):
 
         roster.start_shift(self.shipdir, "impl", session_id="s" * 36, short_id="ssssssss",
                            session_name="t1.impl", how="new")
-        (self.shipdir / "seats" / "impl" / "handoff.md").write_text("引き継ぎ")
+        (self.shipdir / "seats" / "impl" / "handoff.md").write_text("引き継ぎ", encoding="utf-8")
         real_build = usage.build
         raced = []
 
@@ -785,7 +786,7 @@ class SeatTest(_SeatBase):
         with mock.patch.object(usage, "build", racing_build):
             ended = seat.finish_shift(self.shipdir, "impl", reason="race-loser")
         self.assertIsNone(ended)   # 二重に終業させない
-        lines = (self.shipdir / "usage.jsonl").read_text().splitlines()
+        lines = (self.shipdir / "usage.jsonl").read_text(encoding="utf-8").splitlines()
         self.assertEqual(len(lines), 1)   # usage の行も二重に書かない
         self.assertEqual(roster.seat(self.shipdir, "impl")["endReason"], "race-winner")
 

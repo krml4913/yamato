@@ -42,7 +42,7 @@ def _registry_path() -> Path:
 
 def load_registry() -> dict:
     try:
-        return json.loads(_registry_path().read_text())
+        return json.loads(_registry_path().read_text(encoding="utf-8"))
     except (FileNotFoundError, ValueError):
         return {}
 
@@ -219,7 +219,7 @@ def unlock_file(f) -> None:
 @contextlib.contextmanager
 def _flock(path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
-    f = open(path, "a")
+    f = open(path, "a")   # ロックだけで何も書かない (encoding 不要)
     try:
         lock_file(f)
         yield

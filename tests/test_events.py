@@ -14,7 +14,7 @@ class EventsTest(ShipTestCase):
     def test_emit_writes_one_line_in_the_documented_shape(self):
         line = events.emit(self.shipdir, "custom_kind", seat="impl", item="T-001", by="pm",
                            summary="a\nb  " + "x" * 300, data={"k": 1})
-        [raw] = (self.shipdir / "events.jsonl").read_text().splitlines()
+        [raw] = (self.shipdir / "events.jsonl").read_text(encoding="utf-8").splitlines()
         e = json.loads(raw)
         self.assertEqual(e, line)
         self.assertEqual({k: e[k] for k in ("kind", "seat", "item", "by", "data")},
@@ -28,7 +28,7 @@ class EventsTest(ShipTestCase):
         events.emit(self.shipdir, events.SEND, seat="impl", now=t)
         events.emit(self.shipdir, events.BOARD_SET, seat="impl", item="T-001", now=t + 10)
         events.emit(self.shipdir, events.BOARD_ADD, seat="pm", item="T-002", now=t + 20)
-        with open(self.shipdir / "events.jsonl", "a") as f:
+        with open(self.shipdir / "events.jsonl", "a", encoding="utf-8") as f:
             f.write('{"torn\n[1]\n\n')
         events.emit(self.shipdir, events.FORCE_STOP, seat="pm", now=t + 30)
 
@@ -176,7 +176,7 @@ class LastActiveHookTest(ShipTestCase):
                 self.assertAlmostEqual(self.last_active(), time.time(), delta=5)
 
     def test_user_prompt_submit_is_wired_and_silent(self):
-        s = json.loads(runtime.settings_path(self.shipdir, "impl").read_text())
+        s = json.loads(runtime.settings_path(self.shipdir, "impl").read_text(encoding="utf-8"))
         [h] = [h for grp in s["hooks"]["UserPromptSubmit"] for h in grp["hooks"]]
         self.assertEqual(h["args"][1:3], ["hook", "user-prompt-submit"])
         self.assertIn("user-prompt-submit", hooks.HOOKS)

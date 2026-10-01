@@ -9,7 +9,9 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from tests.helpers import ShipTestCase
@@ -204,6 +206,9 @@ class StopTest(WinCase):
 
 class RunForegroundTest(WinCase):
     def test_posix_execs(self):
+        for p in posix_patches():   # Windows 機でも POSIX の枝を見る
+            p.start()
+            self.addCleanup(p.stop)
         calls = []
         self.assertEqual(procs.run_foreground(["c", "attach", "x"], execvp=lambda f, a: calls.append((f, a))), 0)
         self.assertEqual(calls, [("c", ["c", "attach", "x"])])
@@ -223,8 +228,22 @@ class LivePidWindowsTest(WinCase):
         rec = {"pid": 100, "sessionId": "s"}
         self.assertEqual(headless.live_pid({**rec, "pidStart": 555}), 100)
         self.assertIsNone(headless.live_pid({**rec, "pidStart": 999}))       # pid を別のプロセスが使っている
-        self.assertEqual(headless.live_pid(rec), 100)                        # 印が無ければ pid だけ
+        self.assertIsNone(headless.live_pid(rec))                            # 印が無ければ生きた -p とみなさない (T-050)
         self.assertIsNone(headless.live_pid({"pid": 300, "sessionId": "s", "pidStart": 1}))
+
+    def test_no_pid_start_means_no_ctrl_break_to_an_orphan(self):
+        """pidStart の無い roster の pid には CTRL_BREAK を送らない (コンソールごと落とす事故, T-050)。"""
+        self.win(FakeKernel32({100: None}, created={100: 555}))
+        with tempfile.TemporaryDirectory() as d:
+            ship = Path(d)
+            rec = {"state": roster.ON_SHIFT, "pid": 100, "sessionId": "s"}
+            with mock.patch.object(headless.roster, "seat", return_value=rec), \
+                    mock.patch.object(headless, "running", return_value=False), \
+                    mock.patch.object(headless.procs, "terminate") as term, \
+                    mock.patch.object(headless.procs, "soft_stop") as soft:
+                self.assertFalse(headless.stop_orphan(ship, "x", "r"))
+        term.assert_not_called()
+        soft.assert_not_called()
 
     def test_windows_does_not_run_ps(self):
         self.win(FakeKernel32({100: None}))

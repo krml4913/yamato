@@ -364,7 +364,7 @@ def _inbox_wake_message(shipdir: Path, seat: str, news: list[dict]) -> str:
 
 def _pidfile_text(pidfile: Path) -> str | None:
     try:
-        return pidfile.read_text().strip()
+        return pidfile.read_text(encoding="utf-8").strip()
     except FileNotFoundError:
         return None
 
@@ -421,7 +421,7 @@ def wait_deadline(shipdir: Path, seat: str) -> int:
     pidfile = Path(shipdir) / ".runtime" / f"wait-{seat}.pid"
     mine = f"{os.getpid()} {shift0}"
     try:
-        other, _, other_shift = pidfile.read_text().strip().partition(" ")
+        other, _, other_shift = pidfile.read_text(encoding="utf-8").strip().partition(" ")
         # a live watcher of an older shift does not count: it leaves by itself at its next poll
         # (a pidfile without a shift, from before T-038, still counts)
         if int(other) != os.getpid() and _pid_alive(int(other)) and other_shift in ("", str(shift0)):

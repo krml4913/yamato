@@ -22,19 +22,19 @@ class InboxTest(unittest.TestCase):
         inbox.mark_read(self.ship, "impl", 2)
         self.assertEqual([x["n"] for x in inbox.unread(self.ship, "impl")], [3])
         # the cursor lives in its own file; the inbox itself is append-only
-        self.assertEqual((self.ship / "seats/impl/inbox.cursor").read_text().strip(), "2")
-        self.assertEqual(len((self.ship / "seats/impl/inbox.jsonl").read_text().splitlines()), 3)
+        self.assertEqual((self.ship / "seats/impl/inbox.cursor").read_text(encoding="utf-8").strip(), "2")
+        self.assertEqual(len((self.ship / "seats/impl/inbox.jsonl").read_text(encoding="utf-8").splitlines()), 3)
         inbox.mark_read(self.ship, "impl", 1)  # never moves backwards
         self.assertEqual(inbox.cursor(self.ship, "impl"), 2)
 
     def test_torn_line_is_skipped(self):
         inbox.append(self.ship, "impl", "pm", "ok")
-        with open(self.ship / "seats/impl/inbox.jsonl", "a") as f:
+        with open(self.ship / "seats/impl/inbox.jsonl", "a", encoding="utf-8") as f:
             f.write('{"n": 2, "te\n')
         self.assertEqual([x["text"] for x in inbox.unread(self.ship, "impl")], ["ok"])
         # numbering continues from the last valid entry, never reusing a number
         self.assertEqual(inbox.append(self.ship, "impl", "pm", "next")["n"], 2)
-        with open(self.ship / "seats/impl/inbox.jsonl", "a") as f:
+        with open(self.ship / "seats/impl/inbox.jsonl", "a", encoding="utf-8") as f:
             f.write("garbage\n")
         self.assertEqual(inbox.append(self.ship, "impl", "pm", "after")["n"], 3)
 
@@ -62,7 +62,7 @@ class RosterTest(unittest.TestCase):
         r = self.start("22222222-bbbb")
         self.assertEqual(r["shiftNo"], 2)
         self.assertFalse(r["prevEndedWithoutHandoff"])
-        data = json.loads((self.ship / "roster.json").read_text())
+        data = json.loads((self.ship / "roster.json").read_text(encoding="utf-8"))
         self.assertEqual([s["endReason"] for s in data["shifts"]], ["seat-stop", None])
 
     def test_no_handoff_is_recorded_and_carried(self):

@@ -788,7 +788,7 @@ def watchdog(shipdir: Path, token: str) -> int:
     """One-shot timer: at deadline + grace, force-stop whatever is still alive."""
     pidfile = shipdir / ".runtime" / "watchdog.pid"
     try:
-        other_pid, other_token = pidfile.read_text().split()
+        other_pid, other_token = pidfile.read_text(encoding="utf-8").split()
         if int(other_pid) != os.getpid() and other_token == token:
             if procs.pid_alive(other_pid):
                 return 0  # the same deadline is already being watched
@@ -822,7 +822,7 @@ def watchdog(shipdir: Path, token: str) -> int:
             time.sleep(max(WATCHDOG_MIN_SLEEP, min(WATCHDOG_POLL, dl["graceUntil"] - now)))
     finally:
         try:
-            if pidfile.read_text().split()[0] == str(os.getpid()):
+            if pidfile.read_text(encoding="utf-8").split()[0] == str(os.getpid()):
                 pidfile.unlink()
         except (FileNotFoundError, IndexError):
             pass

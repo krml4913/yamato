@@ -101,7 +101,7 @@ class FlockWindowsTest(WindowsSimTestCase):
         self.path = Path(self._tmp.name) / "x.lock"
 
     def test_lock_file_uses_msvcrt_locking_not_fcntl(self):
-        f = open(self.path, "a")
+        f = open(self.path, "a", encoding="utf-8")
         self.addCleanup(f.close)
         with self.as_windows():
             util.lock_file(f)
@@ -150,7 +150,7 @@ class EnvCommandTest(unittest.TestCase):
             p = Path(d) / "a dir with spaces"
             p.mkdir()
             f = p / "claude x"
-            f.write_text("")
+            f.write_text("", encoding="utf-8")
             self.assertEqual(self.cmd(str(f)), [str(f)])
 
     def test_program_plus_args_is_split(self):
@@ -162,7 +162,7 @@ class EnvCommandTest(unittest.TestCase):
             p = Path(d) / "dir with spaces"
             p.mkdir()
             f = p / "python.exe"
-            f.write_text("")
+            f.write_text("", encoding="utf-8")
             self.assertEqual(self.cmd(f"{f} a.py --x"), [str(f), "a.py", "--x"])
 
     def test_an_unknown_single_word_stays_as_is(self):
@@ -177,7 +177,7 @@ class AtomicWriteTest(unittest.TestCase):
 
     def test_writes_and_reads_back(self):
         util.atomic_write(self.path, "hello\n")
-        self.assertEqual(self.path.read_text(), "hello\n")
+        self.assertEqual(self.path.read_text(encoding="utf-8"), "hello\n")
 
     def test_posix_permission_error_is_not_retried(self):
         calls = []
@@ -225,7 +225,7 @@ class AtomicWriteWindowsTest(WindowsSimTestCase):
                 mock.patch.object(util.os, "replace", side_effect=replace), \
                 mock.patch.object(util.time, "sleep") as sleep:
             util.atomic_write(self.path, "hello\n")
-        self.assertEqual(self.path.read_text(), "hello\n")
+        self.assertEqual(self.path.read_text(encoding="utf-8"), "hello\n")
         self.assertEqual(sleep.call_count, 2)
 
     def test_gives_up_after_the_retry_budget(self):

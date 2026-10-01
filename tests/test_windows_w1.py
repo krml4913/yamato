@@ -42,25 +42,25 @@ class GitattributesTest(unittest.TestCase):
 
 class InvocationTest(ShipTestCase):
     def test_yamato_is_the_interpreter_plus_the_script(self):
-        self.assertEqual(shlex.split(runtime.yamato_invocation()), [sys.executable, str(YAMATO_BIN)])
+        self.assertEqual(shlex.split(runtime.yamato_invocation()), [runtime.posix_path(sys.executable), runtime.posix_path(YAMATO_BIN)])   # Windows は as_posix の形
 
     def test_a_path_with_a_space_stays_one_word_each(self):
         with mock.patch.object(runtime.sys, "executable", "/opt/my python/bin/python3"):
             inv = runtime.yamato_invocation()
-        self.assertEqual(shlex.split(inv), ["/opt/my python/bin/python3", str(YAMATO_BIN)])
+        self.assertEqual(shlex.split(inv), ["/opt/my python/bin/python3", runtime.posix_path(YAMATO_BIN)])
 
     def test_windows_style_paths_survive_the_quoting(self):
         # single quotes keep backslashes in bash (Git Bash), so the seat can paste it as is
         with mock.patch.object(runtime.sys, "executable", "C:\\Program Files\\Python311\\python.exe"):
             inv = runtime.yamato_invocation()
-        self.assertEqual(shlex.split(inv)[0], "C:\\Program Files\\Python311\\python.exe")
+        self.assertEqual(shlex.split(inv)[0], runtime.posix_path("C:\\Program Files\\Python311\\python.exe"))
 
     def test_prompt_and_permission_rules_spell_the_same_command(self):
         team = self.team()
         prompt = runtime.render_prompt("run `{{yamato}} seat-stop {{ship}} x`", self.shipdir, team)
         rule = runtime.render_rule("Bash({{yamato}} seat-stop:*)", self.shipdir, "impl")
         inv = runtime.yamato_invocation()
-        self.assertEqual(prompt, f"run `{inv} seat-stop {self.shipdir} x`")
+        self.assertEqual(prompt, f"run `{inv} seat-stop {runtime.ship_arg(self.shipdir)} x`")
         self.assertEqual(rule, f"Bash({inv} seat-stop:*)")
         self.assertNotIn("{{", prompt + rule)
 
@@ -85,8 +85,8 @@ class ResolveShipTest(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.tmp = Path(self._tmp.name).resolve()
         self.ship = self.tmp / "s\\hip"          # a legal name on POSIX; a separator on Windows
-        self.ship.mkdir()
-        (self.ship / "team.yaml").write_text("name: x\n")
+        self.ship.mkdir(parents=True)   # Windows では s\\hip が s/hip
+        (self.ship / "team.yaml").write_text("name: x\n", encoding="utf-8")
         self.old = os.getcwd()
         os.chdir(self.tmp)
         self.addCleanup(os.chdir, self.old)
@@ -94,6 +94,7 @@ class ResolveShipTest(unittest.TestCase):
         env.start()
         self.addCleanup(env.stop)
 
+    @unittest.skipIf(os.name == "nt", "Windows では \\ は区切りで、名前にならない")
     def test_a_backslash_ref_is_a_name_on_posix(self):
         with self.assertRaises(YamatoError):
             util.resolve_ship("s\\hip")
@@ -116,7 +117,7 @@ class TryLockTest(unittest.TestCase):
         self.path = Path(self._tmp.name) / "x.lock"
 
     def test_posix_second_holder_is_refused_until_the_first_lets_go(self):
-        a, b = open(self.path, "a"), open(self.path, "a")
+        a, b = open(self.path, "a", encoding="utf-8"), open(self.path, "a", encoding="utf-8")
         self.addCleanup(a.close)
         self.addCleanup(b.close)
         self.assertTrue(util.try_lock_file(a))
@@ -134,7 +135,7 @@ class TryLockWindowsTest(WindowsSimTestCase):
         self.path = Path(self._tmp.name) / "x.lock"
 
     def test_second_holder_is_refused_via_msvcrt_not_fcntl(self):
-        a, b = open(self.path, "a"), open(self.path, "a")
+        a, b = open(self.path, "a", encoding="utf-8"), open(self.path, "a", encoding="utf-8")
         self.addCleanup(a.close)
         self.addCleanup(b.close)
         with self.as_windows():
@@ -255,7 +256,8 @@ class ChildOutputIsUtf8Test(unittest.TestCase):
         self.assert_utf8(run)
 
     def test_headless_ps(self):
-        with mock.patch.object(headless.subprocess, "run", return_value=self.completed("claude --session-id abc")) as run:
+        with mock.patch.object(headless.procs, "is_windows", return_value=False), \
+                mock.patch.object(headless.subprocess, "run", return_value=self.completed("claude --session-id abc")) as run:
             headless.live_pid({"pid": 123, "sessionId": "abc"})
         self.assert_utf8(run)
 

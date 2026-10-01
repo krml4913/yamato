@@ -11,7 +11,7 @@ class RuntimeTest(ShipTestCase):
     def test_settings_follow_the_verified_template(self):
         team = self.team()
         runtime.generate(self.shipdir, team)
-        s = json.loads(runtime.settings_path(self.shipdir, "impl").read_text())
+        s = json.loads(runtime.settings_path(self.shipdir, "impl").read_text(encoding="utf-8"))
         self.assertEqual(s["crossSessionInbound"], "accept")
         self.assertEqual(s["permissions"]["defaultMode"], "auto")
         self.assertEqual(s["permissions"]["allow"], [f"Bash({runtime.yamato_invocation()} seat-stop:*)"])
@@ -19,7 +19,7 @@ class RuntimeTest(ShipTestCase):
         deny = s["permissions"]["deny"]
         # the deny list comes from the template's team.yaml ({{ship}} expanded), not from code
         for rule in ("Bash(git push --force*)", "Bash(git reset --hard*)", "Bash(claude stop*)", "Edit(.claude/**)",
-                     "Bash(gh pr create*)", f"Edit(/{self.shipdir}/roster.json)"):
+                     "Bash(gh pr create*)", f"Edit(/{runtime.rule_path(self.shipdir)}/roster.json)"):
             self.assertIn(rule, deny)
         self.assertEqual(s["worktree"], {"bgIsolation": "none"})  # template `settings:`
         # exec form (W1): no shell string. command = the interpreter, args = script + "hook <event> <ship> <seat>"
@@ -37,10 +37,10 @@ class RuntimeTest(ShipTestCase):
         # impl には付けない (付けるかは艦ごと)
         team = self.team()
         runtime.generate(self.shipdir, team)
-        pm_deny = json.loads(runtime.settings_path(self.shipdir, "pm").read_text())["permissions"]["deny"]
+        pm_deny = json.loads(runtime.settings_path(self.shipdir, "pm").read_text(encoding="utf-8"))["permissions"]["deny"]
         self.assertIn("WebFetch", pm_deny)
         self.assertIn("WebSearch", pm_deny)
-        impl_deny = json.loads(runtime.settings_path(self.shipdir, "impl").read_text())["permissions"]["deny"]
+        impl_deny = json.loads(runtime.settings_path(self.shipdir, "impl").read_text(encoding="utf-8"))["permissions"]["deny"]
         self.assertNotIn("WebFetch", impl_deny)
         self.assertNotIn("WebSearch", impl_deny)
 
@@ -51,7 +51,8 @@ class RuntimeTest(ShipTestCase):
         team["env_unset"] = ["GH_TOKEN", "GITHUB_TOKEN"]
         team["settings"] = {"env": {"GH_TOKEN": "leak", "YAMATO_GH": "/x/gh"}}
         runtime.generate(self.shipdir, team)
-        env = json.loads(runtime.settings_path(self.shipdir, "impl").read_text())["env"]
+        env = json.loads(runtime.settings_path(self.shipdir, "impl").read_text(encoding="utf-8"))["env"]
+        env.pop("CLAUDE_CODE_USE_POWERSHELL_TOOL", None)   # Windows だけの既定 (T-047)
         self.assertEqual(env, {"GH_TOKEN": "", "GITHUB_TOKEN": "", "YAMATO_GH": "/x/gh"})
 
     def test_policy_is_whatever_team_yaml_says(self):
@@ -87,7 +88,7 @@ class RuntimeTest(ShipTestCase):
     def test_agents_json_renders_placeholders(self):
         team = self.team()
         runtime.generate(self.shipdir, team)
-        agents = json.loads(runtime.agents_path(self.shipdir).read_text())
+        agents = json.loads(runtime.agents_path(self.shipdir).read_text(encoding="utf-8"))
         self.assertEqual(set(agents), {"pm", "impl", "reviewer", "planner"})
         self.assertEqual(agents["impl"]["model"], "sonnet")
         for p in (a["prompt"] for a in agents.values()):
@@ -97,7 +98,7 @@ class RuntimeTest(ShipTestCase):
             self.assertIn("SendMessage", p)
             self.assertIn("seat-stop", p)
             self.assertIn("push", p)
-        team_json = json.loads((self.shipdir / ".runtime" / "team.json").read_text())
+        team_json = json.loads((self.shipdir / ".runtime" / "team.json").read_text(encoding="utf-8"))
         self.assertEqual(list(team_json["seats"]), ["pm", "impl", "reviewer", "planner"])
 
 
@@ -119,10 +120,10 @@ class UsageTest(ShipTestCase):
             json.dumps({"type": "user", "timestamp": "2026-09-26T01:00:03Z", "message": {"content": "x"}}),
             "not json",
         ]
-        (proj / f"{sid}.jsonl").write_text("\n".join(lines) + "\n")
+        (proj / f"{sid}.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
         sub = proj / sid / "subagents"
         sub.mkdir(parents=True)
-        (sub / "agent-1.jsonl").write_text(_line("2026-09-26T01:00:04Z", "m3", input_tokens=3, output_tokens=4) + "\n")
+        (sub / "agent-1.jsonl").write_text(_line("2026-09-26T01:00:04Z", "m3", input_tokens=3, output_tokens=4) + "\n", encoding="utf-8")
         since = usage._epoch("2026-09-26T00:30:00Z")
         line = usage.record(self.shipdir, "impl", session_id=sid, shift_no=1, since=since,
                             until=usage._epoch("2026-09-26T02:00:00Z"))
@@ -131,7 +132,7 @@ class UsageTest(ShipTestCase):
         self.assertEqual(line["cache_creation_input_tokens"], 50)
         self.assertEqual(line["messages"], 3)
         self.assertEqual(line["total_tokens"], 177)
-        saved = [json.loads(x) for x in (self.shipdir / "usage.jsonl").read_text().splitlines()]
+        saved = [json.loads(x) for x in (self.shipdir / "usage.jsonl").read_text(encoding="utf-8").splitlines()]
         self.assertEqual(len(saved), 1)
         self.assertEqual(saved[0]["seat"], "impl")
         self.assertIn("計 177", usage.summary(line))

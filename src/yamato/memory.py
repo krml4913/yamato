@@ -522,7 +522,7 @@ def curate(shipdir: Path, team: dict, role: str | None = None, wait: bool = Fals
             log.parent.mkdir(parents=True, exist_ok=True)
             from . import claude
 
-            with open(log, "a") as f:
+            with open(log, "a", encoding="utf-8") as f:
                 procs.spawn_detached([sys.executable, str(YAMATO_BIN), "_memory-curate", str(shipdir), r],
                                      env=claude.seat_env(), stdout=f, stderr=f)
             out(f"{r}: 棚卸しのシフトを起こした。終わると {report_to(team)} に知らせが届く "

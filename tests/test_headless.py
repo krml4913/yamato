@@ -39,9 +39,9 @@ class _Base(ShipTestCase):
     def setUp(self):
         super().setUp()
         ty = self.shipdir / "team.yaml"
-        ty.write_text(ty.read_text().replace("roles:\n", ROLE + self.role_extra, 1))
+        ty.write_text(ty.read_text(encoding="utf-8").replace("roles:\n", ROLE + self.role_extra, 1), encoding="utf-8")
         for role in ("researcher", *self.extra_roles):
-            (self.shipdir / "roles" / f"{role}.md").write_text(f"あなたは {role} です。\n")
+            (self.shipdir / "roles" / f"{role}.md").write_text(f"あなたは {role} です。\n", encoding="utf-8")
         seat.prepare(self.shipdir)
         deadline.write(self.shipdir, limit=600, grace=60, token="t")
         for target, attr, value in ((headless, "POLL", 0.02), (headless, "IDLE_POLL", 0.02), (headless, "KILL_WAIT", 5)):
@@ -63,7 +63,7 @@ class _Base(ShipTestCase):
 
     def usage_lines(self):
         path = self.shipdir / "usage.jsonl"
-        return [json.loads(x) for x in path.read_text().splitlines()] if path.exists() else []
+        return [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines()] if path.exists() else []
 
     def hub_inbox(self):
         return inbox.entries(self.shipdir, "pm")
@@ -177,7 +177,7 @@ class HeadlessTest(_Base):
 
     def test_time_limit_sigterms_and_counts_usage_from_the_transcript(self):
         ty = self.shipdir / "team.yaml"
-        ty.write_text(ty.read_text().replace("    shift: headless\n", "    shift: headless\n    max_duration: 1s\n"))
+        ty.write_text(ty.read_text(encoding="utf-8").replace("    shift: headless\n", "    shift: headless\n    max_duration: 1s\n"), encoding="utf-8")
         seat.prepare(self.shipdir)
         load = seat.current_team
 
@@ -369,7 +369,7 @@ class HeadlessTest(_Base):
 
     def test_up_with_a_headless_hub_spawns_the_wrapper(self):
         ty = self.shipdir / "team.yaml"
-        ty.write_text(ty.read_text().replace("hub: pm", "hub: researcher"))
+        ty.write_text(ty.read_text(encoding="utf-8").replace("hub: pm", "hub: researcher"), encoding="utf-8")
         with mock.patch.object(seat, "spawn_watchdog"), \
                 mock.patch.object(seat, "wake", side_effect=lambda sd, t, s, reason="send": headless.wake(sd, t, s)), \
                 mock.patch.object(headless, "spawn") as spawn:
@@ -383,7 +383,7 @@ class HeadlessTest(_Base):
         sid = "11111111-2222-3333-4444-555555555555"
         roster.start_shift(self.shipdir, "researcher", session_id=sid, short_id=sid[:8],
                            session_name="t1.researcher", how="headless")
-        (self.shipdir / "seats/researcher/handoff.md").write_text("x\n")
+        (self.shipdir / "seats/researcher/handoff.md").write_text("x\n", encoding="utf-8")
         os.environ["CLAUDE_CODE_SESSION_ID"] = sid
         self.addCleanup(os.environ.pop, "CLAUDE_CODE_SESSION_ID", None)
         with mock.patch.object(seat, "_spawn_detached") as spawn:
