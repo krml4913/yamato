@@ -181,7 +181,7 @@ class RunLoopTest(unittest.TestCase):
 
     def test_attaches_with_resolved_id(self):
         _, procs, _ = self.run_loop([SID_A], rounds=1, lives=1)
-        self.assertEqual(procs[0].argv[1:], ["attach", SID_A])
+        self.assertEqual(procs[0].argv[-2:], ["attach", SID_A])
 
     def test_reattaches_when_shift_changes(self):
         # A attached; watcher sees A, then B -> A's attach is stopped, B attached
@@ -205,8 +205,15 @@ class RunLoopTest(unittest.TestCase):
 
 class LayoutBuildTest(unittest.TestCase):
     def test_tabs_and_panes(self):
-        kdl = layout.build([("dev", "/x/dev", ["pm", "impl-1", "reviewer"]),
+        with mock.patch.object(layout, "is_windows", return_value=False):   # real Windows prepends python.exe
+            kdl = self.build()
+        self.assert_tabs(kdl)
+
+    def build(self):
+        return layout.build([("dev", "/x/dev", ["pm", "impl-1", "reviewer"]),
                             ("research", "/x/research", ["editor"])], "/r/yamato")
+
+    def assert_tabs(self, kdl):
         self.assertEqual(kdl.count("tab name="), 2)
         self.assertIn('tab name="dev" focus=true {', kdl)
         self.assertIn('tab name="research" {', kdl)

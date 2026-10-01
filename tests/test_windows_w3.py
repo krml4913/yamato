@@ -66,6 +66,20 @@ class WinCase(unittest.TestCase):
             self.addCleanup(p.stop)
 
 
+def posix_patches():
+    """The POSIX branches run on a Windows machine too: is_windows is False and SIGKILL exists
+    (Windows' signal module has none)."""
+    return [mock.patch.object(procs, "is_windows", return_value=False),
+            mock.patch.object(signal, "SIGKILL", 9, create=True)]
+
+
+class PosixCase(unittest.TestCase):
+    def setUp(self):
+        for p in posix_patches():
+            p.start()
+            self.addCleanup(p.stop)
+
+
 class PidAliveWindowsTest(WinCase):
     def test_the_four_w0_cases(self):
         k32 = FakeKernel32({100: None, 200: 3, os.getpid(): None})   # 生きている / 終わった / (300 は無い) / 自分
@@ -98,9 +112,10 @@ class PidAliveWindowsTest(WinCase):
         self.assertIsNone(procs.start_time(999))
 
 
-class PidAlivePosixTest(unittest.TestCase):
+class PidAlivePosixTest(PosixCase):
     def test_posix_uses_kill_zero(self):
-        self.assertTrue(procs.pid_alive(os.getpid()))
+        with mock.patch.object(os, "kill", return_value=None):
+            self.assertTrue(procs.pid_alive(os.getpid()))
         with mock.patch.object(os, "kill", side_effect=ProcessLookupError):
             self.assertFalse(procs.pid_alive(4242))
         with mock.patch.object(os, "kill", side_effect=PermissionError):
@@ -111,6 +126,9 @@ class PidAlivePosixTest(unittest.TestCase):
 
 class SpawnDetachedTest(WinCase):
     def test_posix_is_nohup_in_a_new_session(self):
+        for p in posix_patches():
+            p.start()
+            self.addCleanup(p.stop)
         with mock.patch.object(subprocess, "Popen") as popen:
             procs.spawn_detached(["a", "b"], cwd="/x", env={"K": "v"})
         args, kw = popen.call_args
@@ -134,12 +152,18 @@ class SpawnDetachedTest(WinCase):
 
 
 class StopTest(WinCase):
+    def posix(self):
+        for p in posix_patches():
+            p.start()
+            self.addCleanup(p.stop)
+
     def setUp(self):
         p = mock.patch.object(procs, "POLL", 0.01)
         p.start()
         self.addCleanup(p.stop)
 
     def test_posix_sigterm_then_sigkill(self):
+        self.posix()
         calls = []
         with mock.patch.object(os, "kill", side_effect=lambda pid, sig: calls.append(sig)):
             ok = procs.terminate(77, 0.03, alive=lambda: True, kill_wait=0.03)
@@ -147,6 +171,7 @@ class StopTest(WinCase):
         self.assertFalse(ok)
 
     def test_posix_stops_at_sigterm_when_it_goes(self):
+        self.posix()
         state = {"n": 0}
 
         def alive():

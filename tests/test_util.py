@@ -157,6 +157,14 @@ class EnvCommandTest(unittest.TestCase):
         self.assertEqual(self.cmd(f'"{sys.executable}" "fake claude.py"'), [sys.executable, "fake claude.py"])
         self.assertEqual(self.cmd(f"{sys.executable} a.py --x"), [sys.executable, "a.py", "--x"])
 
+    def test_unquoted_program_path_with_spaces_plus_args(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "dir with spaces"
+            p.mkdir()
+            f = p / "python.exe"
+            f.write_text("")
+            self.assertEqual(self.cmd(f"{f} a.py --x"), [str(f), "a.py", "--x"])
+
     def test_an_unknown_single_word_stays_as_is(self):
         self.assertEqual(self.cmd("no-such-claude-xyz"), ["no-such-claude-xyz"])
 
@@ -178,7 +186,15 @@ class AtomicWriteTest(unittest.TestCase):
             calls.append(1)
             raise PermissionError("boom")
 
+        # os.name is patched only around the replace (pathlib/tempfile want the real one)
+        real_replace = util._replace
+
+        def posix_replace(src, dst):
+            with mock.patch.object(util.os, "name", "posix"):
+                real_replace(src, dst)
+
         with mock.patch.object(util.os, "replace", side_effect=replace), \
+                mock.patch.object(util, "_replace", side_effect=posix_replace), \
                 mock.patch.object(util.time, "sleep") as sleep:
             with self.assertRaises(PermissionError):
                 util.atomic_write(self.path, "x")

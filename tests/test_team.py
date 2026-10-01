@@ -36,7 +36,7 @@ class TeamTest(unittest.TestCase):
 
     def test_relative_workspace_is_under_ship(self):
         t = validate(base(workspace="work"), Path("/ship"))
-        self.assertTrue(t["workspace"].endswith("/ship/work"))
+        self.assertEqual(Path(t["workspace"]), Path("/ship") / "work")
 
     def test_time_limit_and_grace(self):
         t = validate(base(time_limit="20m", grace="90s"), Path("/ship"))
