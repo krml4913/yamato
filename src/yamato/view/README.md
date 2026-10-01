@@ -19,7 +19,7 @@ zellij --session yamato-view --new-session-with-layout ~/yamato/view.kdl
 
 艦は名前か艦フォルダのパスで指定する。名前は `$YAMATO_HOME/ships.json` (`ship create --path` で作った艦の登録簿)、なければ `$YAMATO_HOME/<name>` (既定 `~/yamato/<name>`) の順に探す。`view open` で艦名を省略すると `ships.json` と `$YAMATO_HOME` 直下の全艦が対象になる。
 
-layout の各ペインは `<yamato> view attach <艦フォルダの絶対パス> <席>` を動かす。ペインは zellij のサーバの環境で動くため、この shell の `YAMATO_HOME` に頼らないようパスで渡している。タブの名前は team.yaml の `name`。
+layout の各ペインは `<yamato> view attach <艦フォルダの絶対パス> <席>` を動かす。ペインは zellij のサーバの環境で動くため、この shell の `YAMATO_HOME` に頼らないようパスで渡している。艦のタブの名前は `ship:<team.yaml の name>` (admiral のタブは `admiral`。艦の名前が admiral でもぶつからない)。接頭辞なしの古いタブが開いているセッションでは、次の `view` で `ship:` 付きに置き換える (zellij の中では rename)。
 
 ### `view open` の動き (§13)
 
