@@ -295,6 +295,22 @@ class SeatTest(_SeatBase):
             {"projects": {str(self.workspace): {"hasTrustDialogAccepted": True}}}))
         self.assertTrue(claude.is_trusted(self.workspace))
 
+    def test_trust_keys_cover_windows_forms(self):
+        from pathlib import PureWindowsPath
+        from unittest import mock
+        from yamato import claude
+
+        win = PureWindowsPath("C:\\Users\\x\\ws")
+        keys = claude._trust_keys(win)
+        for want in ("C:\\Users\\x\\ws", "C:/Users/x/ws", "c:/Users/x/ws", "c:\\Users\\x\\ws"):
+            self.assertIn(want, keys)
+        for key in ("C:/Users/x/ws", "c:/Users/x/ws", "C:\\Users\\x\\ws"):
+            (self.config / ".claude.json").write_text(json.dumps(
+                {"projects": {key: {"hasTrustDialogAccepted": True}}}))
+            with mock.patch.object(claude, "git_root", return_value=win), \
+                    mock.patch.object(claude, "main_repo_root", return_value=None):
+                self.assertTrue(claude.is_trusted(self.workspace), key)
+
     def test_trust_key_present_false_is_still_a_clear_refusal(self):
         from yamato import claude
 

@@ -195,6 +195,17 @@ def main_repo_root(path: Path) -> Path | None:
     return git_root(path)
 
 
+def _trust_keys(p) -> list[str]:
+    """Keys ``~/.claude.json`` may use for a path. Claude Code writes ``C:/Users/...`` on
+    Windows while ``str(Path)`` is ``C:\\Users\\...``; the drive letter's case may differ
+    too. Native form first, then the others (any hit counts)."""
+    forms = [str(p), p.as_posix()]
+    for f in list(forms):
+        if len(f) > 1 and f[1] == ":" and f[0].isalpha():
+            forms += [f[0].upper() + f[1:], f[0].lower() + f[1:]]
+    return list(dict.fromkeys(forms))
+
+
 def is_trusted(workspace: Path) -> bool | None:
     """Trust is per git root; a non-git dir is covered by a trusted ancestor (verify-p0-b Q4).
     A linked worktree inherits the trust of its main repo (verify-p1-d V6).
@@ -222,7 +233,7 @@ def is_trusted(workspace: Path) -> bool | None:
         tell" (nit A), not a clear refusal. No entry at all, a malformed (non-dict) entry,
         or a keyless entry while the key is still in current use elsewhere, all stay False
         as before: only a file-wide key rename is ambiguous."""
-        entry = projects.get(str(p))
+        entry = next((projects[k] for k in _trust_keys(p) if k in projects), None)
         if isinstance(entry, dict):
             if "hasTrustDialogAccepted" in entry:
                 return bool(entry["hasTrustDialogAccepted"])
