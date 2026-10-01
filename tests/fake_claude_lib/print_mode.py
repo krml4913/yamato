@@ -75,13 +75,13 @@ def run(argv, mode):
     name = _arg(argv, "--name") or ""
     ship = _arg(argv, "--add-dir")
     seat = name.split(".", 1)[1] if "." in name else name
+    _transcript(sid, os.getcwd())   # before the hooks: where a signal cannot be held off (Windows) it is the first thing written
     if not mode.get("p_no_hook"):
         _emit({"type": "system", "subtype": "hook_started", "hook_event": "SessionStart", "session_id": sid})
         _run_session_start(_arg(argv, "--settings"), sid)
         _emit({"type": "system", "subtype": "hook_response", "hook_event": "SessionStart",
                "hook_name": "SessionStart:startup", "exit_code": 0, "outcome": "success", "session_id": sid})
     _emit({"type": "system", "subtype": "init", "session_id": sid, "model": _arg(argv, "--model")})
-    _transcript(sid, os.getcwd())
     if _mask:
         _mask(signal.SIG_UNBLOCK, {signal.SIGTERM})
     for _ in range(2):

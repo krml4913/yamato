@@ -485,9 +485,9 @@ class ResearchTemplateTest(ShipTestCase):
         self.assertTrue((self.rdir / "roles" / memory.CURATOR_PROMPT).is_file())
         memory.curator_agents(self.rdir, self.rteam, "researcher")   # does not raise
         agents = json.loads(runtime.agents_path(self.rdir).read_text(encoding="utf-8"))
-        self.assertIn(f"memory curate {self.rdir}", agents["editor"]["prompt"])
+        self.assertIn(f"memory curate {ship_arg(self.rdir)}", agents["editor"]["prompt"])
         for role in ("researcher", "fact-checker", "editor"):
-            self.assertIn(f'memo "<本文>" --ship {self.rdir}', agents[role]["prompt"])
+            self.assertIn(f'memo "<本文>" --ship {ship_arg(self.rdir)}', agents[role]["prompt"])
             self.assertNotIn("詰まり / memory 候補", agents[role]["prompt"])
 
     def test_the_memo_in_the_prompt_passes_the_dont_ask_allow_list(self):
