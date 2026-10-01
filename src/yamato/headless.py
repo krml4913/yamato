@@ -332,7 +332,7 @@ def _forward_signals(shipdir: Path, seat: str, proc):
     def forward(signum, _frame):
         roster.update(shipdir, seat, forceStop="wrapper-signal")
         if proc.poll() is None:
-            procs.soft_stop(proc.pid)
+            procs.soft_stop(proc.pid, group=True)
 
     # Windows: 切り離したラッパーに届くのは CTRL_BREAK (= SIGBREAK)
     sigs = [signal.SIGTERM, signal.SIGINT, *([signal.SIGBREAK] if hasattr(signal, "SIGBREAK") else [])]
@@ -352,7 +352,7 @@ def _watch(shipdir: Path, seat: str, proc, role: dict, started: float, no: int, 
         if killed is None:
             kill_reason = _time_up(shipdir, started, role.get("max_duration"), now)
             if kill_reason:
-                procs.soft_stop(proc.pid)
+                procs.soft_stop(proc.pid, group=True)
                 killed = now
                 append_log(shipdir, seat, f"headless: 時間切れ ({kill_reason}) → SIGTERM")
                 events.emit(shipdir, events.FORCE_STOP, seat=seat, summary=f"時間切れで停止 ({kill_reason})",

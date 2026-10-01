@@ -122,10 +122,11 @@ def spawn_detached(args: Sequence[str], cwd: str | None = None, env: dict | None
 
 # --- 停止 -----------------------------------------------------------------------
 
-def soft_stop(pid, group: bool = True) -> None:
+def soft_stop(pid, group: bool = False) -> None:
     """穏やかに止める: POSIX は SIGTERM、Windows は CTRL_BREAK_EVENT (相手が自分のグループの先頭のとき)。
-    ``group=False`` (グループの先頭として起こしたと確かめられない pid) の Windows は、CTRL_BREAK が
-    同じコンソール全体に届くので送らず、hard_kill (taskkill /T /F) に回す。"""
+    ``group`` の既定は False (安全側): グループの先頭として起こしたと確かめられない pid の Windows は、
+    CTRL_BREAK が同じコンソール全体に届くので送らず、hard_kill (taskkill /T /F) に回す。
+    group_kwargs で起こした pid は呼び出し側が ``group=True`` を明示する。"""
     if is_windows() and not group:
         hard_kill(pid)
         return
@@ -155,7 +156,7 @@ def hard_kill(pid) -> None:
 
 
 def terminate(pid, grace: float, alive: Callable[[], bool] | None = None, kill_wait: float = 5,
-              group: bool = True) -> bool:
+              group: bool = False) -> bool:
     """soft_stop → ``grace`` 秒待つ → hard_kill → ``kill_wait`` 秒待つ。消えたら True。
     ``alive``: 引数なしの生死の判定 (既定は pid_alive(pid)。pid の再利用を見分けたいときに渡す)。
     ``group``: soft_stop に渡す (group_kwargs で起こした pid か)。"""

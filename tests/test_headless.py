@@ -264,6 +264,16 @@ class HeadlessTest(_Base):
             hk.assert_called_once_with(123)
             kill.assert_not_called()
 
+    def test_soft_stop_and_terminate_default_to_no_group_mark(self):
+        # 既定は安全側: 印を明示しない呼び出しは Windows で hard_kill に回る (mac でも走る)
+        with mock.patch.object(procs, "is_windows", return_value=True), \
+                mock.patch.object(procs, "hard_kill") as hk, mock.patch.object(procs.os, "kill") as kill:
+            procs.soft_stop(123)
+            hk.assert_called_once_with(123)
+            kill.assert_not_called()
+        import inspect
+        self.assertIs(inspect.signature(procs.terminate).parameters["group"].default, False)
+
     def test_terminate_passes_the_group_mark_from_the_roster(self):
         rec = {"pid": 4242, "sessionId": "s", "pidStart": 1}
         for rec_group, expect in (({}, False), ({"group": True}, True)):
