@@ -119,7 +119,10 @@ def terminate(shipdir: Path, seat: str, reason: str, timeout: float = 30) -> boo
     pid = rec.get("pid")
     if pid and rec.get("state") in (roster.ON_SHIFT, roster.STOPPING):
         roster.update(shipdir, seat, forceStop=reason)
-        procs.soft_stop(pid)
+        # Windows の soft_stop は CTRL_BREAK。pid が再利用されていると同じコンソールの別プロセスを落とすので、
+        # pidStart で確かめられた pid にしか送らない
+        if not procs.is_windows() or live_pid(rec):
+            procs.soft_stop(pid)
     return wait_idle(shipdir, seat, timeout)
 
 

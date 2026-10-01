@@ -245,6 +245,19 @@ class LivePidWindowsTest(WinCase):
         term.assert_not_called()
         soft.assert_not_called()
 
+    def test_terminate_sends_no_ctrl_break_to_an_unverified_pid(self):
+        """down --force (headless.terminate) も pidStart で確かめた pid にしか CTRL_BREAK を送らない (T-050 差し戻し)。"""
+        self.win(FakeKernel32({100: None}, created={100: 555}))
+        for extra, sent in (({}, False), ({"pidStart": 999}, False), ({"pidStart": 555}, True)):
+            rec = {"state": roster.ON_SHIFT, "pid": 100, "sessionId": "s", **extra}
+            with tempfile.TemporaryDirectory() as d, \
+                    mock.patch.object(headless.roster, "seat", return_value=rec), \
+                    mock.patch.object(headless.roster, "update"), \
+                    mock.patch.object(headless, "wait_idle", return_value=True), \
+                    mock.patch.object(headless.procs, "soft_stop") as soft:
+                headless.terminate(Path(d), "x", "r")
+            self.assertEqual(soft.called, sent, extra)
+
     def test_windows_does_not_run_ps(self):
         self.win(FakeKernel32({100: None}))
         with mock.patch.object(headless.subprocess, "run") as run:
