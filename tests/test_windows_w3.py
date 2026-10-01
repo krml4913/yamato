@@ -9,7 +9,9 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from tests.helpers import ShipTestCase
@@ -66,6 +68,20 @@ class WinCase(unittest.TestCase):
             self.addCleanup(p.stop)
 
 
+def posix_patches():
+    """The POSIX branches run on a Windows machine too: is_windows is False and SIGKILL exists
+    (Windows' signal module has none)."""
+    return [mock.patch.object(procs, "is_windows", return_value=False),
+            mock.patch.object(signal, "SIGKILL", 9, create=True)]
+
+
+class PosixCase(unittest.TestCase):
+    def setUp(self):
+        for p in posix_patches():
+            p.start()
+            self.addCleanup(p.stop)
+
+
 class PidAliveWindowsTest(WinCase):
     def test_the_four_w0_cases(self):
         k32 = FakeKernel32({100: None, 200: 3, os.getpid(): None})   # 生きている / 終わった / (300 は無い) / 自分
@@ -98,9 +114,10 @@ class PidAliveWindowsTest(WinCase):
         self.assertIsNone(procs.start_time(999))
 
 
-class PidAlivePosixTest(unittest.TestCase):
+class PidAlivePosixTest(PosixCase):
     def test_posix_uses_kill_zero(self):
-        self.assertTrue(procs.pid_alive(os.getpid()))
+        with mock.patch.object(os, "kill", return_value=None):
+            self.assertTrue(procs.pid_alive(os.getpid()))
         with mock.patch.object(os, "kill", side_effect=ProcessLookupError):
             self.assertFalse(procs.pid_alive(4242))
         with mock.patch.object(os, "kill", side_effect=PermissionError):
@@ -111,6 +128,9 @@ class PidAlivePosixTest(unittest.TestCase):
 
 class SpawnDetachedTest(WinCase):
     def test_posix_is_nohup_in_a_new_session(self):
+        for p in posix_patches():
+            p.start()
+            self.addCleanup(p.stop)
         with mock.patch.object(subprocess, "Popen") as popen:
             procs.spawn_detached(["a", "b"], cwd="/x", env={"K": "v"})
         args, kw = popen.call_args
@@ -134,12 +154,18 @@ class SpawnDetachedTest(WinCase):
 
 
 class StopTest(WinCase):
+    def posix(self):
+        for p in posix_patches():
+            p.start()
+            self.addCleanup(p.stop)
+
     def setUp(self):
         p = mock.patch.object(procs, "POLL", 0.01)
         p.start()
         self.addCleanup(p.stop)
 
     def test_posix_sigterm_then_sigkill(self):
+        self.posix()
         calls = []
         with mock.patch.object(os, "kill", side_effect=lambda pid, sig: calls.append(sig)):
             ok = procs.terminate(77, 0.03, alive=lambda: True, kill_wait=0.03)
@@ -147,6 +173,7 @@ class StopTest(WinCase):
         self.assertFalse(ok)
 
     def test_posix_stops_at_sigterm_when_it_goes(self):
+        self.posix()
         state = {"n": 0}
 
         def alive():
@@ -163,7 +190,7 @@ class StopTest(WinCase):
         with mock.patch.object(signal, "CTRL_BREAK_EVENT", brk, create=True), \
                 mock.patch.object(os, "kill") as kill, \
                 mock.patch.object(subprocess, "run") as run:
-            ok = procs.terminate(77, 0.03, alive=lambda: True, kill_wait=0.03)
+            ok = procs.terminate(77, 0.03, alive=lambda: True, kill_wait=0.03, group=True)
         kill.assert_called_once_with(77, brk)
         self.assertEqual(run.call_args[0][0], ["taskkill", "/PID", "77", "/T", "/F"])
         self.assertFalse(ok)
@@ -172,13 +199,16 @@ class StopTest(WinCase):
         self.win()
         with mock.patch.object(signal, "CTRL_BREAK_EVENT", 1, create=True), \
                 mock.patch.object(os, "kill") as kill, mock.patch.object(subprocess, "run"):
-            procs.soft_stop(5)
+            procs.soft_stop(5, group=True)
             procs.hard_kill(5)
         self.assertEqual([c.args[1] for c in kill.call_args_list], [1])
 
 
 class RunForegroundTest(WinCase):
     def test_posix_execs(self):
+        for p in posix_patches():   # Windows 機でも POSIX の枝を見る
+            p.start()
+            self.addCleanup(p.stop)
         calls = []
         self.assertEqual(procs.run_foreground(["c", "attach", "x"], execvp=lambda f, a: calls.append((f, a))), 0)
         self.assertEqual(calls, [("c", ["c", "attach", "x"])])
@@ -198,8 +228,35 @@ class LivePidWindowsTest(WinCase):
         rec = {"pid": 100, "sessionId": "s"}
         self.assertEqual(headless.live_pid({**rec, "pidStart": 555}), 100)
         self.assertIsNone(headless.live_pid({**rec, "pidStart": 999}))       # pid を別のプロセスが使っている
-        self.assertEqual(headless.live_pid(rec), 100)                        # 印が無ければ pid だけ
+        self.assertIsNone(headless.live_pid(rec))                            # 印が無ければ生きた -p とみなさない (T-050)
         self.assertIsNone(headless.live_pid({"pid": 300, "sessionId": "s", "pidStart": 1}))
+
+    def test_no_pid_start_means_no_ctrl_break_to_an_orphan(self):
+        """pidStart の無い roster の pid には CTRL_BREAK を送らない (コンソールごと落とす事故, T-050)。"""
+        self.win(FakeKernel32({100: None}, created={100: 555}))
+        with tempfile.TemporaryDirectory() as d:
+            ship = Path(d)
+            rec = {"state": roster.ON_SHIFT, "pid": 100, "sessionId": "s"}
+            with mock.patch.object(headless.roster, "seat", return_value=rec), \
+                    mock.patch.object(headless, "running", return_value=False), \
+                    mock.patch.object(headless.procs, "terminate") as term, \
+                    mock.patch.object(headless.procs, "soft_stop") as soft:
+                self.assertFalse(headless.stop_orphan(ship, "x", "r"))
+        term.assert_not_called()
+        soft.assert_not_called()
+
+    def test_terminate_sends_no_ctrl_break_to_an_unverified_pid(self):
+        """down --force (headless.terminate) も pidStart で確かめた pid にしか CTRL_BREAK を送らない (T-050 差し戻し)。"""
+        self.win(FakeKernel32({100: None}, created={100: 555}))
+        for extra, sent in (({}, False), ({"pidStart": 999}, False), ({"pidStart": 555}, True)):
+            rec = {"state": roster.ON_SHIFT, "pid": 100, "sessionId": "s", **extra}
+            with tempfile.TemporaryDirectory() as d, \
+                    mock.patch.object(headless.roster, "seat", return_value=rec), \
+                    mock.patch.object(headless.roster, "update"), \
+                    mock.patch.object(headless, "wait_idle", return_value=True), \
+                    mock.patch.object(headless.procs, "soft_stop") as soft:
+                headless.terminate(Path(d), "x", "r")
+            self.assertEqual(soft.called, sent, extra)
 
     def test_windows_does_not_run_ps(self):
         self.win(FakeKernel32({100: None}))

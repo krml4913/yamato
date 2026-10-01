@@ -33,7 +33,7 @@ class AdmiralTemplateTest(ShipTestCase):
     def settings(self) -> dict:
         from yamato import runtime
 
-        return json.loads(runtime.settings_path(self.adir, "admiral").read_text())
+        return json.loads(runtime.settings_path(self.adir, "admiral").read_text(encoding="utf-8"))
 
     # --- ship create ---------------------------------------------------------
 
@@ -54,6 +54,12 @@ class AdmiralTemplateTest(ShipTestCase):
 
     def test_time_limit_is_none(self):
         self.assertIsNone(self.ateam["time_limit"])
+
+    def test_rotate_hours_is_off(self):
+        from yamato.team import rotate_conf
+
+        # 常駐で時間の上限がない席が、シフト 8h 超の rotate で自分で止まらないように (drift H)
+        self.assertIsNone(rotate_conf(self.ateam, "admiral")["hours"])
 
     # --- D-011 Q2: auto + WebFetch/WebSearch allowed, ~/dev/yamato read-only --
 
@@ -82,7 +88,7 @@ class AdmiralTemplateTest(ShipTestCase):
     def test_role_prompt_has_no_placeholder_left_after_rendering(self):
         from yamato import runtime
 
-        prompt = (self.adir / "roles" / "admiral.md").read_text()
+        prompt = (self.adir / "roles" / "admiral.md").read_text(encoding="utf-8")
         rendered = runtime.render_prompt(prompt, self.adir, self.ateam)
         self.assertNotIn("{{", rendered)
         self.assertIn("艦の中身に踏み込まない", rendered)
@@ -90,7 +96,7 @@ class AdmiralTemplateTest(ShipTestCase):
     # --- role prompt covers the requirement doc's 6 jobs + "しないこと" -------
 
     def test_role_prompt_covers_the_six_jobs(self):
-        prompt = (self.adir / "roles" / "admiral.md").read_text()
+        prompt = (self.adir / "roles" / "admiral.md").read_text(encoding="utf-8")
         for phrase in ("艦を作る・構成を変える", "出撃・帰投", "一望", "判断の代筆",
                       "yamato の使い方に答える", "表示"):
             self.assertIn(phrase, prompt, phrase)
@@ -131,7 +137,7 @@ class AdmiralTemplateTest(ShipTestCase):
         for i in range(24):    # t1 (the dev ship from setUp) + 24 = 25 ships, fleet_items is 20
             ship.create(f"s{i}", str(self.workspace), None, "dev")
         sdir = self.adir / "seats" / "admiral"
-        (sdir / "handoff.md").write_text("\n".join("h" * 60 for _ in range(60)))
+        (sdir / "handoff.md").write_text("\n".join("h" * 60 for _ in range(60)), encoding="utf-8")
         for i in range(12):
             inbox.append(self.adir, "admiral", "owner", f"{i}:" + "m" * 500)
         text, _ = inject.build(self.adir, self.ateam, "admiral")

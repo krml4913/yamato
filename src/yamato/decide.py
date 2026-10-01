@@ -314,7 +314,7 @@ def _append_log(shipdir: Path, meta: dict, choice: str, reason: str, stopped: li
         lines.append(f"- 覆したもの: {meta['supersedes']}")
     if not by_decider:
         lines.append(f"- 注意: decider ({meta['decider']}) 以外が閉じた")
-    lines.append(f"- 項目: {item_path.relative_to(shipdir)}")
+    lines.append(f"- 項目: {item_path.relative_to(shipdir).as_posix()}")
     p = Path(shipdir) / LOG
     old = p.read_text(encoding="utf-8") if p.exists() else "# 判断の記録\n"
     atomic_write(p, old.rstrip("\n") + "\n\n" + "\n".join(lines) + "\n")

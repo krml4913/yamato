@@ -522,7 +522,7 @@ def curate(shipdir: Path, team: dict, role: str | None = None, wait: bool = Fals
             log.parent.mkdir(parents=True, exist_ok=True)
             from . import claude
 
-            with open(log, "a") as f:
+            with open(log, "a", encoding="utf-8") as f:
                 procs.spawn_detached([sys.executable, str(YAMATO_BIN), "_memory-curate", str(shipdir), r],
                                      env=claude.seat_env(), stdout=f, stderr=f)
             out(f"{r}: 棚卸しのシフトを起こした。終わると {report_to(team)} に知らせが届く "
@@ -656,7 +656,7 @@ def _watch(proc, started: float, max_duration: int) -> str | None:
     while proc.poll() is None:
         now = time.time()
         if killed_at is None and now >= started + max_duration:
-            procs.soft_stop(proc.pid)
+            procs.soft_stop(proc.pid, group=True)
             killed_at, reason = now, "max-duration"
         elif killed_at is not None and now - killed_at > KILL_WAIT:
             procs.hard_kill(proc.pid)

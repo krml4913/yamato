@@ -14,7 +14,7 @@ from unittest import mock
 
 from tests.fake_claude_lib.print_mode import RESULT_TEXT
 from tests.helpers import ShipTestCase
-from yamato import board, deadline, events, headless, inbox, roster, runtime, seat
+from yamato import board, deadline, events, headless, inbox, procs, roster, runtime, seat
 from yamato.team import validate
 from yamato.util import YamatoError
 
@@ -39,9 +39,9 @@ class _Base(ShipTestCase):
     def setUp(self):
         super().setUp()
         ty = self.shipdir / "team.yaml"
-        ty.write_text(ty.read_text().replace("roles:\n", ROLE + self.role_extra, 1))
+        ty.write_text(ty.read_text(encoding="utf-8").replace("roles:\n", ROLE + self.role_extra, 1), encoding="utf-8")
         for role in ("researcher", *self.extra_roles):
-            (self.shipdir / "roles" / f"{role}.md").write_text(f"あなたは {role} です。\n")
+            (self.shipdir / "roles" / f"{role}.md").write_text(f"あなたは {role} です。\n", encoding="utf-8")
         seat.prepare(self.shipdir)
         deadline.write(self.shipdir, limit=600, grace=60, token="t")
         for target, attr, value in ((headless, "POLL", 0.02), (headless, "IDLE_POLL", 0.02), (headless, "KILL_WAIT", 5)):
@@ -63,7 +63,7 @@ class _Base(ShipTestCase):
 
     def usage_lines(self):
         path = self.shipdir / "usage.jsonl"
-        return [json.loads(x) for x in path.read_text().splitlines()] if path.exists() else []
+        return [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines()] if path.exists() else []
 
     def hub_inbox(self):
         return inbox.entries(self.shipdir, "pm")
@@ -177,7 +177,7 @@ class HeadlessTest(_Base):
 
     def test_time_limit_sigterms_and_counts_usage_from_the_transcript(self):
         ty = self.shipdir / "team.yaml"
-        ty.write_text(ty.read_text().replace("    shift: headless\n", "    shift: headless\n    max_duration: 1s\n"))
+        ty.write_text(ty.read_text(encoding="utf-8").replace("    shift: headless\n", "    shift: headless\n    max_duration: 1s\n"), encoding="utf-8")
         seat.prepare(self.shipdir)
         load = seat.current_team
 
@@ -193,7 +193,8 @@ class HeadlessTest(_Base):
         rec = roster.seat(self.shipdir, "researcher")
         self.assertEqual(rec["endReason"], "max-duration")
         self.assertEqual(rec["outcome"], headless.TIMEOUT)
-        self.assertEqual(rec["exitCode"], 143)
+        # POSIX は SIGTERM の 143、Windows は CTRL_BREAK の STATUS_CONTROL_C_EXIT (0xC000013A)
+        self.assertEqual(rec["exitCode"], 0xC000013A if os.name == "nt" else 143)
         [u] = self.usage_lines()
         self.assertEqual(u["source"], "transcript")
         self.assertIsNone(u["total_cost_usd"])
@@ -230,11 +231,12 @@ class HeadlessTest(_Base):
     def _orphan(self):
         """A shift whose wrapper is gone but whose claude -p (a stand-in carrying its --session-id) runs."""
         sid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)", "--session-id", sid])
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)", "--session-id", sid],
+                                 **procs.group_kwargs())
         self.addCleanup(_reap, child)
         roster.start_shift(self.shipdir, "researcher", session_id=sid, short_id=sid[:8],
                            session_name="t1.researcher", how="headless")
-        roster.update(self.shipdir, "researcher", pid=child.pid)
+        roster.update(self.shipdir, "researcher", pid=child.pid, pidStart=procs.start_time(child.pid), group=True)
         return child
 
     def test_reconcile_stops_an_orphaned_p_and_closes_the_shift(self):
@@ -253,6 +255,36 @@ class HeadlessTest(_Base):
         self.assertEqual(stopped, ["researcher"])
         self.assertIsNotNone(child.wait(10))
         self.assertEqual(roster.seat(self.shipdir, "researcher")["endReason"], "down-force")
+
+    def test_windows_soft_stop_without_the_group_mark_is_a_hard_kill(self):
+        # CTRL_BREAK は同じコンソール全体に届く。group の印が無い pid には送らず taskkill /T /F に回す (T-053)
+        with mock.patch.object(procs, "is_windows", return_value=True), \
+                mock.patch.object(procs, "hard_kill") as hk, mock.patch.object(procs.os, "kill") as kill:
+            procs.soft_stop(123, group=False)
+            hk.assert_called_once_with(123)
+            kill.assert_not_called()
+
+    def test_soft_stop_and_terminate_default_to_no_group_mark(self):
+        # 既定は安全側: 印を明示しない呼び出しは Windows で hard_kill に回る (mac でも走る)
+        with mock.patch.object(procs, "is_windows", return_value=True), \
+                mock.patch.object(procs, "hard_kill") as hk, mock.patch.object(procs.os, "kill") as kill:
+            procs.soft_stop(123)
+            hk.assert_called_once_with(123)
+            kill.assert_not_called()
+        import inspect
+        self.assertIs(inspect.signature(procs.terminate).parameters["group"].default, False)
+
+    def test_terminate_passes_the_group_mark_from_the_roster(self):
+        rec = {"pid": 4242, "sessionId": "s", "pidStart": 1}
+        for rec_group, expect in (({}, False), ({"group": True}, True)):
+            with mock.patch.object(headless.procs, "terminate", return_value=True) as t, \
+                    mock.patch.object(headless, "live_pid", return_value=4242), \
+                    mock.patch.object(headless, "running", return_value=False), \
+                    mock.patch.object(headless.roster, "seat", return_value={**rec, **rec_group, "state": roster.ON_SHIFT}), \
+                    mock.patch.object(headless.roster, "update"), mock.patch.object(headless, "append_log"), \
+                    mock.patch.object(headless.events, "emit"):
+                headless.stop_orphan(self.shipdir, "researcher", "x")
+            self.assertEqual(t.call_args.kwargs["group"], expect)
 
     def test_a_reused_pid_is_not_taken_for_the_p(self):
         other = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
@@ -369,7 +401,7 @@ class HeadlessTest(_Base):
 
     def test_up_with_a_headless_hub_spawns_the_wrapper(self):
         ty = self.shipdir / "team.yaml"
-        ty.write_text(ty.read_text().replace("hub: pm", "hub: researcher"))
+        ty.write_text(ty.read_text(encoding="utf-8").replace("hub: pm", "hub: researcher"), encoding="utf-8")
         with mock.patch.object(seat, "spawn_watchdog"), \
                 mock.patch.object(seat, "wake", side_effect=lambda sd, t, s, reason="send": headless.wake(sd, t, s)), \
                 mock.patch.object(headless, "spawn") as spawn:
@@ -383,7 +415,7 @@ class HeadlessTest(_Base):
         sid = "11111111-2222-3333-4444-555555555555"
         roster.start_shift(self.shipdir, "researcher", session_id=sid, short_id=sid[:8],
                            session_name="t1.researcher", how="headless")
-        (self.shipdir / "seats/researcher/handoff.md").write_text("x\n")
+        (self.shipdir / "seats/researcher/handoff.md").write_text("x\n", encoding="utf-8")
         os.environ["CLAUDE_CODE_SESSION_ID"] = sid
         self.addCleanup(os.environ.pop, "CLAUDE_CODE_SESSION_ID", None)
         with mock.patch.object(seat, "_spawn_detached") as spawn:

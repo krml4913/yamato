@@ -10,6 +10,7 @@ from unittest import mock
 from tests.helpers import ShipTestCase
 from yamato import cli, events, inbox, inject, memory, roster, runtime, seat
 from yamato.team import validate
+from yamato.runtime import rule_path, ship_arg
 from yamato.util import YAMATO_BIN, YamatoError
 
 YAMATO = str(YAMATO_BIN)
@@ -34,7 +35,7 @@ class _Base(ShipTestCase):
     def setUp(self):
         super().setUp()
         ty = self.shipdir / "team.yaml"
-        ty.write_text(ty.read_text().replace("    count: 1                 # 2 以上", "    count: 2                 # 2 以上", 1))
+        ty.write_text(ty.read_text(encoding="utf-8").replace("    count: 1                 # 2 以上", "    count: 2                 # 2 以上", 1), encoding="utf-8")
         self.t = seat.prepare(self.shipdir)
         self.assertEqual([s for s in self.t["seats"] if s.startswith("impl")], ["impl-1", "impl-2"])
         # the notice to the applier would launch pm (fake --bg): keep it out
@@ -97,16 +98,16 @@ class ConfTest(_Base):
 
 class MigrateTest(_Base):
     def test_seat_memory_moves_to_the_role_and_is_kept(self):
-        (self.shipdir / "seats/impl-1/memory.md").write_text("- impl-1 の知見\n")
-        (self.shipdir / "seats/impl-2/memory.md").write_text("- impl-2 の知見\n")
-        (self.shipdir / "seats/pm/memory.md").write_text("")
+        (self.shipdir / "seats/impl-1/memory.md").write_text("- impl-1 の知見\n", encoding="utf-8")
+        (self.shipdir / "seats/impl-2/memory.md").write_text("- impl-2 の知見\n", encoding="utf-8")
+        (self.shipdir / "seats/pm/memory.md").write_text("", encoding="utf-8")
         moved = memory.migrate(self.shipdir, self.t)
         self.assertEqual(len(moved), 2)
-        text = self.mem().read_text()
+        text = self.mem().read_text(encoding="utf-8")
         self.assertIn("<!-- seats/impl-1/memory.md から移した", text)
         self.assertIn("- impl-1 の知見", text)
         self.assertIn("- impl-2 の知見", text)
-        self.assertEqual((self.shipdir / "seats/impl-1/memory.md.migrated").read_text(), "- impl-1 の知見\n")
+        self.assertEqual((self.shipdir / "seats/impl-1/memory.md.migrated").read_text(encoding="utf-8"), "- impl-1 の知見\n")
         self.assertFalse((self.shipdir / "seats/impl-1/memory.md").exists())
         self.assertFalse((self.shipdir / "seats/pm/memory.md").exists())   # empty: nothing to keep
         self.assertFalse(self.mem("pm").exists())
@@ -115,15 +116,15 @@ class MigrateTest(_Base):
 
     def test_a_late_seat_file_is_appended_not_overwriting(self):
         self.mem().parent.mkdir(parents=True, exist_ok=True)
-        self.mem().write_text("- もとの行\n")
-        (self.shipdir / "seats/impl-1/memory.md").write_text("- あとから\n")
-        (self.shipdir / "seats/impl-1/memory.md.migrated").write_text("前回")
+        self.mem().write_text("- もとの行\n", encoding="utf-8")
+        (self.shipdir / "seats/impl-1/memory.md").write_text("- あとから\n", encoding="utf-8")
+        (self.shipdir / "seats/impl-1/memory.md.migrated").write_text("前回", encoding="utf-8")
         memory.migrate(self.shipdir, self.t)
-        self.assertTrue(self.mem().read_text().startswith("- もとの行\n\n<!-- seats/impl-1"))
-        self.assertEqual((self.shipdir / "seats/impl-1/memory.md.migrated-2").read_text(), "- あとから\n")
+        self.assertTrue(self.mem().read_text(encoding="utf-8").startswith("- もとの行\n\n<!-- seats/impl-1"))
+        self.assertEqual((self.shipdir / "seats/impl-1/memory.md.migrated-2").read_text(encoding="utf-8"), "- あとから\n")
 
     def test_injection_migrates_and_reads_the_role_memory(self):
-        (self.shipdir / "seats/impl-1/memory.md").write_text("- P0 の席の知見\n")
+        (self.shipdir / "seats/impl-1/memory.md").write_text("- P0 の席の知見\n", encoding="utf-8")
         text = inject.build_knowledge(self.shipdir, self.t, "impl-2")
         self.assertIn("## 役割の memory (roles/impl/memory.md)", text)
         self.assertIn("- P0 の席の知見", text)   # shared by the role: impl-2 reads impl-1's
@@ -133,7 +134,7 @@ class MigrateTest(_Base):
         self.assertTrue((self.shipdir / "seats/impl-1/memory-inbox.md").exists())
 
     def test_cli(self):
-        (self.shipdir / "seats/impl-1/memory.md").write_text("- x\n")
+        (self.shipdir / "seats/impl-1/memory.md").write_text("- x\n", encoding="utf-8")
         rc, out = self.cli("memory", "migrate", str(self.shipdir))
         self.assertEqual(rc, 0)
         self.assertIn("roles/impl/memory.md", out)
@@ -145,24 +146,24 @@ class MemoTest(_Base):
         self.as_seat("impl-2")
         rc, out = self.cli("memo", "テストのモックは  30 日で\n切れる", "--item", "T-042")
         self.assertEqual(rc, 0)
-        line = (self.shipdir / "seats/impl-2/memory-inbox.md").read_text()
+        line = (self.shipdir / "seats/impl-2/memory-inbox.md").read_text(encoding="utf-8")
         self.assertRegex(line, r"^- \d{4}-\d{2}-\d{2} impl-2 \[T-042\] \(role\) テストのモックは 30 日で 切れる\n$")
         self.assertIn(line.strip(), out)
         self.cli("memo", "艦の知見", "--scope", "ship", "--ship", str(self.shipdir))
-        self.assertIn("impl-2 (ship) 艦の知見", (self.shipdir / "seats/impl-2/memory-inbox.md").read_text())
+        self.assertIn("impl-2 (ship) 艦の知見", (self.shipdir / "seats/impl-2/memory-inbox.md").read_text(encoding="utf-8"))
 
     def test_a_seat_writes_only_its_own_inbox(self):
         self.as_seat("impl-2")
         rc = self.cli("memo", "x", "--seat", "impl-1")[0]
         self.assertEqual(rc, 1)
-        self.assertEqual((self.shipdir / "seats/impl-1/memory-inbox.md").read_text(), "")
+        self.assertEqual((self.shipdir / "seats/impl-1/memory-inbox.md").read_text(encoding="utf-8"), "")
 
     def test_outside_a_seat_ship_and_seat_are_needed(self):
         os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
         self.assertEqual(self.cli("memo", "x")[0], 1)
         self.assertEqual(self.cli("memo", "x", "--ship", str(self.shipdir), "--seat", "nobody")[0], 1)
         self.assertEqual(self.cli("memo", "x", "--ship", str(self.shipdir), "--seat", "pm")[0], 0)
-        self.assertIn(" pm (role) x", (self.shipdir / "seats/pm/memory-inbox.md").read_text())
+        self.assertIn(" pm (role) x", (self.shipdir / "seats/pm/memory-inbox.md").read_text(encoding="utf-8"))
         with self.assertRaises(YamatoError):
             memory.memo(self.shipdir, "pm", "   ")
 
@@ -219,8 +220,8 @@ class StatusTest(_Base):
 
     def test_injection_cuts_an_over_limit_file_and_warns(self):
         self.mem().parent.mkdir(parents=True, exist_ok=True)
-        self.mem().write_text("".join(f"- {i}\n" for i in range(12)))
-        (self.shipdir / "knowledge.md").write_text("k" * 50)
+        self.mem().write_text("".join(f"- {i}\n" for i in range(12)), encoding="utf-8")
+        (self.shipdir / "knowledge.md").write_text("k" * 50, encoding="utf-8")
         lim = {"memory_lines": 10, "memory_chars": 4000, "knowledge_lines": 120, "knowledge_chars": 20}
         with mock.patch.dict(self.t["memory"], limits=lim):
             text = inject.build_knowledge(self.shipdir, self.t, "impl-1")
@@ -234,7 +235,7 @@ class _Curated(_Base):
     def setUp(self):
         super().setUp()
         self.mem().parent.mkdir(parents=True, exist_ok=True)
-        self.mem().write_text("- モックは 30 日で切れる\n- 古い行\n")
+        self.mem().write_text("- モックは 30 日で切れる\n- 古い行\n", encoding="utf-8")
         memory.memo(self.shipdir, "impl-1", "テストは python3 -m unittest discover で全部流す", item="T-1")
         memory.memo(self.shipdir, "impl-2", "T-012 の手順")
         memory.memo(self.shipdir, "impl-2", "main への push は captain だけ", scope="ship")
@@ -245,11 +246,11 @@ class _Curated(_Base):
 
 class CurateTest(_Curated):
     def test_a_headless_shift_writes_the_proposal_and_leaves_memory_alone(self):
-        before = self.mem().read_text()
+        before = self.mem().read_text(encoding="utf-8")
         self.set_fake_mode(p_result=PROPOSAL)
         res = memory.run_curate(self.shipdir, self.t, "impl")
         self.assertEqual(res["outcome"], "正常", res)
-        self.assertEqual(self.mem().read_text(), before)
+        self.assertEqual(self.mem().read_text(encoding="utf-8"), before)
         [call] = self.p_calls()
         a = call["argv"]
         self.assertEqual(call["cwd"], str(self.shipdir))
@@ -261,7 +262,7 @@ class CurateTest(_Curated):
         agents = json.loads(a[a.index("--agents") + 1])
         self.assertEqual(agents[memory.CURATOR]["tools"], ["Read"])
         self.assertIn("棚卸し案を作る係", agents[memory.CURATOR]["prompt"])
-        settings = json.loads(Path(a[a.index("--settings") + 1]).read_text())
+        settings = json.loads(Path(a[a.index("--settings") + 1]).read_text(encoding="utf-8"))
         self.assertEqual(settings["permissions"]["defaultMode"], "dontAsk")
         self.assertEqual(settings["permissions"]["allow"], [])
         self.assertNotIn("hooks", settings)                          # not a seat
@@ -270,7 +271,7 @@ class CurateTest(_Curated):
         self.assertIn("impl-1 [T-1] (role) テストは", prompt)
         self.assertIn("80 行 / 4000 文字", prompt)
 
-        prop = memory.proposed_path(self.shipdir, "impl").read_text()
+        prop = memory.proposed_path(self.shipdir, "impl").read_text(encoding="utf-8")
         sec = memory.sections(prop)
         self.assertEqual(sec["memory"], "# impl の memory\n- テストは python3 -m unittest discover で全部流す\n"
                                         "- モックは 30 日で切れる")                 # fences stripped
@@ -282,7 +283,7 @@ class CurateTest(_Curated):
         self.assertIn("候補: 3 件 (impl-1: 1, impl-2: 2)", prop)
         self.assertIn("(+2 / -1 行)", prop)
 
-        [u] = [json.loads(x) for x in (self.shipdir / "usage.jsonl").read_text().splitlines()]
+        [u] = [json.loads(x) for x in (self.shipdir / "usage.jsonl").read_text(encoding="utf-8").splitlines()]
         self.assertEqual((u["seat"], u["role"], u["source"]), ("memory-curate-impl", "impl", "result"))
         [e] = self.events(memory.MEMORY_CURATE)
         self.assertEqual(e["data"]["outcome"], "正常")
@@ -292,7 +293,7 @@ class CurateTest(_Curated):
         self.assertNotIn("テストは", note["text"])   # fixed form: none of the shift's output
         impl = next(x for x in memory.status_lines(self.shipdir, self.t) if x.startswith("impl:"))
         self.assertIn(f"棚卸し案あり (+2 / -1 行): `", impl)
-        self.assertIn(f"memory apply {self.shipdir} impl` で反映", impl)
+        self.assertIn(f"memory apply {ship_arg(self.shipdir)} impl` で反映", impl)
 
     def test_an_answer_without_the_markers_fails_without_a_proposal(self):
         self.set_fake_mode(p_result="すみません、できませんでした", p_no_hook=True)
@@ -319,15 +320,18 @@ class CurateTest(_Curated):
         self.assertEqual(res["outcome"], "時間切れ")
         self.assertFalse(memory.proposed_path(self.shipdir, "impl").exists())
         self.assertIn("時間切れで止まった", inbox.entries(self.shipdir, "pm")[0]["text"])
-        self.assertEqual(json.loads((self.shipdir / "usage.jsonl").read_text())["source"], "transcript")
+        self.assertEqual(json.loads((self.shipdir / "usage.jsonl").read_text(encoding="utf-8"))["source"], "transcript")
 
     def test_one_curate_per_role_at_a_time(self):
         from yamato import headless
 
         lock = headless._try_lock(runtime.runtime_dir(self.shipdir) / "memory-curate-impl.lock")
-        self.addCleanup(headless._release, lock)
-        with self.assertRaises(YamatoError):
-            memory.run_curate(self.shipdir, self.t, "impl")
+        try:
+            with self.assertRaises(YamatoError):
+                memory.run_curate(self.shipdir, self.t, "impl")
+        finally:
+            # addCleanup だと tearDown (一時ディレクトリの削除) のあとになり、Windows は開いたファイルを消せない (WinError 32)
+            headless._release(lock)
 
     def test_without_a_role_the_roles_with_candidates_are_curated(self):
         self.set_fake_mode(p_result=PROPOSAL)
@@ -342,11 +346,13 @@ class CurateTest(_Curated):
             memory.curate(self.shipdir, self.t, "impl", out=lambda *_: None)
         argv = popen.call_args[0][0]
         self.assertEqual(argv[-3:], ["_memory-curate", str(self.shipdir), "impl"])
-        self.assertTrue(popen.call_args[1]["start_new_session"])
+        kw = popen.call_args[1]
+        # POSIX は start_new_session、Windows は creationflags (procs.spawn_detached)
+        self.assertTrue(kw.get("start_new_session") or kw.get("creationflags"))
 
     def test_nothing_to_curate(self):
         for s in ("impl-1", "impl-2"):
-            (self.shipdir / f"seats/{s}/memory-inbox.md").write_text("")
+            (self.shipdir / f"seats/{s}/memory-inbox.md").write_text("", encoding="utf-8")
         out = []
         self.assertEqual(memory.curate(self.shipdir, self.t, out=out.append), [])
         self.assertIn("棚卸しする役割がありません", out[0])
@@ -363,21 +369,21 @@ class ApplyTest(_Curated):
         self.as_seat("pm")
         rc, out = self.cli("memory", "apply", str(self.shipdir), "impl")
         self.assertEqual(rc, 0, out)
-        self.assertEqual(self.mem().read_text(), "# impl の memory\n- テストは python3 -m unittest discover で全部流す\n"
+        self.assertEqual(self.mem().read_text(encoding="utf-8"), "# impl の memory\n- テストは python3 -m unittest discover で全部流す\n"
                                                  "- モックは 30 日で切れる\n")
-        archive = memory.archive_path(self.shipdir, "impl").read_text()
+        archive = memory.archive_path(self.shipdir, "impl").read_text(encoding="utf-8")
         self.assertRegex(archive, r"## \d{4}-\d{2}-\d{2} \d{2}:\d{2} 反映: pm \(役割 impl\)")
         self.assertIn("### 案が外したもの\n- 一度きり: T-012 の手順", archive)
         self.assertIn("### memory.md から外れた行\n- 古い行", archive)
         # processed candidates -> done; the late one stays
-        left = (self.shipdir / "seats/impl-1/memory-inbox.md").read_text()
+        left = (self.shipdir / "seats/impl-1/memory-inbox.md").read_text(encoding="utf-8")
         self.assertIn("curate のあとに来た候補", left)
         self.assertNotIn("unittest", left)
-        self.assertEqual((self.shipdir / "seats/impl-2/memory-inbox.md").read_text(), "")
+        self.assertEqual((self.shipdir / "seats/impl-2/memory-inbox.md").read_text(encoding="utf-8"), "")
         done = list((self.shipdir / "seats/impl-2/memory-inbox.done").glob("*.md"))
         self.assertEqual(len(done), 1)
-        self.assertIn("T-012 の手順", done[0].read_text())
-        kin = memory.knowledge_inbox_path(self.shipdir).read_text()
+        self.assertIn("T-012 の手順", done[0].read_text(encoding="utf-8"))
+        kin = memory.knowledge_inbox_path(self.shipdir).read_text(encoding="utf-8")
         self.assertIn("impl-2 (ship) main への push は captain だけ", kin)   # (ship) memo, mechanically
         self.assertIn("impl の棚卸し: main への push は captain だけ", kin)   # the knowledge section
         self.assertFalse(memory.proposed_path(self.shipdir, "impl").exists())
@@ -396,12 +402,12 @@ class ApplyTest(_Curated):
     def test_over_the_limit_is_refused_and_nothing_moves(self):
         big = "<!-- yamato: memory -->\n" + "".join(f"- {i}\n" for i in range(81)) + "<!-- yamato: archive -->\n"
         self.curate(big)
-        before = self.mem().read_text()
+        before = self.mem().read_text(encoding="utf-8")
         with self.assertRaisesRegex(YamatoError, r"上限を超えているので反映しない: 81 行 \(上限 80 行\)"):
             memory.apply(self.shipdir, self.t, "impl", "pm")
-        self.assertEqual(self.mem().read_text(), before)
+        self.assertEqual(self.mem().read_text(encoding="utf-8"), before)
         self.assertTrue(memory.proposed_path(self.shipdir, "impl").exists())
-        self.assertIn("unittest", (self.shipdir / "seats/impl-1/memory-inbox.md").read_text())
+        self.assertIn("unittest", (self.shipdir / "seats/impl-1/memory-inbox.md").read_text(encoding="utf-8"))
         self.assertIn("上限を超えている", inbox.entries(self.shipdir, "pm")[0]["text"])
         # characters too
         with mock.patch.dict(self.t["memory"], limits={**memory.conf(self.t)["limits"], "memory_lines": 500,
@@ -412,36 +418,36 @@ class ApplyTest(_Curated):
     def test_a_hand_edited_proposal_is_what_gets_applied(self):
         self.curate()
         p = memory.proposed_path(self.shipdir, "impl")
-        p.write_text(p.read_text().replace("- モックは 30 日で切れる\n", "- 手で直した行\n", 1))
+        p.write_text(p.read_text(encoding="utf-8").replace("- モックは 30 日で切れる\n", "- 手で直した行\n", 1), encoding="utf-8")
         memory.apply(self.shipdir, self.t, "impl", "pm")
-        self.assertIn("- 手で直した行", self.mem().read_text())
+        self.assertIn("- 手で直した行", self.mem().read_text(encoding="utf-8"))
 
     def test_errors(self):
         with self.assertRaisesRegex(YamatoError, "棚卸し案がありません"):
             memory.apply(self.shipdir, self.t, "impl", "pm")
-        memory.proposed_path(self.shipdir, "impl").write_text("印なし")
+        memory.proposed_path(self.shipdir, "impl").write_text("印なし", encoding="utf-8")
         with self.assertRaisesRegex(YamatoError, "節がありません"):
             memory.apply(self.shipdir, self.t, "impl", "pm")
         self.assertEqual(self.cli("memory", "apply", str(self.shipdir))[0], 1)
 
     def test_knowledge(self):
-        (self.shipdir / "knowledge.md").write_text("# k\n- 古い知見\n")
-        memory.knowledge_inbox_path(self.shipdir).write_text("- 候補 1\n- 候補 2\n")
+        (self.shipdir / "knowledge.md").write_text("# k\n- 古い知見\n", encoding="utf-8")
+        memory.knowledge_inbox_path(self.shipdir).write_text("- 候補 1\n- 候補 2\n", encoding="utf-8")
         with self.assertRaisesRegex(YamatoError, "knowledge の案がありません"):
             memory.apply_knowledge(self.shipdir, self.t, "pm")
         prop = memory.knowledge_proposed_path(self.shipdir)
-        prop.write_text("# k\n" + "".join(f"- {i}\n" for i in range(120)))
+        prop.write_text("# k\n" + "".join(f"- {i}\n" for i in range(120)), encoding="utf-8")
         with self.assertRaisesRegex(YamatoError, "121 行"):
             memory.apply_knowledge(self.shipdir, self.t, "pm")
         self.assertIn("knowledge: 候補 2 件", "\n".join(memory.status_lines(self.shipdir, self.t)))
-        prop.write_text("# k\n- 候補 1 をまとめた\n")
+        prop.write_text("# k\n- 候補 1 をまとめた\n", encoding="utf-8")
         rc, out = self.cli("memory", "apply", str(self.shipdir), "--knowledge", "--by", "pm")
         self.assertEqual(rc, 0, out)
-        self.assertEqual((self.shipdir / "knowledge.md").read_text(), "# k\n- 候補 1 をまとめた\n")
-        self.assertIn("反映: pm (knowledge)\n\n- 古い知見", memory.knowledge_archive_path(self.shipdir).read_text())
-        self.assertEqual(memory.knowledge_inbox_path(self.shipdir).read_text(), "")
+        self.assertEqual((self.shipdir / "knowledge.md").read_text(encoding="utf-8"), "# k\n- 候補 1 をまとめた\n")
+        self.assertIn("反映: pm (knowledge)\n\n- 古い知見", memory.knowledge_archive_path(self.shipdir).read_text(encoding="utf-8"))
+        self.assertEqual(memory.knowledge_inbox_path(self.shipdir).read_text(encoding="utf-8"), "")
         done = list((self.shipdir / "knowledge-inbox.done").glob("*.md"))
-        self.assertEqual(done[0].read_text(), "- 候補 1\n- 候補 2\n")
+        self.assertEqual(done[0].read_text(encoding="utf-8"), "- 候補 1\n- 候補 2\n")
         self.assertFalse(prop.exists())
         [e] = self.events(memory.MEMORY_APPLY)
         self.assertIsNone(e["data"]["role"])
@@ -451,16 +457,16 @@ class ApplyTest(_Curated):
 class TemplateTest(_Base):
     def test_the_template_carries_the_curator_and_the_memo_guidance(self):
         self.assertTrue((self.shipdir / "roles" / memory.CURATOR_PROMPT).is_file())
-        agents = json.loads(runtime.agents_path(self.shipdir).read_text())
+        agents = json.loads(runtime.agents_path(self.shipdir).read_text(encoding="utf-8"))
         self.assertNotIn(memory.CURATOR, agents)                 # not a seat's role
         for role in ("pm", "impl"):
             text = agents[role]["prompt"]
-            self.assertIn(f"memo \"<本文>\" --ship {self.shipdir}", text)
+            self.assertIn(f"memo \"<本文>\" --ship {ship_arg(self.shipdir)}", text)
             self.assertNotIn("詰まり / memory 候補", text)
-        self.assertIn(f"memory curate {self.shipdir}", agents["pm"]["prompt"])
-        self.assertIn(f"memory apply {self.shipdir} --knowledge", agents["pm"]["prompt"])
-        deny = json.loads(runtime.settings_path(self.shipdir, "impl-1").read_text())["permissions"]["deny"]
-        self.assertIn(f"Write(/{self.shipdir}/roles/*/memory.md)", deny)
+        self.assertIn(f"memory curate {ship_arg(self.shipdir)}", agents["pm"]["prompt"])
+        self.assertIn(f"memory apply {ship_arg(self.shipdir)} --knowledge", agents["pm"]["prompt"])
+        deny = json.loads(runtime.settings_path(self.shipdir, "impl-1").read_text(encoding="utf-8"))["permissions"]["deny"]
+        self.assertIn(f"Write(/{rule_path(self.shipdir)}/roles/*/memory.md)", deny)
 
 
 class ResearchTemplateTest(ShipTestCase):
@@ -478,7 +484,7 @@ class ResearchTemplateTest(ShipTestCase):
         self.assertEqual(memory.conf(self.rteam)["applier"], "editor")
         self.assertTrue((self.rdir / "roles" / memory.CURATOR_PROMPT).is_file())
         memory.curator_agents(self.rdir, self.rteam, "researcher")   # does not raise
-        agents = json.loads(runtime.agents_path(self.rdir).read_text())
+        agents = json.loads(runtime.agents_path(self.rdir).read_text(encoding="utf-8"))
         self.assertIn(f"memory curate {self.rdir}", agents["editor"]["prompt"])
         for role in ("researcher", "fact-checker", "editor"):
             self.assertIn(f'memo "<本文>" --ship {self.rdir}', agents[role]["prompt"])
@@ -487,6 +493,6 @@ class ResearchTemplateTest(ShipTestCase):
     def test_the_memo_in_the_prompt_passes_the_dont_ask_allow_list(self):
         from tests.test_research import decide
 
-        st = json.loads(runtime.settings_path(self.rdir, "researcher-1").read_text())
-        cmd = f'{runtime.yamato_invocation()} memo "よい出典は公式の文書" --ship {self.rdir} --item T-1 --scope ship'
+        st = json.loads(runtime.settings_path(self.rdir, "researcher-1").read_text(encoding="utf-8"))
+        cmd = f'{runtime.yamato_invocation()} memo "よい出典は公式の文書" --ship {ship_arg(self.rdir)} --item T-1 --scope ship'
         self.assertEqual(decide(st, "Bash", cmd, self.rdir), "allow")

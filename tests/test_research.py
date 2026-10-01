@@ -45,14 +45,16 @@ def rule_matches(rule: str, tool: str, arg: str | None = None, cwd: Path | None 
             return arg.startswith(pat[:-2])
         return bool(_glob(pat, path=False).match(arg))
     # file rules: //abs, ~/home, /cwd-relative, else anywhere below cwd
+    # (Windows: the rule and the path are both in the ``/c/Users/x`` form, runtime.rule_path -- T-050)
+    cwd_s, home_s, arg = runtime.rule_path(cwd), runtime.rule_path(Path.home()), runtime.rule_path(arg)
     if pat.startswith("//"):
         pat = pat[1:]
     elif pat.startswith("~/"):
-        pat = str(Path.home()) + pat[1:]
+        pat = home_s + pat[1:]
     elif pat.startswith("/"):
-        pat = str(cwd) + pat
+        pat = cwd_s + pat
     else:
-        pat = str(cwd) + "/" + pat
+        pat = cwd_s + "/" + pat
     return bool(_glob(pat, path=True).match(arg))
 
 
@@ -89,10 +91,10 @@ class ResearchShipTest(ShipTestCase):
             runtime.generate(self.rdir, self.rteam)
 
     def settings(self, seat_name: str) -> dict:
-        return json.loads(runtime.settings_path(self.rdir, seat_name).read_text())
+        return json.loads(runtime.settings_path(self.rdir, seat_name).read_text(encoding="utf-8"))
 
     def agents(self) -> dict:
-        return json.loads(runtime.agents_path(self.rdir).read_text())
+        return json.loads(runtime.agents_path(self.rdir).read_text(encoding="utf-8"))
 
     # --- ship create --------------------------------------------------------
 
@@ -121,7 +123,7 @@ class ResearchShipTest(ShipTestCase):
         for s in EXTERNAL_SEATS:
             st = self.settings(s)
             self.assertEqual(st["permissions"]["defaultMode"], "dontAsk", s)
-            self.assertIn(f"Write(/{self.rdir}/seats/{s}/handoff.md)", st["permissions"]["allow"])
+            self.assertIn(f"Write(/{runtime.rule_path(self.rdir)}/seats/{s}/handoff.md)", st["permissions"]["allow"])
             self.assertIn("Read(~/.ssh/**)", st["permissions"]["deny"])
             # hooks and the rest of yamato's mechanism are unchanged
             self.assertIn("PermissionRequest", st["hooks"])
@@ -177,9 +179,9 @@ class ResearchShipTest(ShipTestCase):
                   ("Write", self.rdir / "seats" / s / "inbox.jsonl"), ("Write", self.rdir / "roles/editor.md"),
                   ("Write", self.rdir / "seats" / other / "handoff.md"), ("Write", self.rdir / "reports/x.md"),
                   ("Read", Path.home() / ".ssh/id_ed25519"),
-                  ("Bash", f"{runtime.yamato_invocation()} send {self.rdir} editor \"hi\" --from {s}"),
-                  ("Bash", f"{runtime.yamato_invocation()} board set {self.rdir} T-001 state=done --by {s}"),
-                  ("Bash", f"{runtime.yamato_invocation()} inbox {self.rdir} editor"),
+                  ("Bash", f"{runtime.yamato_invocation()} send {runtime.ship_arg(self.rdir)} editor \"hi\" --from {s}"),
+                  ("Bash", f"{runtime.yamato_invocation()} board set {runtime.ship_arg(self.rdir)} T-001 state=done --by {s}"),
+                  ("Bash", f"{runtime.yamato_invocation()} inbox {runtime.ship_arg(self.rdir)} editor"),
                   ("Bash", "curl -s https://example.com"), ("Bash", "python3 -c 'print(1)'")]
             for tool, arg in ng:
                 with self.subTest(seat=s, tool=tool, arg=arg):
@@ -197,7 +199,7 @@ class ResearchShipTest(ShipTestCase):
         with self.assertRaises(YamatoError) as cm:
             seat.send(self.rdir, "editor", "do this", "researcher-1")
         self.assertIn("send: false", str(cm.exception))
-        self.assertEqual((self.rdir / "seats/editor/inbox.jsonl").read_text(), "")
+        self.assertEqual((self.rdir / "seats/editor/inbox.jsonl").read_text(encoding="utf-8"), "")
 
     def test_send_from_an_external_session_is_refused_whatever_from_says(self):
         sid = "e" * 36
@@ -215,7 +217,7 @@ class ResearchShipTest(ShipTestCase):
     def test_headless_end_report_still_reaches_the_editor(self):
         """The wrapper's fixed report is not ``yamato send`` and is not blocked."""
         headless._report(self.rdir, self.rteam, "researcher-1", "テスト")
-        [e] = [json.loads(x) for x in (self.rdir / "seats/editor/inbox.jsonl").read_text().splitlines()]
+        [e] = [json.loads(x) for x in (self.rdir / "seats/editor/inbox.jsonl").read_text(encoding="utf-8").splitlines()]
         self.assertIn("テスト", e["text"])
 
 
@@ -232,7 +234,7 @@ class BoardNoteTest(ShipTestCase):
         self.assertEqual(head, "問い: X は本当か\n\n主張 3 件。出典は work/T-001/findings.md\n\n追記 2\n\n")
         self.assertEqual(len(history.strip().splitlines()), 3)   # 作成 + 2 notes
         self.assertIn("impl: 本文に追記 (1 行)", history)
-        kinds = [json.loads(x)["kind"] for x in events.path(self.shipdir).read_text().splitlines()]
+        kinds = [json.loads(x)["kind"] for x in events.path(self.shipdir).read_text(encoding="utf-8").splitlines()]
         self.assertEqual(kinds.count(events.BOARD_NOTE), 2)
 
     def test_note_refuses_empty_text_and_unknown_items(self):
@@ -272,7 +274,7 @@ class DevTemplateRemoteControlTest(ShipTestCase):
         self.assertLess(pm.index("--remote-control"), pm.index("--"))
         self.assertNotIn("--remote-control", impl)
         for s in ("pm", "impl"):
-            st = json.loads(runtime.settings_path(self.shipdir, s).read_text())
+            st = json.loads(runtime.settings_path(self.shipdir, s).read_text(encoding="utf-8"))
             self.assertIs(st["remoteControlAtStartup"], False)
             self.assertEqual(st["permissions"]["defaultMode"], "auto")
 

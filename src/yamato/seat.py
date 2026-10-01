@@ -76,9 +76,15 @@ def _handoff(shipdir: Path, seat: str) -> Path:
     return inbox.seat_dir(shipdir, seat) / "handoff.md"
 
 
+# Windows のファイルの mtime は時計の刻み (約 16ms) で丸められ、time.time() (精密) より少し前に見える。
+# シフト開始の直後に書いた handoff が「古い」と断られるので、Windows だけ刻みぶんの余裕を持たせる
+WINDOWS_MTIME_SLACK = 0.1
+
+
 def handoff_written_since(shipdir: Path, seat: str, since: float | None) -> bool:
+    slack = WINDOWS_MTIME_SLACK if procs.is_windows() else 0
     try:
-        return _handoff(shipdir, seat).stat().st_mtime >= (since or 0)
+        return _handoff(shipdir, seat).stat().st_mtime >= (since or 0) - slack
     except FileNotFoundError:
         return False
 
@@ -788,7 +794,7 @@ def watchdog(shipdir: Path, token: str) -> int:
     """One-shot timer: at deadline + grace, force-stop whatever is still alive."""
     pidfile = shipdir / ".runtime" / "watchdog.pid"
     try:
-        other_pid, other_token = pidfile.read_text().split()
+        other_pid, other_token = pidfile.read_text(encoding="utf-8").split()
         if int(other_pid) != os.getpid() and other_token == token:
             if procs.pid_alive(other_pid):
                 return 0  # the same deadline is already being watched
@@ -822,7 +828,7 @@ def watchdog(shipdir: Path, token: str) -> int:
             time.sleep(max(WATCHDOG_MIN_SLEEP, min(WATCHDOG_POLL, dl["graceUntil"] - now)))
     finally:
         try:
-            if pidfile.read_text().split()[0] == str(os.getpid()):
+            if pidfile.read_text(encoding="utf-8").split()[0] == str(os.getpid()):
                 pidfile.unlink()
         except (FileNotFoundError, IndexError):
             pass

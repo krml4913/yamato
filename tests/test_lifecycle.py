@@ -49,7 +49,7 @@ class _Base(ShipTestCase):
         for s in st["sessions"]:
             if s["sessionId"] == roster.seat(self.shipdir, name)["sessionId"]:
                 s["pid"] = None
-        self.fake_state.write_text(json.dumps(st))
+        self.fake_state.write_text(json.dumps(st), encoding="utf-8")
 
     def end_shift(self, name, ago=0.0, handoff=True):
         self.stop_session(name)
@@ -59,7 +59,7 @@ class _Base(ShipTestCase):
     def transcript(self, sid: str, *lines: str) -> Path:
         path = self.config / "projects" / "-ws" / f"{sid}.jsonl"
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("".join(x + "\n" for x in lines))
+        path.write_text("".join(x + "\n" for x in lines), encoding="utf-8")
         return path
 
     def kinds(self, kind):
@@ -72,7 +72,7 @@ class SettingsTest(_Base):
     def conf(self, extra: str) -> dict:
         import yaml
 
-        data = yaml.safe_load((self.shipdir / "team.yaml").read_text())
+        data = yaml.safe_load((self.shipdir / "team.yaml").read_text(encoding="utf-8"))
         data.update(yaml.safe_load(extra) or {})
         return validate(data, self.shipdir)
 
@@ -88,7 +88,7 @@ class SettingsTest(_Base):
     def test_rotate_values_and_off(self):
         import yaml
 
-        data = yaml.safe_load((self.shipdir / "team.yaml").read_text())
+        data = yaml.safe_load((self.shipdir / "team.yaml").read_text(encoding="utf-8"))
         data["roles"]["pm"]["rotate"] = {"context": "300k", "compaction": False, "hours": "90m", "idle": "off",
                                          "new_day": False}
         t = validate(data, self.shipdir)
@@ -188,9 +188,9 @@ class ResumeOrNewShiftTest(_Base):
     def test_small_context_and_conditions_off_resume(self):
         self.transcript(self.sid, _assistant(290_000, model="claude-opus-5-5"))
         self.end_shift("pm", ago=7200)
-        team = json.loads((self.shipdir / ".runtime" / "team.json").read_text())
+        team = json.loads((self.shipdir / ".runtime" / "team.json").read_text(encoding="utf-8"))
         team["roles"]["pm"]["rotate"].update(idle=None)
-        (self.shipdir / ".runtime" / "team.json").write_text(json.dumps(team))
+        (self.shipdir / ".runtime" / "team.json").write_text(json.dumps(team), encoding="utf-8")
         self.send()
         self.assertEqual(len(self.resume_calls()), 1)
 
@@ -205,7 +205,7 @@ class SeatStopRotateTest(_Base):
     def test_seat_stop_rotate_sets_the_mark_and_wakes_nothing(self):
         self.up()
         rec = roster.seat(self.shipdir, "pm")
-        (self.shipdir / "seats" / "pm" / "handoff.md").write_text("次: T-001")
+        (self.shipdir / "seats" / "pm" / "handoff.md").write_text("次: T-001", encoding="utf-8")
         with mock.patch.dict("os.environ", {"CLAUDE_CODE_SESSION_ID": rec["sessionId"]}):
             out = self.run_cmd(seat.seat_stop, self.shipdir, "pm", 10, False, True)
         self.assertIn("入れ替えの印を立てた", out)
@@ -275,9 +275,9 @@ class RotateCommandTest(_Base):
         # reviewer's finding on T-024/PR #43: only per_task was exercised, and headless
         # takes the same "shift != persistent" branch -- a dedicated test for it.
         ty = self.shipdir / "team.yaml"
-        ty.write_text(ty.read_text().replace(
-            "roles:\n", "roles:\n  researcher:\n    shift: headless\n    description: 調査担当\n", 1))
-        (self.shipdir / "roles" / "researcher.md").write_text("あなたは researcher です。\n")
+        ty.write_text(ty.read_text(encoding="utf-8").replace(
+            "roles:\n", "roles:\n  researcher:\n    shift: headless\n    description: 調査担当\n", 1), encoding="utf-8")
+        (self.shipdir / "roles" / "researcher.md").write_text("あなたは researcher です。\n", encoding="utf-8")
         seat.prepare(self.shipdir)
         rc, out, _ = self.cli("rotate", str(self.shipdir), "researcher")
         self.assertEqual(rc, 0)
@@ -462,10 +462,10 @@ class SpinTest(_Base):
 
     def test_spin_off(self):
         ty = self.shipdir / "team.yaml"
-        text = ty.read_text()
+        text = ty.read_text(encoding="utf-8")
         start = text.index("  spin:")
         end = text.index("\n\n", start)
-        ty.write_text(text[:start] + "  spin: off" + text[end:])
+        ty.write_text(text[:start] + "  spin: off" + text[end:], encoding="utf-8")
         seat.prepare(self.shipdir)
         for _ in range(8):
             self.run_cmd(seat.send, self.shipdir, "impl", "同じ", "pm")
@@ -498,7 +498,7 @@ class CaptainGapTest(_Base):
         self.run_cmd(seat.send, self.shipdir, "impl", "T-001", "pm")
         self.end_shift("pm", ago=600)
         rec = roster.seat(self.shipdir, "impl")
-        (self.shipdir / "seats" / "impl" / "handoff.md").write_text("done")
+        (self.shipdir / "seats" / "impl" / "handoff.md").write_text("done", encoding="utf-8")
         with mock.patch.dict("os.environ", {"CLAUDE_CODE_SESSION_ID": rec["sessionId"]}):
             self.run_cmd(seat.seat_stop, self.shipdir, "impl", 10, True)
         self.assertEqual(self.kinds(events.CAPTAIN_GAP), [])
@@ -550,9 +550,9 @@ class SendCwdTest(_Base):
         super().setUp()
         self.wt = self.tmp / "wt"
         self.wt.mkdir()
-        cfg = json.loads((self.config / ".claude.json").read_text())
+        cfg = json.loads((self.config / ".claude.json").read_text(encoding="utf-8"))
         cfg["projects"][str(self.wt)] = {"hasTrustDialogAccepted": True}
-        (self.config / ".claude.json").write_text(json.dumps(cfg))
+        (self.config / ".claude.json").write_text(json.dumps(cfg), encoding="utf-8")
         self.up()
 
     def test_per_task_seat_starts_in_the_directory_without_isolation(self):
@@ -560,7 +560,7 @@ class SendCwdTest(_Base):
         call = self.bg_calls()[-1]
         self.assertEqual(call["cwd"], str(self.wt))
         a = call["argv"]
-        settings = json.loads(Path(a[a.index("--settings") + 1]).read_text())
+        settings = json.loads(Path(a[a.index("--settings") + 1]).read_text(encoding="utf-8"))
         self.assertEqual(settings["worktree"]["bgIsolation"], "none")
         self.assertIn("hooks", settings)
         rec = roster.seat(self.shipdir, "impl")
@@ -593,7 +593,7 @@ class SendCwdTest(_Base):
         self.assertIn("trust", str(cm.exception))
 
     def test_unknown_trust_warns_and_leaves_it_to_claude(self):
-        (self.config / ".claude.json").write_text("{broken")
+        (self.config / ".claude.json").write_text("{broken", encoding="utf-8")
         out = self.run_cmd(seat.send, self.shipdir, "impl", "T-001", "pm", cwd=str(self.wt))
         self.assertIn("確かめられなかった", out)
         self.assertEqual(self.bg_calls()[-1]["cwd"], str(self.wt))
@@ -602,9 +602,9 @@ class SendCwdTest(_Base):
 class HeadlessCwdTest(ShipTestCase):
     def test_headless_shift_runs_in_the_directory(self):
         ty = self.shipdir / "team.yaml"
-        ty.write_text(ty.read_text().replace(
-            "roles:\n", "roles:\n  researcher:\n    model: sonnet\n    shift: headless\n    description: 調査\n", 1))
-        (self.shipdir / "roles" / "researcher.md").write_text("調査担当\n")
+        ty.write_text(ty.read_text(encoding="utf-8").replace(
+            "roles:\n", "roles:\n  researcher:\n    model: sonnet\n    shift: headless\n    description: 調査\n", 1), encoding="utf-8")
+        (self.shipdir / "roles" / "researcher.md").write_text("調査担当\n", encoding="utf-8")
         seat.prepare(self.shipdir)
         deadline.write(self.shipdir, limit=600, grace=60, token="t")
         wt = self.tmp / "wt"

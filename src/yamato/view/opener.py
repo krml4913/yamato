@@ -123,7 +123,12 @@ def _sync_session(run, session: str, tabs: list[tuple[str, str]], old: dict[str,
     Everything goes by tab id (``rename-tab-by-id`` / ``close-tab-by-id``), never by focus."""
     have = dict((name, tid) for tid, name in _session_tabs(run, session))
     for name, block in tabs:
-        if name not in have:
+        legacy = layout.legacy_tab_name(name)
+        if name not in have and legacy in have:
+            # a tab from before ``ship:`` (T-046): replace it so it does not stay as a duplicate
+            _new_tab(run, block, session=session)
+            _zellij(run, ["--session", session, "action", "close-tab-by-id", str(have[legacy])])
+        elif name not in have:
             _new_tab(run, block, session=session)
         elif old.get(name, block) != block:
             # rename first, so the new tab can take the name; then close the old one by its id
@@ -153,8 +158,13 @@ def open_ships(refs: list[str] | None = None, *, command: str | None = None,
     if in_zellij:
         have = _tab_names(run, None)
         for name, block in tabs:
+            legacy = layout.legacy_tab_name(name)
             if name in have:
                 _zellij(run, ["action", "go-to-tab-name", name])
+            elif legacy in have:
+                # a tab from before ``ship:`` (T-046): rename it rather than leave a duplicate
+                _zellij(run, ["action", "go-to-tab-name", legacy])
+                _zellij(run, ["action", "rename-tab", name])
             else:
                 _new_tab(run, block)
         return
@@ -162,6 +172,8 @@ def open_ships(refs: list[str] | None = None, *, command: str | None = None,
     path = Path(output) if output else yamato_home() / "view.kdl"
     path.parent.mkdir(parents=True, exist_ok=True)
     old = layout.tabs_of(path.read_text(encoding="utf-8")) if path.exists() else {}
+    for name, _ in tabs:   # tabs of the old (unprefixed) name are replaced by the prefixed ones
+        old.pop(layout.legacy_tab_name(name) or "", None)
     merged = {**old, **dict(tabs)}   # what the session holds once synced: old tabs, these replaced / added
     if _session_exists(run, session):
         try:

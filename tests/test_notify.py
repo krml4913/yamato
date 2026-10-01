@@ -300,7 +300,7 @@ class TemplateTest(ShipTestCase):
         n = self.team()["notify"]
         self.assertEqual(n["via"], [])
         self.assertEqual(n["slack"], {"webhook_env": "YAMATO_SLACK_WEBHOOK"})
-        self.assertNotIn("https://", (self.shipdir / "team.yaml").read_text())
+        self.assertNotIn("https://", (self.shipdir / "team.yaml").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

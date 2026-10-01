@@ -31,15 +31,15 @@ def main(argv, *, cwd=None, env=None, out=None, err=None) -> int:
         # slow_launch: a launch that takes a while, outside the lock below, so other
         # callers (``agents``) see the seat not yet alive meanwhile (the review B1 race)
         try:
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 time.sleep(float(json.load(f).get("mode", {}).get("slow_launch", 0)))
         except (FileNotFoundError, ValueError):
             pass
     # serialise whole invocations so parallel callers in a test do not lose writes
-    with open(path + ".lock", "a") as lock:
+    with open(path + ".lock", "a", encoding="utf-8") as lock:
         lock_file(lock)
         try:
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 st = json.load(f)
         except (FileNotFoundError, ValueError):
             st = {"sessions": [], "calls": []}
@@ -58,7 +58,7 @@ def main(argv, *, cwd=None, env=None, out=None, err=None) -> int:
 
 
 def _save(path, st):
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(st, f)
 
 
@@ -144,4 +144,7 @@ def _handle(argv, st, path, cwd, alive_pid, out, err) -> int:
 
 
 if __name__ == "__main__":
+    # 本物の claude は UTF-8 で出す。cp932 のロケールでは "·" が書けず落ちる (T-050)
+    for _f in (sys.stdout, sys.stderr):
+        _f.reconfigure(encoding="utf-8")
     sys.exit(main(sys.argv[1:]))

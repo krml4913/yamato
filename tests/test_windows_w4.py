@@ -36,9 +36,10 @@ class FormsTest(unittest.TestCase):
     def test_nothing_changes_off_windows(self):
         with mock.patch.object(runtime, "is_windows", return_value=False):
             p = Path("/Users/x/ships/t1")
-            self.assertEqual(runtime.posix_path(p), "/Users/x/ships/t1")
-            self.assertEqual(runtime.rule_path(p), "/Users/x/ships/t1")
-            self.assertEqual(runtime.render_rule("Edit(/{{ship}}/team.yaml)", p, "s"), "Edit(//Users/x/ships/t1/team.yaml)")
+            q = str(p)   # a WindowsPath spells it with `\\`; this test is about "unchanged"
+            self.assertEqual(runtime.posix_path(p), q)
+            self.assertEqual(runtime.rule_path(p), q)
+            self.assertEqual(runtime.render_rule("Edit(/{{ship}}/team.yaml)", p, "s"), f"Edit(/{q}/team.yaml)")
 
     def test_rule_kinds(self):
         with on_windows():
@@ -172,6 +173,30 @@ class CuratorOnWindowsTest(ShipTestCase):
         self.assertEqual(deny, want)
         self.assertEqual(deny[0], "Edit(//c/Users/John Doe/ships/t1/team.yaml)")
         self.assertIn("'C:/Users/John Doe/ships/t1'", deny[1])
+
+
+class PowerShellToolTest(ShipTestCase):
+    """D-051 A: the seat's settings `env` turns the PowerShell tool off on Windows only."""
+
+    def test_env_is_set_on_windows_and_kept_with_env_unset(self):
+        team = load_team(self.shipdir)
+        team["env_unset"] = ["GH_TOKEN"]
+        with on_windows(), mock.patch.object(runtime.sys, "executable", EXE):
+            env = runtime.build_settings(self.shipdir, team, "impl")["env"]
+        self.assertEqual(env["CLAUDE_CODE_USE_POWERSHELL_TOOL"], "0")
+        self.assertEqual(env["GH_TOKEN"], "")
+
+    def test_team_yaml_settings_env_wins(self):
+        team = load_team(self.shipdir)
+        team["settings"] = {"env": {"CLAUDE_CODE_USE_POWERSHELL_TOOL": "1"}}
+        with on_windows(), mock.patch.object(runtime.sys, "executable", EXE):
+            env = runtime.build_settings(self.shipdir, team, "impl")["env"]
+        self.assertEqual(env["CLAUDE_CODE_USE_POWERSHELL_TOOL"], "1")
+
+    def test_env_is_absent_elsewhere(self):
+        team = load_team(self.shipdir)
+        with mock.patch.object(runtime, "is_windows", return_value=False):
+            self.assertNotIn("env", runtime.build_settings(self.shipdir, team, "impl"))
 
 
 class LayoutOnWindowsTest(unittest.TestCase):

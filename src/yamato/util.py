@@ -42,7 +42,7 @@ def _registry_path() -> Path:
 
 def load_registry() -> dict:
     try:
-        return json.loads(_registry_path().read_text())
+        return json.loads(_registry_path().read_text(encoding="utf-8"))
     except (FileNotFoundError, ValueError):
         return {}
 
@@ -219,7 +219,7 @@ def unlock_file(f) -> None:
 @contextlib.contextmanager
 def _flock(path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
-    f = open(path, "a")
+    f = open(path, "a")   # ロックだけで何も書かない (encoding 不要)
     try:
         lock_file(f)
         yield
@@ -283,12 +283,22 @@ def env_command(name: str, default: str) -> list[str]:
     "python fake_claude.py"`` -- Windows cannot run a ``.py`` directly, so the tests hand
     over the interpreter too). A value that already names one program -- a path that
     exists (spaces and all) or something ``shutil.which`` finds -- is taken whole, never
-    split. The program is resolved with ``which`` (npm's ``claude.cmd`` shim, W1)."""
+    split. An unquoted value with spaces (``C:\\Users\\A B\\python.exe a.py``) takes the longest
+    leading run of words that is an existing file as the program, the rest as arguments
+    (T-049). Otherwise it is split as a shell would. The program is resolved with ``which`` (npm's ``claude.cmd`` shim, W1)."""
     import shlex
     import shutil
     raw = os.environ.get(name) or default
     if shutil.which(raw) or os.path.exists(raw):
         return [shutil.which(raw) or raw]
+    if '"' not in raw and "'" not in raw:
+        # an unquoted path with spaces (`C:\\Users\\A B\\python.exe a.py`): the longest
+        # leading run of words that is an existing file is the program
+        words = raw.split()
+        for i in range(len(words), 0, -1):
+            head = " ".join(words[:i])
+            if os.path.isfile(head):
+                return [head, *words[i:]]
     try:
         parts = shlex.split(raw, posix=os.name != "nt")
     except ValueError:
