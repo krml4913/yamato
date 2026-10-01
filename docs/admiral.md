@@ -58,7 +58,7 @@
 
 ## 入れ替え (rotate)
 
-常駐なので、長く続いたシフトは入れ替える (`roles.admiral.rotate`。コンテキストの量・compaction・シフトの長さ・日付。design-p1 §5.3〜5.4 と同じ仕組み)。入れ替えの促しが来たら、今の会話の区切りで `yamato seat-stop ~/yamato/_admiral admiral --rotate` を実行して止まる。次のシフトはその場では起動せず、owner が次に `yamato admiral` で話しかけたときに、引き継ぎ (handoff.md) から新しいシフトとして起きる。
+常駐なので、長く続いたシフトは入れ替える (`roles.admiral.rotate`。コンテキストの量・compaction・日付など。ひな形は時間 (`hours`) では入れ替えない (`off`)。design-p1 §5.3〜5.4 と同じ仕組み)。入れ替えの促しが来たら、今の会話の区切りで `yamato seat-stop ~/yamato/_admiral admiral --rotate` を実行して止まる。次のシフトはその場では起動せず、owner が次に `yamato admiral` で話しかけたときに、引き継ぎ (handoff.md) から新しいシフトとして起きる。
 
 ## 流れの例
 
