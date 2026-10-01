@@ -12,7 +12,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from tests.fake_claude_lib.print_mode import RESULT_TEXT
+from tests.fake_claude_lib.print_mode import RESULT_TEXT, _transcript
 from tests.helpers import ShipTestCase
 from yamato import board, deadline, events, headless, inbox, procs, roster, runtime, seat
 from yamato.team import validate
@@ -285,6 +285,16 @@ class HeadlessTest(_Base):
                     mock.patch.object(headless.events, "emit"):
                 headless.stop_orphan(self.shipdir, "researcher", "x")
             self.assertEqual(t.call_args.kwargs["group"], expect)
+
+    def test_fake_transcript_lands_one_level_under_projects_for_any_cwd_shape(self):
+        # Windows の絶対パス (C:\\... や C:/...) でも projects/<1 階層>/<sid>.jsonl に置く = claude.transcript_paths の glob に掛かる
+        from yamato import claude
+        for i, cwd in enumerate(("/Users/x/ws", "C:\\Users\\x\\ws", "C:/Users/x/ws")):
+            sid = f"fake-sid-{i}"
+            with mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(self.shipdir / "cfg")}):
+                _transcript(sid, cwd)
+                [path] = claude.transcript_paths(sid)
+            self.assertEqual(path.parent.parent, self.shipdir / "cfg" / "projects")
 
     def test_a_reused_pid_is_not_taken_for_the_p(self):
         other = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
