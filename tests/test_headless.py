@@ -231,11 +231,12 @@ class HeadlessTest(_Base):
     def _orphan(self):
         """A shift whose wrapper is gone but whose claude -p (a stand-in carrying its --session-id) runs."""
         sid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)", "--session-id", sid])
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)", "--session-id", sid],
+                                 **procs.group_kwargs())
         self.addCleanup(_reap, child)
         roster.start_shift(self.shipdir, "researcher", session_id=sid, short_id=sid[:8],
                            session_name="t1.researcher", how="headless")
-        roster.update(self.shipdir, "researcher", pid=child.pid, pidStart=procs.start_time(child.pid))
+        roster.update(self.shipdir, "researcher", pid=child.pid, pidStart=procs.start_time(child.pid), group=True)
         return child
 
     def test_reconcile_stops_an_orphaned_p_and_closes_the_shift(self):
@@ -254,6 +255,26 @@ class HeadlessTest(_Base):
         self.assertEqual(stopped, ["researcher"])
         self.assertIsNotNone(child.wait(10))
         self.assertEqual(roster.seat(self.shipdir, "researcher")["endReason"], "down-force")
+
+    def test_windows_soft_stop_without_the_group_mark_is_a_hard_kill(self):
+        # CTRL_BREAK は同じコンソール全体に届く。group の印が無い pid には送らず taskkill /T /F に回す (T-053)
+        with mock.patch.object(procs, "is_windows", return_value=True), \
+                mock.patch.object(procs, "hard_kill") as hk, mock.patch.object(procs.os, "kill") as kill:
+            procs.soft_stop(123, group=False)
+            hk.assert_called_once_with(123)
+            kill.assert_not_called()
+
+    def test_terminate_passes_the_group_mark_from_the_roster(self):
+        rec = {"pid": 4242, "sessionId": "s", "pidStart": 1}
+        for rec_group, expect in (({}, False), ({"group": True}, True)):
+            with mock.patch.object(headless.procs, "terminate", return_value=True) as t, \
+                    mock.patch.object(headless, "live_pid", return_value=4242), \
+                    mock.patch.object(headless, "running", return_value=False), \
+                    mock.patch.object(headless.roster, "seat", return_value={**rec, **rec_group, "state": roster.ON_SHIFT}), \
+                    mock.patch.object(headless.roster, "update"), mock.patch.object(headless, "append_log"), \
+                    mock.patch.object(headless.events, "emit"):
+                headless.stop_orphan(self.shipdir, "researcher", "x")
+            self.assertEqual(t.call_args.kwargs["group"], expect)
 
     def test_a_reused_pid_is_not_taken_for_the_p(self):
         other = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
