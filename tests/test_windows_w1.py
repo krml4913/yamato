@@ -211,6 +211,31 @@ class ClaudeBinTest(unittest.TestCase):
         self.assertEqual(argv[:2], ["/usr/bin/claude", "-p"])
 
 
+class SettingSourcesArgvTest(unittest.TestCase):
+    """T-061: --setting-sources is project,local unless team.yaml opts user in."""
+    KW = dict(session_id="s", name="n", role="r", agents_json="{}", model="m", settings="/s.json",
+              add_dir="/d", prompt="go")
+
+    def _value(self, argv):
+        return argv[argv.index("--setting-sources") + 1]
+
+    def test_headless_default_and_optin(self):
+        self.assertEqual(self._value(claude.headless_argv(**self.KW)), "project,local")
+        self.assertEqual(self._value(claude.headless_argv(**self.KW, setting_sources="user,project,local")),
+                         "user,project,local")
+
+    def test_launch_default_and_optin(self):
+        for extra, want in (({}, "project,local"), ({"setting_sources": "user,project,local"}, "user,project,local")):
+            seen = []
+            def fake_run(args, **kw):
+                seen.append(args)
+                return mock.Mock(returncode=1, stdout="", stderr="")
+            with mock.patch.object(claude, "_run", fake_run), self.assertRaises(YamatoError):
+                claude.launch(cwd="/w", name="n", role="r", agents_json="{}", model="m", settings="/s.json",
+                              add_dir="/d", prompt="go", **extra)
+            self.assertEqual(self._value(seen[0]), want)
+
+
 class ChildOutputIsUtf8Test(unittest.TestCase):
     """Every ``subprocess.run(text=True)`` of yamato decodes as UTF-8 (a Japanese Windows'
     locale is cp932, so ``git`` / ``gh`` / ``claude agents --json`` output would garble or raise)."""

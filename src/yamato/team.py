@@ -10,10 +10,11 @@ from pathlib import Path
 from .notify import CHANNELS as NOTIFY_CHANNELS
 from .util import YamatoError, check_name, parse_duration, read_json
 
+SETTING_SOURCES = ("user", "project", "local")   # Claude Code's --setting-sources values
 SHIFTS = ("per_task", "persistent", "headless")
 STATES = ("open", "active", "blocked", "done")
 TOP_KEYS = {"name", "hub", "workspace", "charter", "roles", "time_limit", "grace", "deny", "board",
-            "settings", "seat_stop", "env_unset", "inject", "notify", "git", "report", "decisions",
+            "settings", "setting_sources", "seat_stop", "env_unset", "inject", "notify", "git", "report", "decisions",
             "watch", "talk_default", "profiles", "memory", "last_call", "context_windows"}
 # what SessionStart can inject (design §8.2); the header is always there
 INJECT_PARTS = ("handoff", "log_tail", "mine", "inbox", "memory", "knowledge", "last_report", "orphans", "board",
@@ -201,6 +202,13 @@ def validate(data: dict, shipdir: Path) -> dict:
     settings = data.get("settings") or {}
     if not isinstance(settings, dict):
         raise YamatoError("team.yaml: settings は mapping (Claude Code の settings.json に重ねる中身)")
+    sources = data.get("setting_sources")
+    if sources is None:
+        sources = ["project", "local"]
+    if not isinstance(sources, list) or not sources or not all(isinstance(x, str) for x in sources) \
+            or set(sources) - set(SETTING_SOURCES):
+        raise YamatoError(f"team.yaml: setting_sources は {' / '.join(SETTING_SOURCES)} のリスト (空は不可。今: {sources!r})")
+    setting_sources = [s for s in SETTING_SOURCES if s in sources]
     seat_stop = data.get("seat_stop") or {}
     if not isinstance(seat_stop, dict) or set(seat_stop) - set(SEAT_STOP_DEFAULTS) \
             or not all(isinstance(v, bool) for v in seat_stop.values()):
@@ -281,6 +289,7 @@ def validate(data: dict, shipdir: Path) -> dict:
         "grace": parse_duration(DEFAULT_GRACE if data.get("grace") is None else data["grace"]),
         "deny": deny,
         "settings": settings,
+        "setting_sources": setting_sources,
         "profiles": profiles,
         "seat_stop": {**SEAT_STOP_DEFAULTS, **seat_stop},
         "roles": roles,

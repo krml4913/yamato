@@ -455,6 +455,16 @@
         "type": "string"
       }
     },
+    "setting_sources": {
+      "description": "席に読ませる Claude Code の設定の出どころ (--setting-sources に渡す)。既定は [project, local]。user を足すと ~/.claude の CLAUDE.md だけでなく hooks・plugin・env・remoteControlAtStartup なども席に入る (design §4.1)。",
+      "type": "array",
+      "items": {
+        "enum": ["user", "project", "local"]
+      },
+      "minItems": 1,
+      "uniqueItems": true,
+      "default": ["project", "local"]
+    },
     "settings": {
       "type": "object",
       "description": "席の settings.json に重ねる中身 (Claude Code の settings)。",

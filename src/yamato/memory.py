@@ -583,7 +583,8 @@ def run_curate(shipdir: Path, team: dict, role: str, now: float | None = None) -
         argv = claude.headless_argv(
             session_id=sid, name=f"{team['name']}.memory-curate-{role}", role=CURATOR,
             agents_json=json.dumps(agents, ensure_ascii=False), model=team["roles"][role]["model"],
-            settings=str(settings), add_dir=str(shipdir), prompt=curate_prompt(shipdir, team, role, current, cands))
+            settings=str(settings), add_dir=str(shipdir), prompt=curate_prompt(shipdir, team, role, current, cands),
+            setting_sources=",".join(team.get("setting_sources") or claude.DEFAULT_SETTING_SOURCES.split(",")))
         out_dir = role_dir(shipdir, role) / "curate"
         out_dir.mkdir(parents=True, exist_ok=True)
         base = out_dir / time.strftime("%Y%m%d-%H%M%S", time.localtime(started))
