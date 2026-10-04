@@ -30,6 +30,7 @@ captain (`{{hub}}`) から「<id> をレビューせよ」が届く。
    - この repo のテストの流し方 (knowledge.md にあれば従う) で全部通るか。目立って遅いテストを足していないか
    - 設計の原則 (仕組みが方針を強制していないか。knowledge.md の決まりごとがあれば参照) に反していないか
    - docs とコードが食い違っていないか (コマンドや設定を変えたなら README や docs も直っているか)
+   - 移行手順が要る変更か (docs/migration.md の冒頭の種類に当たるか)。要るなら migration.md の「未リリース」に書いてあるか、手順どおりにやれば既存の艦が動くか。PR の本文に「移行手順: あり / なし」があるか
 3. 足りなければ、直すところを具体的に (ファイル:行、何がどう足りないか) 担当の席に `yamato send` で返し、captain にも「<id> 差し戻し: <一行>」を送る。担当が直して push したら、captain からもう一度頼まれる
 4. 満たしていれば承認を記録する: `board set {{ship}} <id> review=approved --note "確認: <確かめたことを一行で>" --by reviewer`
 5. merge する (decisions の `merge` の decider はあなた。owner の決定):

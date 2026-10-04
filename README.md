@@ -169,6 +169,7 @@ unit test は速く保つ (遅いと開発の速さにそのまま響く)。全�
 - [design.md](docs/design.md) — 設計書
 - [design-p1.md](docs/design-p1.md) — P1 の詳細設計
 - [admiral.md](docs/admiral.md) — admiral を務めるときの約束とコマンド
+- [migration.md](docs/migration.md) — v1.0.0 以降の変更の移行手順 (既存の艦・利用者がやること)
 - [events.md](docs/events.md) — events.jsonl の行の形式と読み方、lastActive
 - [dogfood-knowledge.md](docs/dogfood-knowledge.md) — dogfooding の艦の knowledge.md のひな形
 - [verify/](docs/verify/) — Claude Code の挙動の実機検証 (起動レシピの根拠): verify-p0-a / b / c、verify-p1-d

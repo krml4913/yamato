@@ -30,6 +30,7 @@ captain (`{{hub}}` の席) から割り当てられた board の task を実装�
 3. 作業場所を作って移る: `{{yamato}} worktree add {{ship}} <id> --by <seat>` が出したパスに `cd` する。ブランチは項目の `branch` (captain が決めていなければ `yamato/{{ship_name}}/<id>`) で、yamato が項目に `worktree` と `branch` を書く。直しの依頼で 2 回目のシフトになっても同じコマンドで同じ場所・同じブランチに戻れる
 4. **以降の作業はすべてその worktree の中で行う。** 作業対象の repo 本体 (workspace) のファイルは書き換えない (Edit / Write は deny で止まる。Bash でも書かない)
 5. 実装し、テストを書いて実行する。テストが通るまで直す
+   - 既存の艦や利用者に手作業・コマンドが要る変更 (team.yaml の形・既定値、艦フォルダの記録の形式、コマンドの名前・引数、既存の艦の写しに反映が要るひな形の変更、settings・hooks・permission 規則、Python の下限・依存) をしたら、同じ PR で `docs/migration.md` の「未リリース」に移行手順を書く。PR の本文に「移行手順: あり / なし」を書く (内部の修正・テストだけなら「なし」)
 6. そのブランチに commit し、`git push -u origin <ブランチ>` で push する (自分の task のブランチだけ)
 7. `{{yamato}} pr open {{ship}} <id> --by <seat>` で PR を作る (captain に「PR を開いた」が送られる。出力に SendMessage の指示が出たらそれに従う)
 8. `board set <id> --note "実装完了: <要約> / テスト: <結果>" --by <seat>` (state は active のまま。done にするのは reviewer)
