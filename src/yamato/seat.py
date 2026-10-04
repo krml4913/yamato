@@ -155,6 +155,7 @@ def start_new_shift(shipdir: Path, team: dict, seat: str, rotated: list[str] | N
         model=spec["model"], settings=str(settings),
         add_dir=str(shipdir), prompt=_first_prompt(shipdir, seat), env_unset=team.get("env_unset") or (),
         remote_control=bool(team["roles"][spec["role"]].get("remote_control")),
+        setting_sources=",".join(team.get("setting_sources") or claude.DEFAULT_SETTING_SOURCES.split(",")),
     )
     _check_started(shipdir, seat, short, full, started, "new")
     if cwd:

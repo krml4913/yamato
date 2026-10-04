@@ -34,6 +34,14 @@ class TeamTest(unittest.TestCase):
         self.assertEqual(t["settings"], {})
         self.assertEqual(t["seat_stop"], {"require_handoff": True, "require_delivery": True})
 
+    def test_setting_sources_default_optin_and_invalid(self):
+        self.assertEqual(validate(base(), Path("/ship"))["setting_sources"], ["project", "local"])
+        t = validate(base(setting_sources=["project", "local", "user"]), Path("/ship"))
+        self.assertEqual(t["setting_sources"], ["user", "project", "local"])
+        for bad in (["global"], [], "user", [1]):
+            with self.assertRaises(YamatoError, msg=repr(bad)):
+                validate(base(setting_sources=bad), Path("/ship"))
+
     def test_relative_workspace_is_under_ship(self):
         t = validate(base(workspace="work"), Path("/ship"))
         self.assertEqual(Path(t["workspace"]), Path("/ship").resolve() / "work")

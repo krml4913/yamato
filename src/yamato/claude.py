@@ -269,8 +269,12 @@ def check_trust(workspace: Path) -> str | None:
 
 # --- lifecycle -------------------------------------------------------------
 
+DEFAULT_SETTING_SOURCES = "project,local"
+
+
 def launch(*, cwd: str, name: str, role: str, agents_json: str, model: str,
-           settings: str, add_dir: str, prompt: str, env_unset=(), remote_control: bool = False) -> tuple[str, str]:
+           settings: str, add_dir: str, prompt: str, env_unset=(), remote_control: bool = False,
+           setting_sources: str = DEFAULT_SETTING_SOURCES) -> tuple[str, str]:
     """Start a new background session; returns (short id, full sessionId).
 
     ``remote_control`` adds ``--remote-control``, which wins over the settings'
@@ -279,7 +283,7 @@ def launch(*, cwd: str, name: str, role: str, agents_json: str, model: str,
         "--bg", "--name", name,
         "--agent", role, "--agents", agents_json,
         "--model", model,
-        "--setting-sources", "project,local",
+        "--setting-sources", setting_sources,
         "--settings", settings,
         *(["--remote-control"] if remote_control else []),
         "--add-dir", add_dir,
@@ -322,7 +326,8 @@ def resume(session_id: str, prompt: str, env_unset=(), cwd: str | None = None) -
 
 
 def headless_argv(*, session_id: str, name: str, role: str, agents_json: str, model: str,
-                  settings: str, add_dir: str, prompt: str, max_budget_usd=None) -> list[str]:
+                  settings: str, add_dir: str, prompt: str, max_budget_usd=None,
+                  setting_sources: str = DEFAULT_SETTING_SOURCES) -> list[str]:
     """One headless shift = one ``claude -p`` (design-p1 §4.2, verify-p1-d V1-V4).
 
     No ``--bare``: it skips OAuth, so a subscription run ends ``Not logged in``;
@@ -335,7 +340,7 @@ def headless_argv(*, session_id: str, name: str, role: str, agents_json: str, mo
         "--output-format", "stream-json", "--verbose",
         "--agent", role, "--agents", agents_json,
         "--model", model,
-        "--setting-sources", "project,local",
+        "--setting-sources", setting_sources,
         "--settings", settings,
         "--permission-prompts", "none",
     ]
