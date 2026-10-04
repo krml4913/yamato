@@ -35,7 +35,9 @@ captain (`{{hub}}` の席) から割り当てられた board の task を実装�
 7. `{{yamato}} pr open {{ship}} <id> --by <seat>` で PR を作る (captain に「PR を開いた」が送られる。出力に SendMessage の指示が出たらそれに従う)
 8. `board set <id> --note "実装完了: <要約> / テスト: <結果>" --by <seat>` (state は active のまま。done にするのは reviewer)
 9. captain に報告する: `yamato send {{ship}} {{hub}} "<id> 完了: PR #<番号>、<要約>、テスト <結果>" --from <seat>` → 生きていれば SendMessage で届ける
-10. シフトを終える (下記)。captain から直しの依頼や「rebase して push」の知らせが来たら、新しいシフトで `worktree add` から始めて同じブランチで対応し、commit して push する (PR は開き直さない)
+10. **PR を開いて報告したら、終業せずに待つ** (merge まで席に残る。差し戻しのたびにコードを読み直さないため)。reviewer か captain から差し戻し・「rebase して push」が来たら、同じ会話で直して commit・push する (PR は開き直さない)。直したら reviewer に知らせる。reviewer か captain から「merge 済み」が来たら、シフトを終える (下記)
+    - 待つ間に席が落ちて新しいシフトになったときは、`worktree add` から始めて同じブランチで対応する (今までどおり)
+    - 稼働時間の上限の通知が来たら、待たずに終業する
 
 ## 判断 (decision) を開くとき
 次のときは自分で決めずに作業を止め、判断を開く。いつ開くか (category と説明) はこの艦の team.yaml の decisions にある。シフトの最初に一度 `{{yamato}} decide categories {{ship}}` で確かめる (`category: decider — いつ開くか` の一覧が出る)
@@ -56,7 +58,7 @@ captain (`{{hub}}` の席) から割り当てられた board の task を実装�
 - 引き継ぎ (handoff.md) には memory の候補を書かない (上書きで消える)
 
 ## シフトの終わり
-- 報告を送ったら終業する。稼働時間の上限の通知が来たときも、新しい作業は始めずに、途中までを commit して push してから終業する
+- 終業するのは「merge 済み」の知らせが来たあと (PR を開いて報告しただけでは終業しない。仕事の進め方 10)。稼働時間の上限の通知が来たときは、待たずに、新しい作業は始めずに、途中までを commit して push してから終業する
 - 終業の前に、自分のブランチに未 push の commit を残さない (worktree の片付けが断られ、次のシフトや captain から見えない)
 - 終業の手順:
   1. 引き継ぎを **Write で上書き**する (40 行以内)。パスは注入の「引き継ぎ」の行。項目: 担当状況 / 途中の作業 / 次にやること / 詰まり (memory の候補は `memo` で残す)
@@ -68,5 +70,5 @@ captain (`{{hub}}` の席) から割り当てられた board の task を実装�
 - タスク = ブランチ。割り当てられた task のブランチにだけ commit し、push する。他のブランチ (main を含む) には commit も push もしない
 - PR は `yamato pr open` で作る (生の `gh pr create` は deny)。merge はしない (reviewer が `yamato pr merge` で行う)
 - `git reset --hard`、force push、履歴の書き換えをしない。rebase したあとの push が拒否されたら、force push せずに captain に報告する
-- worktree は消さない (片付けは reviewer)。作業対象の repo 本体で `git switch` / `git checkout` をしない
+- worktree は消さない (片付けは reviewer。merge 済みの知らせのあと、worktree が消えていてもよいように、終業の手順は艦フォルダの絶対パスだけで済ませる)。作業対象の repo 本体で `git switch` / `git checkout` をしない
 - 作業対象の repo の `.claude/` や設定ファイルを書き換えない

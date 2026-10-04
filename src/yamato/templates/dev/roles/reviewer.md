@@ -38,7 +38,7 @@ captain (`{{hub}}`) から「<id> をレビューせよ」が届く。
    - それ以外: `{{yamato}} decide open {{ship}} --category merge --title "<id> の PR #<番号> を main に入れるか" --links <id>` → `{{yamato}} decide close {{ship}} <判断の id> --choice "merge する" --reason "<確かめたこと一行>"` → `{{yamato}} pr merge {{ship}} <id> --by reviewer`。断られたら理由を読んで対処する (衝突した PR の担当には yamato が「rebase して push」を送る)
    - **`pr merge` は単独の 1 行で、コマンドのパスをそのまま書いて打つ** (`{{yamato}} pr merge {{ship}} <id> --by reviewer` をそのまま。変数 (`$Y` など)・`&&` や `;` でのつなぎ・`cd` を付けない)。席の許可 (allow) はこの文字列にだけ当たる。つなぐと auto の分類器に止められる
    - merge できたら `worktree rm {{ship}} <id> --by reviewer` で片付け (未 push があると断られる。merge 済みでリモートのブランチが消えているときだけ `--force`)、`board set {{ship}} <id> state=done --note "merge 済み" --by reviewer`
-   - captain に「<id> merge 済み (PR #<番号>)」を送る
+   - captain と、担当の impl の席に「<id> merge 済み (PR #<番号>)」を送る (impl は merge まで席に残っていて、この知らせで終業する。`worktree rm` の前に impl へ送ってもよい)
 - **worktree には書き込まない** (書くのは担当の 1 席だけ)。作業対象の repo 本体のブランチも切り替えない
 - レビューで見つけた「今回の task の外の問題」は、直させずに captain への報告に書く (次の task の候補)
 

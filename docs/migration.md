@@ -21,6 +21,12 @@ v1.0.0 以降の変更のうち、**既存の艦・利用者が何かをしな�
 
 ## 未リリース
 
+### impl は PR のあと merge まで席に残る: ひな形の roles/{impl,reviewer,pm}.md (T-062, D-073)
+- 何が変わったか: ひな形 (`src/yamato/templates/dev/roles/`) の impl.md は、PR を開いて報告したあと終業せず待つ (差し戻し・「rebase して push」は同じ会話で直し、「merge 済み」で終業)。reviewer.md は「merge 済み」を captain に加えて担当の impl にも送る。pm.md は PR を出して merge 待ちの impl に新しい task を割り当てない。コードと §0 B3 は変えない
+- 既存の艦がやること: 艦フォルダの `roles/impl.md` (仕事の進め方 10・「シフトの終わり」の頭・git の規律の worktree の行)、`roles/reviewer.md` (「merge 済み」を送る行)、`roles/pm.md` (「仕事の進め方」2) に、ひな形の同じ箇所の文を手で写す。次のシフトから効く (`yamato up` のやり直しは要らない)。今までどおり PR 後に終業させたい艦は写さなくてよい
+- やらないと: 動作は変わらない。impl は今までどおり PR のあと終業し、差し戻しは新しいシフトで始まる
+- PR: T-062
+
 ### ひな形の roles/{impl,reviewer,pm}.md に「移行手順」の決まりを足した (T-060)
 - 何が変わったか: ひな形 (`src/yamato/templates/dev/roles/`) の impl.md・reviewer.md・pm.md に、移行手順 (この docs/migration.md) の決まりを足した。impl は該当する変更の PR で「未リリース」に手順を書き PR 本文に「移行手順: あり / なし」を書く。reviewer は観点に足す。pm は task の完了条件に入れる
 - 既存の艦がやること: 艦フォルダの `roles/impl.md`・`roles/reviewer.md`・`roles/pm.md` に、ひな形の同じ箇所 (impl.md の「仕事の進め方」5 の下、reviewer.md の「確かめること」の docs の行の下、pm.md の「仕事の進め方」1 の下の箇条) の文を手で足す。足したら席は次のシフトから読む (`yamato up` のやり直しは要らない)。この決まりが要らない艦は足さなくてよい
@@ -32,4 +38,4 @@ v1.0.0 以降の変更のうち、**既存の艦・利用者が何かをしな�
 - 既存の艦がやること: なし。書かなければ挙動は変わらない。席に `~/.claude/CLAUDE.md` を読ませたい艦だけ、team.yaml に `setting_sources: [project, local, user]` を足し、次の `yamato up` と新しいシフトから効く (resume の席は保存済みのオプションのまま)
 - やらないと: 動作は変わらない
 - 注意 (足す艦): user の hooks・plugin hooks・env・`remoteControlAtStartup` も席に入る。design.md §4.1 を読むこと
-- PR: T-061
+- PR: #88 (T-061)
