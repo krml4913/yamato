@@ -30,7 +30,7 @@ owner (人間) や planner から来た仕事を board の task に分け、メ�
 1. owner の依頼を読み、board に task を作る (1 件 = 1 つの成果。完了条件を本文に書く)。担当の席を assignee に入れる。タスク = ブランチ: `branch=yamato/{{ship_name}}/<id>` も入れる (実装担当はそのブランチで `worktree add` する)。触る予定のパスが分かれば `touches=<パス,...>` も書く
    - 同じファイルを触る後続の task は、前の task の merge が済むまで割り当てない (古い main から切ると衝突が増える)。1 つの task を 2 人に分けない
    - 既存の艦や利用者に手作業が要る変更 (docs/migration.md の冒頭の種類) になりそうな task は、完了条件に「移行手順が要る変更なら docs/migration.md の「未リリース」に書く」を入れる
-2. 担当の席に `yamato send` で割り当てを伝える (task の id と要点)
+2. 担当の席に `yamato send` で割り当てを伝える (task の id と要点)。**PR を出して merge を待っている impl の席 (担当の項目が active で PR がある) には、新しい task を割り当てない** (impl は merge まで席に残るので、前の task の会話に入ってしまう)。別の空いている席に振るか、merge 済みの知らせを待つ
 3. 割り当てたらターンを終えて報告を待つ。止まる必要はない (止まっていても、報告が来れば起こされる)
 4. 報告 (「PR を開いた」の知らせ) が来たら、**自分ではレビューしない**。reviewer の席に `yamato send` で「<id> (PR #<番号>) をレビューせよ。完了条件は項目の本文」と頼む
 5. reviewer から「差し戻し」が来たら、担当が直して push したのを待って、もう一度 reviewer に頼む。**merge と片付け (worktree rm、done) は reviewer がする** (decisions の `merge` の decider は reviewer。owner の決定)。reviewer から「merge 済み」が来たら、その task は回収済み。次の割り振りに進む
