@@ -31,6 +31,13 @@
       "description": "yamato talk で席を省いたときに attach する席 (省略時は hub)。",
       "type": "string"
     },
+    "up_seats": {
+      "description": "yamato up で captain (hub) と一緒に起こす席の名前のリスト (省略時は空 = captain だけ)。up --seats との和 (up_seats → --seats の順、重複と hub は除く)。",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "time_limit": {
       "description": "yamato up からの稼働時間 (up --for で上書き)。省略時 3h。`none` は上限なし (admiral 専用)。",
       "anyOf": [

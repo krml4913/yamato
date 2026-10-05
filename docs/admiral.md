@@ -30,7 +30,7 @@
 |---|---|
 | 艦を作る | `yamato ship create <name> --workspace <repo> [--template dev]`。trust は main repo (git root) で確かめる。通っていなければ owner に `cd <repo> && claude` で承認してもらう |
 | 構成を変える | 艦フォルダの `team.yaml` / `roles/<役割>.md` / `charter.md` を Edit で直す。**変更は次の `yamato up` から効く** (今動いている席には効かない)。役割の `count` を変えると席の名前が変わる (`impl` ⇄ `impl-1, impl-2, ...`、design-drift E)。persistent の席は resume だと古いプロンプトのままなので、新しいプロンプトを効かせるには新しいシフトで起こす (`yamato rotate <ship> <seat>` で入れ替えの印を立ててから `up` / `send`) |
-| 出撃 | `yamato up <name> [--for 3h] [--seats impl,review]`。既定は captain だけが起きる (他の席は captain が send で起こす)。`--seats` で一緒に起こす。艦がすでに稼働中で `--for` を付けなければ、deadline は縮めない (`max(now + time_limit, 今の deadline)`。D-015)。`--for` を明示すればその値で上書きする |
+| 出撃 | `yamato up <name> [--for 3h] [--seats impl,review]`。既定は captain だけが起きる (他の席は captain が send で起こす)。`--seats` と、艦の team.yaml の `up_seats` に書いた席が一緒に起きる (和)。艦がすでに稼働中で `--for` を付けなければ、deadline は縮めない (`max(now + time_limit, 今の deadline)`。D-015)。`--for` を明示すればその値で上書きする |
 | 全艦を一望 | `yamato ships`。1 艦 1 行: 稼働中か・残り時間・captain の最終・赤い席の数・owner の判断待ち・今日の使用量・最新の日報。`_admiral/` は登録しないのでここには出ない |
 | 1 艦を詳しく | `yamato status <name>`。赤い席は `!!!` の行で出る (権限の確認待ち、API エラー、生きているのに `watch.stale_after` (既定 20m) より長く動いていない、per_task の席が生きているのに active の担当が無い) |
 | 出来事を流し見 | `yamato feed <name>` |

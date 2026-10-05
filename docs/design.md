@@ -244,7 +244,7 @@ board:                           # チーム固有の board 設定 (§6.2)
 
 **エディタの補完 (T-057)**: team.yaml の JSON Schema が `src/yamato/schema/team.schema.json` にある (項目の説明・型・選べる値・知らない項目の警告。外れた `git.merge_decision` は取り消し線)。`ship create` と admiral の初回作成は、ひな形の先頭の `# yaml-language-server: $schema=...` 行に、この checkout の schema の絶対パス (`file:///...`) を埋める。repo が private なので URL は使えない。VS Code では Red Hat の「YAML」拡張で効く。**既にある艦には自動では入らない**。手で team.yaml の 1 行目に `# yaml-language-server: $schema=file:///<yamato の checkout>/src/yamato/schema/team.schema.json` を足す (Windows は `file:///C:/Users/...`。`python3 -c "from yamato.ship import SCHEMA; print(SCHEMA.as_uri())"` で出せる)。validate が正本で、schema は編集用の二重持ち。`tests/test_team_schema.py` が team.py の `*_KEYS` と項目の集合を照合する。項目を足し引きしたら schema も直す。
 
-P1 で足す項目 (詳細は design-p1 §0.4。値を書かなければひな形の既定値が入る): `decisions` (判断の種類 → decider)、`notify.via` の `slack` / `windows` と `notify.decisions`、`report.daily`、`talk_default`、`memory` (`curate_every` / `curate_at` / `applier` / `limits`)、`profiles` (`trust:` のプロファイル)、`git` (`base` / `merge_requires` / `conflict`)、役割ごとの `isolation` / `rotate` / `report_to` / `handoff_guard` / `trust` / `remote_control` / `max_duration` / `max_budget_usd`。
+P1 で足す項目 (詳細は design-p1 §0.4。値を書かなければひな形の既定値が入る): `decisions` (判断の種類 → decider)、`notify.via` の `slack` / `windows` と `notify.decisions`、`report.daily`、`talk_default`、`up_seats`、`memory` (`curate_every` / `curate_at` / `applier` / `limits`)、`profiles` (`trust:` のプロファイル)、`git` (`base` / `merge_requires` / `conflict`)、役割ごとの `isolation` / `rotate` / `report_to` / `handoff_guard` / `trust` / `remote_control` / `max_duration` / `max_budget_usd`。
 
 ### 5.1 席の権限と隔離、git の規律 (§0 B2、I2、I3)
 
@@ -567,7 +567,7 @@ grace: 20m            # 終了時刻のあと、キリのいいところまで�
 | コマンド | 内容 |
 |---|---|
 | `ship create <name> --workspace <path> [--path <dir>] [--template dev]` | ひな形から艦フォルダを作り、艦の登録簿に載せる。workspace が trust されていなければ (確かめられなければ、その旨を) 警告する |
-| `up <ship> [--for 3h]` / `down <ship> [--force]` | 起動 (稼働時間つき。`.runtime/` の作り直し、deadline、captain の席の起動) / 終業 (`--force` で即時に強制停止) |
+| `up <ship> [--for 3h] [--seats a,b]` / `down <ship> [--force]` | 起動 (稼働時間つき。`.runtime/` の作り直し、deadline、captain の席の起動。`--seats` と team.yaml の `up_seats` の席も一緒に起こす (和、重複と hub は除く。既定は空)) / 終業 (`--force` で即時に強制停止) |
 | `status [<ship>]` | 席ごとの状態 (生存、最後に動いた時刻、権限の確認で止まっている「詰まり」)、deadline までの残り、未読 inbox |
 | `send <ship> <seat\|owner> "<msg>" [--from <seat>]` | メッセージを送る (§7) |
 | `inbox <ship> <seat\|owner> [--all]` | 未読を全文で表示して既読にする |

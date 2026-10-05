@@ -87,6 +87,58 @@ class AdmiralTest(ShipTestCase):
         self.assertEqual(self.bg_names(), [])
         self.assertIsNone(deadline.read(self.shipdir))
 
+    # --- team.yaml up_seats ---
+
+    def set_up_seats(self, text):
+        ty = self.shipdir / "team.yaml"
+        ty.write_text(ty.read_text(encoding="utf-8").replace("talk_default: pm", f"talk_default: pm\nup_seats: {text}"),
+                      encoding="utf-8")
+
+    def test_up_seats_from_team_yaml_wake_with_the_captain(self):
+        self.set_up_seats("[impl]")
+        self.assertEqual(self.team()["up_seats"], ["impl"])
+        rc, out = self.cli("up", str(self.shipdir), "--for", "1h")
+        self.assertEqual(rc, 0)
+        self.assertEqual(self.bg_names(), ["t1.pm", "t1.impl"])
+        self.assertIn("席 impl: 新しいシフトを起動した", out)
+
+    def test_up_seats_default_is_empty(self):
+        self.assertEqual(self.team()["up_seats"], [])
+
+    def test_up_seats_is_a_union_with_the_flag_without_duplicates_or_hub(self):
+        ty = self.shipdir / "team.yaml"
+        ty.write_text(ty.read_text(encoding="utf-8").replace("    count: 1 ", "    count: 3 ", 1), encoding="utf-8")
+        self.set_up_seats("[impl-2, pm, impl-2]")
+        self.assertEqual(self.team()["up_seats"], ["impl-2"])
+        rc, out = self.cli("up", str(self.shipdir), "--for", "1h", "--seats", "impl-1,impl-2,pm")
+        self.assertEqual(rc, 0)
+        self.assertEqual(self.bg_names(), ["t1.pm", "t1.impl-2", "t1.impl-1"])
+        self.assertEqual(out.count("席 impl-2:"), 1)
+
+    def test_up_seats_must_be_seats(self):
+        self.set_up_seats("[nope]")
+        with self.assertRaises(YamatoError):
+            self.team()
+        self.set_up_seats("impl")
+        with self.assertRaises(YamatoError):
+            self.team()
+
+    def test_up_seats_failure_wakes_the_rest_then_errors(self):
+        ty = self.shipdir / "team.yaml"
+        ty.write_text(ty.read_text(encoding="utf-8").replace("    count: 1 ", "    count: 3 ", 1), encoding="utf-8")
+        self.set_up_seats("[impl-1, impl-2]")
+        real = seat.wake
+
+        def wake(shipdir, team, s, reason="send"):
+            if s == "impl-1":
+                raise YamatoError("席 impl-1 の起動に失敗しました")
+            return real(shipdir, team, s, reason)
+
+        with mock.patch.object(seat, "wake", side_effect=wake):
+            rc, _ = self.cli("up", str(self.shipdir), "--for", "1h")
+        self.assertEqual(rc, 1)
+        self.assertEqual(self.bg_names(), ["t1.pm", "t1.impl-2"])
+
     def add_headless_role(self):
         ty = self.shipdir / "team.yaml"
         ty.write_text(ty.read_text(encoding="utf-8").replace(

@@ -15,7 +15,7 @@ SHIFTS = ("per_task", "persistent", "headless")
 STATES = ("open", "active", "blocked", "done")
 TOP_KEYS = {"name", "hub", "workspace", "charter", "roles", "time_limit", "grace", "deny", "board",
             "settings", "setting_sources", "seat_stop", "env_unset", "inject", "notify", "git", "report", "decisions",
-            "watch", "talk_default", "profiles", "memory", "last_call", "context_windows"}
+            "watch", "talk_default", "up_seats", "profiles", "memory", "last_call", "context_windows"}
 # what SessionStart can inject (design §8.2); the header is always there
 INJECT_PARTS = ("handoff", "log_tail", "mine", "inbox", "memory", "knowledge", "last_report", "orphans", "board",
                 "fleet")
@@ -266,6 +266,16 @@ def validate(data: dict, shipdir: Path) -> dict:
     if talk_default not in seats:
         raise YamatoError(f"team.yaml: talk_default={talk_default!r} が席にありません")
 
+    raw_up = data.get("up_seats")
+    if raw_up is None:
+        raw_up = []
+    if not isinstance(raw_up, list) or not all(isinstance(x, str) for x in raw_up):
+        raise YamatoError("team.yaml: up_seats は席の名前のリスト")
+    for s_name in raw_up:
+        if s_name not in seats:
+            raise YamatoError(f"team.yaml: up_seats の {s_name!r} が席にありません")
+    up_seats = [s_name for s_name in dict.fromkeys(raw_up) if s_name != hub]
+
     board = data.get("board") or {}
     if not isinstance(board, dict):
         raise YamatoError("team.yaml: board が mapping ではありません")
@@ -306,6 +316,7 @@ def validate(data: dict, shipdir: Path) -> dict:
         "report": {"daily": daily},
         "watch": {"stale_after": stale_after, **_watch_lifecycle(watch)},
         "talk_default": talk_default,
+        "up_seats": up_seats,
         "memory": _memory(data.get("memory"), roles),
         "last_call": _last_call(data.get("last_call")),
         "context_windows": _context_windows(data.get("context_windows")),
