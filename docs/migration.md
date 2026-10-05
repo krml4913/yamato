@@ -22,7 +22,7 @@ v1.0.0 以降の変更のうち、**既存の艦・利用者が何かをしな�
 ## 未リリース
 
 ### team.yaml に `template` を足した・`yamato ship upgrade` で艦の写しを新しい版に上げられる (T-070, D-081)
-- 何が変わったか: team.yaml のトップに `template: {name: dev, version: 1.1.0}` (写しの元のひな形と yamato の版) が増えた。`ship create` が書く。実行時には読まない。あわせて `yamato ship upgrade <艦> [--from <版>] [--template <名>]` と `ship upgrade-done` が増えた。upgrade は `roles/` と `team.yaml` を `<艦>/.upgrade/` に控え、upgrade 専用の対話 claude が変更を 1 件ずつ元帥に出して、決まったものだけ写しに入れる
+- 何が変わったか: team.yaml のトップに `template: {name: dev, version: 1.1.0}` (写しの元のひな形と yamato の版) が増えた。`ship create` が書く。実行時には読まない。あわせて `yamato ship upgrade <艦> [--from <版>] [--template <名>]` と `ship upgrade-done` が増えた。upgrade は `roles/` と `team.yaml` を `<艦>/.upgrade/` に控え、upgrade 専用の対話 claude が変更を 1 件ずつownerに出して、決まったものだけ写しに入れる
 - 既存の艦がやること: v1.0.0 で作った艦は `template` の記録がない (書かなくても動く)。今後の版に上げるときは `yamato ship upgrade <艦> --from v1.0.0` を流す (dev 以外のひな形は `--template research` なども)。終わると `template` の行が足される。記録だけ先に足したい艦は `yamato ship upgrade-done <艦> --version 1.0.0` でもよい。以降、この文書の「ひな形の写しに関わる項目」の手で写す手順は、`yamato ship upgrade` で取り込める
 - やらないと: 動作は変わらない。次の版からの upgrade で `--from` を毎回渡す
 - PR: T-070
