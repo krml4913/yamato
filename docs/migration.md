@@ -21,12 +21,6 @@ v1.0.0 以降の変更のうち、**既存の艦・利用者が何かをしな�
 
 ## 未リリース
 
-### 複数 repo の艦の項目の記録は repo ごとの写し (T-068)
-- 何が変わったか: workspace が複数 repo の艦 (T-066 で追加) で、`worktree add --repo`・`pr open --repo`・`pr merge --repo` が使える。項目の `worktree` / `branch` / `pr` / `merged_by` は、複数 repo の艦だけ `{呼び名: 値}` になる。workspace が 1 つの艦は何も変わらない
-- 既存の艦がやること: なし (1 repo の艦の記録は同じ)。複数 repo の艦にあとから変えるときは、既存の項目の文字列は先頭の repo のものとして読まれる
-- やらないと: 影響なし
-- PR: T-068
-
 ### impl は PR のあと merge まで席に残る: ひな形の roles/{impl,reviewer,pm}.md (T-062, D-073)
 - 何が変わったか: ひな形 (`src/yamato/templates/dev/roles/`) の impl.md は、PR を開いて報告したあと終業せず待つ (差し戻し・「rebase して push」は同じ会話で直し、「merge 済み」で終業)。reviewer.md は「merge 済み」を captain に加えて担当の impl にも送る。pm.md は PR を出して merge 待ちの impl に新しい task を割り当てない。コードと §0 B3 は変えない
 - 既存の艦がやること: 艦フォルダの `roles/impl.md` (仕事の進め方 10・「シフトの終わり」の頭・git の規律の worktree の行)、`roles/reviewer.md` (「merge 済み」を送る行)、`roles/pm.md` (「仕事の進め方」2) に、ひな形の同じ箇所の文を手で写す。次のシフトから効く (`yamato up` のやり直しは要らない)。今までどおり PR 後に終業させたい艦は写さなくてよい
