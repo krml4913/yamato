@@ -62,6 +62,11 @@ FACT_KINDS = (events.BOARD_ADD, events.BOARD_SET, events.BOARD_ARCHIVE, events.D
 FORCED_KINDS = ("down-force", "grace-exceeded")
 
 
+def _prs(v) -> str:
+    """An item's ``pr``: a number, or ``{repo: number}`` in a several-repo ship."""
+    return ", ".join(f"{k}#{n}" for k, n in v.items()) if isinstance(v, dict) else str(v)
+
+
 def daily_mode(team: dict) -> str:
     return ((team.get("report") or {}).get("daily")) or DAILY_FALLBACK
 
@@ -196,7 +201,7 @@ def done_lines(shipdir: Path, items: dict, since: float, until: float) -> list[s
         meta = items.get(iid, ({}, "", False))[0]
         if meta.get("kind") == "decision":
             continue   # closed decisions are not work done
-        pr = f"PR {meta['pr']}" if meta.get("pr") else None
+        pr = f"PR {_prs(meta['pr'])}" if meta.get("pr") else None
         if merged:
             pr = f"PR {d.get('pr') or meta.get('pr')} を {d.get('mergedBy') or e.get('by') or '?'} が merge"
         extra = [x for x in (meta.get("assignee") or e.get("seat"), pr) if x]
