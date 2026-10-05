@@ -72,17 +72,69 @@ def _meta(shipdir: Path, team: dict, item_id: str) -> dict:
         return {}
 
 
-def repo_root(team: dict) -> Path:
+def repos(team: dict) -> list[dict]:
+    """The ship's repos, ``[{name, path}]`` (the first is the seat's cwd). A ship from before
+    ``workspaces`` existed has the one ``workspace``."""
+    return team.get("workspaces") or [{"name": Path(team["workspace"]).name, "path": team["workspace"]}]
+
+
+def multi(team: dict) -> bool:
+    """More than one repo: the item's worktree / branch / pr / merged_by are then ``{repo: value}`` maps."""
+    return len(repos(team)) > 1
+
+
+def pick_repo(team: dict, name: str | None = None) -> dict:
+    """The repo called ``name`` (its basename); no name means the first."""
+    rs = repos(team)
+    if name is None:
+        return rs[0]
+    for r in rs:
+        if r["name"] == name:
+            return r
+    raise YamatoError(f"repo {name!r} は workspace にありません ({', '.join(r['name'] for r in rs)})")
+
+
+def field_map(team: dict, meta: dict, key: str) -> dict[str, str]:
+    """An item's per-repo field as ``{repo: value}``. A plain string (the one-repo form, or a
+    value set by hand with ``board set``) is the first repo's."""
+    v = meta.get(key)
+    if isinstance(v, dict):
+        return {k: str(x) for k, x in v.items() if x not in (None, "")}
+    return {repos(team)[0]["name"]: str(v)} if v not in (None, "") else {}
+
+
+def field_get(team: dict, meta: dict, key: str, repo: dict) -> str | None:
+    return field_map(team, meta, key).get(repo["name"])
+
+
+def field_put(team: dict, meta: dict, key: str, repo: dict, value: str | None):
+    """The value to ``board set`` for ``key`` after ``repo``'s part becomes ``value`` (None / "" removes
+    it). One-repo ships keep a plain string; several repos keep a map."""
+    if not multi(team):
+        return value or ""
+    cur = field_map(team, meta, key)
+    if value:
+        cur[repo["name"]] = value
+    else:
+        cur.pop(repo["name"], None)
+    return cur or ""
+
+
+def repo_root(team: dict, repo: dict | None = None) -> Path:
     from .claude import git_root
 
-    root = git_root(Path(team["workspace"]))
+    ws = (repo or repos(team)[0])["path"]
+    root = git_root(Path(ws))
     if root is None:
-        raise YamatoError(f"workspace が git repo ではないので worktree は使えません: {team['workspace']}")
+        raise YamatoError(f"workspace が git repo ではないので worktree は使えません: {ws}")
     return root
 
 
-def default_path(shipdir: Path, item_id: str) -> Path:
-    return Path(shipdir) / "worktrees" / item_id
+def default_path(shipdir: Path, item_id: str, team: dict | None = None, repo: dict | None = None) -> Path:
+    """``worktrees/<id>`` (one repo), ``worktrees/<id>/<repo>`` (several: the repos stay side by side,
+    so ``../lib`` from the app's worktree is the same task's lib worktree)."""
+    base = Path(shipdir) / "worktrees" / item_id
+    return base / repo["name"] if team is not None and repo is not None and multi(team) else base
 
 
 def default_branch(team: dict, item_id: str) -> str:
@@ -123,39 +175,45 @@ def _base_ref(root: Path, team: dict, base: str | None) -> str:
 
 
 def add(shipdir: Path, team: dict, item_id: str, branch: str | None = None, base: str | None = None,
-        path: str | None = None, by: str | None = None) -> tuple[Path, bool]:
-    """Create (or find) the item's worktree. Returns (path, created).
+        path: str | None = None, by: str | None = None, repo: str | None = None) -> tuple[Path, bool]:
+    """Create (or find) the item's worktree in one repo (``repo``: its name, default the first).
+    Returns (path, created).
 
     A new worktree and a failure are recorded in events.jsonl; finding the one
     that is already there is not (nothing happened)."""
     who = caller(shipdir, by)
+    r = pick_repo(team, repo)
+    extra = {"repo": r["name"]} if multi(team) else {}
     try:
-        wt, created = _add(shipdir, team, item_id, branch, base, path, by)
+        wt, created = _add(shipdir, team, item_id, branch, base, path, by, r)
     except YamatoError as e:
-        record_failure(shipdir, WORKTREE_ADD_FAILED, item_id, who, e, _meta(shipdir, team, item_id))
+        record_failure(shipdir, WORKTREE_ADD_FAILED, item_id, who, e, _meta(shipdir, team, item_id), **extra)
         raise
     if created:
         meta = _meta(shipdir, team, item_id)
-        record(shipdir, WORKTREE_ADD, item_id, who, f"{item_id} の worktree を作った ({meta.get('branch')})", meta,
-               path=str(wt), branch=meta.get("branch"))
+        br = field_get(team, meta, "branch", r)
+        record(shipdir, WORKTREE_ADD, item_id, who,
+               f"{item_id} の worktree を作った ({br})" + (f" [{r['name']}]" if extra else ""), meta,
+               path=str(wt), branch=br, **extra)
     return wt, created
 
 
 def _add(shipdir: Path, team: dict, item_id: str, branch: str | None, base: str | None,
-         path: str | None, by: str | None) -> tuple[Path, bool]:
+         path: str | None, by: str | None, r: dict) -> tuple[Path, bool]:
     brd = Board(shipdir, team)
     meta, _, _ = brd.read(item_id)
-    root = repo_root(team)
-    branch = branch or meta.get("branch") or default_branch(team, item_id)
+    root = repo_root(team, r)
+    branch = branch or field_get(team, meta, "branch", r) or default_branch(team, item_id)
     # a value starting with `-` would be read as an option by `git worktree add`
     if branch.startswith("-") or git(["check-ref-format", "--branch", branch], root, check=False).returncode:
         raise YamatoError(f"ブランチ名が不正です: {branch!r}")
+    recorded = field_get(team, meta, "worktree", r)
     if path:
         wt = Path(path).expanduser().resolve()
-    elif meta.get("worktree"):
-        wt = Path(meta["worktree"]).resolve()
+    elif recorded:
+        wt = Path(recorded).resolve()
     else:
-        wt = default_path(shipdir, item_id).resolve()
+        wt = default_path(shipdir, item_id, team, r).resolve()
     known = registered(root)
     created = False
     if wt in known:
@@ -173,15 +231,19 @@ def _add(shipdir: Path, team: dict, item_id: str, branch: str | None, base: str 
             ref = _base_ref(root, team, base)
             git(["worktree", "add", "--no-track", "-b", branch, str(wt), ref], root)
         created = True
-    if meta.get("worktree") != str(wt) or meta.get("branch") != branch:
-        brd.set(item_id, {"worktree": str(wt), "branch": branch},
-                note=f"worktree {wt} (ブランチ {branch})" if created else None, by=caller(shipdir, by))
+    if recorded != str(wt) or field_get(team, meta, "branch", r) != branch:
+        where = f" [{r['name']}]" if multi(team) else ""
+        brd.set(item_id, {"worktree": field_put(team, meta, "worktree", r, str(wt)),
+                          "branch": field_put(team, meta, "branch", r, branch)},
+                note=f"worktree{where} {wt} (ブランチ {branch})" if created else None, by=caller(shipdir, by))
     return wt, created
 
 
-def path_of(shipdir: Path, team: dict, item_id: str) -> Path:
+def path_of(shipdir: Path, team: dict, item_id: str, repo: str | None = None) -> Path:
+    r = pick_repo(team, repo)
     meta, _, _ = Board(shipdir, team).read(item_id)
-    wt = Path(meta["worktree"]) if meta.get("worktree") else default_path(shipdir, item_id)
+    rec = field_get(team, meta, "worktree", r)
+    wt = Path(rec) if rec else default_path(shipdir, item_id, team, r)
     if not wt.is_dir():
         raise YamatoError(f"{item_id} の worktree がありません (`yamato worktree add` で作る)")
     return wt.resolve()
@@ -198,41 +260,50 @@ def dirty(wt: Path) -> list[str]:
 
 
 def listing(shipdir: Path, team: dict) -> list[dict]:
-    """The ship's worktrees: those under ``worktrees/`` and those a board item points at."""
-    root = repo_root(team)
-    by_path = {}
+    """The ship's worktrees, per repo: those under ``worktrees/`` and those a board item points at."""
+    by_path: dict[tuple[str, Path], str] = {}
     for meta in Board(shipdir, team).items(include_archive=True):
-        if meta.get("worktree"):
-            by_path[Path(meta["worktree"]).resolve()] = meta["id"]
+        for name, wt in field_map(team, meta, "worktree").items():
+            by_path[(name, Path(wt).resolve())] = meta["id"]
     home = (Path(shipdir) / "worktrees").resolve()
     out = []
-    for wt, branch in registered(root).items():
-        if wt not in by_path and home not in wt.parents:
-            continue
-        out.append({"item": by_path.get(wt, wt.name), "path": wt, "branch": branch,
-                    "unpushed": unpushed(wt) if wt.is_dir() else 0,
-                    "dirty": len(dirty(wt)) if wt.is_dir() else 0})
+    for r in repos(team):
+        for wt, branch in registered(repo_root(team, r)).items():
+            if (r["name"], wt) not in by_path and home not in wt.parents:
+                continue
+            # unbound: worktrees/<id> (one repo) or worktrees/<id>/<repo> (several): the id either way
+            unbound = wt.parent.name if multi(team) and wt.parent != home else wt.name
+            out.append({"item": by_path.get((r["name"], wt), unbound), "path": wt, "branch": branch,
+                        "repo": r["name"] if multi(team) else None,
+                        "unpushed": unpushed(wt) if wt.is_dir() else 0,
+                        "dirty": len(dirty(wt)) if wt.is_dir() else 0})
     return out
 
 
-def rm(shipdir: Path, team: dict, item_id: str, force: bool = False, by: str | None = None) -> Path:
+def rm(shipdir: Path, team: dict, item_id: str, force: bool = False, by: str | None = None,
+       repo: str | None = None) -> Path:
     who = caller(shipdir, by)
+    r = pick_repo(team, repo)
+    extra = {"repo": r["name"]} if multi(team) else {}
     try:
-        wt = _rm(shipdir, team, item_id, force, by)
+        wt = _rm(shipdir, team, item_id, force, by, r)
     except YamatoError as e:
-        record_failure(shipdir, WORKTREE_RM_FAILED, item_id, who, e, _meta(shipdir, team, item_id), force=force)
+        record_failure(shipdir, WORKTREE_RM_FAILED, item_id, who, e, _meta(shipdir, team, item_id), force=force,
+                       **extra)
         raise
     meta = _meta(shipdir, team, item_id)
-    record(shipdir, WORKTREE_RM, item_id, who, f"{item_id} の worktree を片付けた" + (" (--force)" if force else ""),
-           meta, path=str(wt), branch=meta.get("branch"), force=force)
+    record(shipdir, WORKTREE_RM, item_id, who,
+           f"{item_id} の worktree を片付けた" + (f" [{r['name']}]" if extra else "") + (" (--force)" if force else ""),
+           meta, path=str(wt), branch=field_get(team, meta, "branch", r), force=force, **extra)
     return wt
 
 
-def _rm(shipdir: Path, team: dict, item_id: str, force: bool, by: str | None) -> Path:
+def _rm(shipdir: Path, team: dict, item_id: str, force: bool, by: str | None, r: dict) -> Path:
     brd = Board(shipdir, team)
     meta, _, _ = brd.read(item_id)
-    root = repo_root(team)
-    wt = (Path(meta["worktree"]) if meta.get("worktree") else default_path(shipdir, item_id)).resolve()
+    root = repo_root(team, r)
+    rec = field_get(team, meta, "worktree", r)
+    wt = (Path(rec) if rec else default_path(shipdir, item_id, team, r)).resolve()
     if wt not in registered(root):
         raise YamatoError(f"{item_id} の worktree がありません ({wt})")
     if not force:
@@ -244,12 +315,34 @@ def _rm(shipdir: Path, team: dict, item_id: str, force: bool, by: str | None) ->
             raise YamatoError(f"{wt} に push していない commit が {n} 件あるので消さない "
                               f"(merge 済みでリモートのブランチが消えているなら --force で消す)")
     git(["worktree", "remove", *(["--force"] if force else []), str(wt)], root)
-    brd.set(item_id, {"worktree": ""}, note=f"worktree {wt} を片付けた" + (" (--force)" if force else ""),
-            by=caller(shipdir, by))
+    where = f" [{r['name']}]" if multi(team) else ""
+    brd.set(item_id, {"worktree": field_put(team, meta, "worktree", r, None)},
+            note=f"worktree{where} {wt} を片付けた" + (" (--force)" if force else ""), by=caller(shipdir, by))
     return wt
 
 
 # --- cli ---------------------------------------------------------------------
+
+def per_repo(team: dict, repos_: list[str] | None, values: list[str] | None, what: str) -> dict[str, str]:
+    """``--branch`` / ``--base`` per repo: ``<repo>=<value>`` for one repo, a bare value for every
+    selected repo that has none of its own."""
+    names = [pick_repo(team, n)["name"] for n in (repos_ or [None])]
+    out: dict[str, str] = {}
+    bare = None
+    for v in values or []:
+        head, sep, rest = v.partition("=")
+        if sep and head in {r["name"] for r in repos(team)}:
+            out[head] = rest
+        else:
+            bare = v
+    if bare is not None:
+        for n in names:
+            out.setdefault(n, bare)
+    stray = sorted(set(out) - set(names))
+    if stray:
+        raise YamatoError(f"--{what} に --repo で選んでいない repo があります: {', '.join(stray)}")
+    return out
+
 
 def register(sub) -> None:
     w = sub.add_parser("worktree", help="項目ごとの作業場所 (git worktree) を作る・探す・片付ける")
@@ -257,18 +350,25 @@ def register(sub) -> None:
     a = ws.add_parser("add", help="作る (既にあればそのパスを出す)。項目に worktree と branch を書く")
     a.add_argument("ship")
     a.add_argument("item")
-    a.add_argument("--branch", help="既定は項目の branch、無ければ yamato/<ship>/<item>")
-    a.add_argument("--base", help="新しいブランチの起点 (既定は origin/<git.base>、無ければ <git.base>)")
-    a.add_argument("--path", help="場所 (既定は艦フォルダの worktrees/<item>/)")
+    a.add_argument("--repo", action="append", help="対象の repo の呼び名 (workspace の basename)。繰り返せる。"
+                   "省略時は先頭の repo")
+    a.add_argument("--branch", action="append", help="既定は項目の branch、無ければ yamato/<ship>/<item>。"
+                   "複数 repo では <repo>=<branch> で repo ごとに付けられる")
+    a.add_argument("--base", action="append", help="新しいブランチの起点 (既定は origin/<git.base>、無ければ <git.base>)。"
+                   "<repo>=<ref> で repo ごと")
+    a.add_argument("--path", help="場所 (既定は艦フォルダの worktrees/<item>/、複数 repo の艦は worktrees/<item>/<repo>/)。"
+                   "repo 1 つのときだけ")
     a.add_argument("--by")
     p = ws.add_parser("path", help="項目の worktree のパスを出す (無ければ失敗)")
     p.add_argument("ship")
     p.add_argument("item")
+    p.add_argument("--repo", help="repo の呼び名 (省略時は先頭)")
     ls = ws.add_parser("list", help="艦の worktree の一覧")
     ls.add_argument("ship")
     r = ws.add_parser("rm", help="片付ける (未 commit・未 push があれば断る)")
     r.add_argument("ship")
     r.add_argument("item")
+    r.add_argument("--repo", action="append", help="repo の呼び名。繰り返せる。省略時は先頭")
     r.add_argument("--force", action="store_true", help="未 commit・未 push でも消す")
     r.add_argument("--by")
 
@@ -280,10 +380,16 @@ def run(args) -> int:
     shipdir = resolve_ship(args.ship)
     team = current_team(shipdir)
     if args.worktree_cmd == "add":
-        wt, created = add(shipdir, team, args.item, args.branch, args.base, args.path, args.by)
-        print(wt)
+        names = list(dict.fromkeys(pick_repo(team, n)["name"] for n in (args.repo or [None])))
+        if args.path and len(names) > 1:
+            raise YamatoError("--path は repo を 1 つだけ選んだときに使えます")
+        branches = per_repo(team, names, args.branch, "branch")
+        bases = per_repo(team, names, args.base, "base")
+        for n in names:
+            wt, created = add(shipdir, team, args.item, branches.get(n), bases.get(n), args.path, args.by, n)
+            print(f"{n}  {wt}" if len(names) > 1 else wt)
     elif args.worktree_cmd == "path":
-        print(path_of(shipdir, team, args.item))
+        print(path_of(shipdir, team, args.item, args.repo))
     elif args.worktree_cmd == "list":
         rows = listing(shipdir, team)
         if not rows:
@@ -294,8 +400,10 @@ def run(args) -> int:
                 flags.append(f"未 commit {r['dirty']}")
             if r["unpushed"]:
                 flags.append(f"未 push {r['unpushed']}")
-            print(f"{r['item']}  {r['branch'] or '(detached)'}  {r['path']}"
+            print(f"{r['item']}  " + (f"{r['repo']}  " if r["repo"] else "")
+                  + f"{r['branch'] or '(detached)'}  {r['path']}"
                   + (f"  ({', '.join(flags)})" if flags else ""))
     elif args.worktree_cmd == "rm":
-        print(f"片付けた: {rm(shipdir, team, args.item, args.force, args.by)}")
+        for n in dict.fromkeys(pick_repo(team, n)["name"] for n in (args.repo or [None])):
+            print(f"片付けた: {rm(shipdir, team, args.item, args.force, args.by, n)}")
     return 0
