@@ -271,7 +271,9 @@ def listing(shipdir: Path, team: dict) -> list[dict]:
         for wt, branch in registered(repo_root(team, r)).items():
             if (r["name"], wt) not in by_path and home not in wt.parents:
                 continue
-            out.append({"item": by_path.get((r["name"], wt), wt.name), "path": wt, "branch": branch,
+            # unbound: worktrees/<id> (one repo) or worktrees/<id>/<repo> (several): the id either way
+            unbound = wt.parent.name if multi(team) and wt.parent != home else wt.name
+            out.append({"item": by_path.get((r["name"], wt), unbound), "path": wt, "branch": branch,
                         "repo": r["name"] if multi(team) else None,
                         "unpushed": unpushed(wt) if wt.is_dir() else 0,
                         "dirty": len(dirty(wt)) if wt.is_dir() else 0})

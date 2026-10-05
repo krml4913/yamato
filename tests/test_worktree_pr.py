@@ -182,6 +182,9 @@ class TwoRepoTest(GitShipTestCase):
         rows = {(r["repo"], r["item"]) for r in worktree.listing(self.shipdir, team)}
         self.assertEqual(rows, {("ws", tid), ("lib", tid)})
         self.assertEqual({e["data"]["repo"] for e in self.recorded("worktree_add")}, {"ws", "lib"})
+        # a worktree the item no longer points at still lists under the task id, not the repo name
+        self.board().set(tid, {"worktree": ""}, by="impl")
+        self.assertEqual({r["item"] for r in worktree.listing(self.shipdir, team)}, {tid})
         with self.assertRaisesRegex(YamatoError, "workspace にありません"):
             worktree.add(self.shipdir, team, tid, repo="nope")
 
@@ -249,27 +252,29 @@ class TwoRepoTest(GitShipTestCase):
         from yamato import pr, worktree
 
         team = self.team()
-        a, b = self.item(), self.item()
+        a, b, c = self.item(), self.item(), self.item()
         for t in (a, b):
             worktree.add(self.shipdir, team, t, repo="lib")
         worktree.add(self.shipdir, team, a)
+        worktree.add(self.shipdir, team, c)                      # c: the first repo (ws) only
         for t in (a, b):
             self.commit(worktree.path_of(self.shipdir, team, t, "lib"), f"{t}.txt")
         self.commit(worktree.path_of(self.shipdir, team, a), "a.txt")
-        self.quiet(pr.open_pr, self.shipdir, team, a, by="impl")
-        self.quiet(pr.open_pr, self.shipdir, team, b, by="impl")
-        pa, pb = self.board().read(a)[0]["pr"], self.board().read(b)[0]["pr"]
-        self.assertEqual(set(pa), {"ws", "lib"})
-        self.assertEqual(set(pb), {"lib"})
-        # b's lib PR conflicts after a's lib PR merges; a's ws PR is another repo and is not told
-        self.set_gh(prs={**self.gh()["prs"], pb["lib"]: {**self.gh()["prs"][pb["lib"]], "mergeable": "CONFLICTING"},
-                         pa["ws"]: {**self.gh()["prs"][pa["ws"]], "mergeable": "CONFLICTING"}})
+        self.commit(worktree.path_of(self.shipdir, team, c), "c.txt")
+        for t in (a, b, c):
+            self.quiet(pr.open_pr, self.shipdir, team, t, by="impl")
+        pa, pb, pc = (self.board().read(t)[0]["pr"] for t in (a, b, c))
+        self.assertEqual((set(pa), set(pb), set(pc)), ({"ws", "lib"}, {"lib"}, {"ws"}))
+        # b's lib PR and c's ws PR both conflict; a's lib merge concerns only the lib one
+        prs = self.gh()["prs"]
+        self.set_gh(prs={**prs, pb["lib"]: {**prs[pb["lib"]], "mergeable": "CONFLICTING"},
+                         pc["ws"]: {**prs[pc["ws"]], "mergeable": "CONFLICTING"}})
         self.board().set(a, {"review": "approved"}, by="reviewer")
         self.quiet(pr.merge_pr, self.shipdir, team, a, "reviewer", ["lib"])
-        with self.assertRaisesRegex(YamatoError, "merge の条件"):       # b has no review=approved
-            pr.merge_pr(self.shipdir, team, b, "reviewer", ["lib"])
         conflicts = self.recorded("pr_conflict")
         self.assertEqual([(e["item"], e["data"]["repo"]) for e in conflicts], [(b, "lib")])
+        with self.assertRaisesRegex(YamatoError, "merge の条件"):       # b has no review=approved
+            pr.merge_pr(self.shipdir, team, b, "reviewer", ["lib"])
 
     def test_one_repo_ship_keeps_the_plain_record(self):
         from yamato import pr, worktree
