@@ -356,6 +356,15 @@ def headless_argv(*, session_id: str, name: str, role: str, agents_json: str, mo
     return _claude_argv(args + [*add_dir_args(add_dir), "--", prompt])
 
 
+def upgrade_argv(*, settings: str, system_prompt: str, prompt: str) -> list[str]:
+    """The foreground (interactive) ``claude`` of ``yamato ship upgrade`` (D-081): not a seat, so no
+    ``--bg`` / ``--agent`` and not the ship's settings. ``settings`` is upgrade's own file (Edit
+    allowed for roles/*.md and team.yaml only), ``--setting-sources local`` keeps user/project
+    settings (hooks, CLAUDE.md) out of it, and the first user turn is ``prompt``."""
+    return _claude_argv(["--settings", settings, "--setting-sources", "local",
+                         "--append-system-prompt", system_prompt, "--", prompt])
+
+
 def stop(short_id: str) -> bool:
     return _run(["stop", short_id], timeout=60).returncode == 0
 

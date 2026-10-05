@@ -15,7 +15,7 @@ SHIFTS = ("per_task", "persistent", "headless")
 STATES = ("open", "active", "blocked", "done")
 TOP_KEYS = {"name", "hub", "workspace", "charter", "roles", "time_limit", "grace", "deny", "board",
             "settings", "setting_sources", "seat_stop", "env_unset", "inject", "notify", "git", "report", "decisions",
-            "watch", "talk_default", "up_seats", "profiles", "memory", "last_call", "context_windows"}
+            "watch", "talk_default", "up_seats", "profiles", "memory", "last_call", "context_windows", "template"}
 # what SessionStart can inject (design §8.2); the header is always there
 INJECT_PARTS = ("handoff", "log_tail", "mine", "inbox", "memory", "knowledge", "last_report", "orphans", "board",
                 "fleet")
@@ -97,6 +97,17 @@ def expand_seats(roles: dict) -> dict:
                 raise YamatoError(f"席の名前が重複しています: {seat}")
             seats[seat] = {"role": role, "model": spec["model"], "shift": spec["shift"]}
     return seats
+
+
+def _template(raw) -> dict | None:
+    """`template: {name: dev, version: 1.1.0}`: which template (and yamato version) the ship's copy came from.
+    `ship create` writes it and `ship upgrade` moves it; nothing at run time reads it (D-081)."""
+    if raw is None:
+        return None
+    if (not isinstance(raw, dict) or set(raw) != {"name", "version"}
+            or not all(isinstance(raw[k], str) and raw[k].strip() for k in raw)):
+        raise YamatoError(f"team.yaml: template は {{name: <ひな形>, version: <版>}} (今: {raw!r})")
+    return {"name": raw["name"].strip(), "version": raw["version"].strip()}
 
 
 def validate(data: dict, shipdir: Path) -> dict:
@@ -303,6 +314,7 @@ def validate(data: dict, shipdir: Path) -> dict:
 
     return {
         "name": name,
+        "template": _template(data.get("template")),   # {name, version} the ship was made from (D-081), or None
         "hub": hub,
         "workspace": workspaces[0]["path"],   # the seat cwd = the first repo
         "workspaces": workspaces,             # [{name: basename, path}]; one entry for a string workspace

@@ -15,6 +15,16 @@
       "description": "艦の名前。",
       "type": "string"
     },
+    "template": {
+      "description": "この艦の写し (roles/*.md・team.yaml) の元のひな形と yamato の版。ship create が書き、ship upgrade が新しい版に書き換える。実行時には読まない。",
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": {"description": "ひな形の名前 (dev / research ...)。", "type": "string"},
+        "version": {"description": "写しを作った (または上げた) yamato の版。例 1.1.0。", "type": "string"}
+      },
+      "additionalProperties": false
+    },
     "hub": {
       "description": "captain を務める役割 (roles にある、count: 1 の役割)。",
       "type": "string"

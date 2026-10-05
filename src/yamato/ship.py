@@ -81,6 +81,10 @@ def create(name: str, workspace: str | list[str] | None, path: str | None, templ
         text = text.replace("{{schema}}", SCHEMA.as_uri())
         dst.write_text(text.replace("{{name}}", name), encoding="utf-8", newline="\n")
 
+    from . import __version__
+    from .upgrade import set_template
+
+    set_template(shipdir, template, __version__)   # which template/version this copy is from (D-081)
     team = load_team(shipdir)  # the template must validate as written
     from .seat import ensure_seat_dirs
 
