@@ -286,7 +286,7 @@ def run_shift(shipdir: Path, team: dict, seat: str) -> dict:
         session_id=sid, name=name, role=spec["role"],
         agents_json=runtime.agents_path(shipdir).read_text(encoding="utf-8"),
         model=spec["model"], settings=str(runtime.settings_path(shipdir, seat)),
-        add_dir=str(shipdir), prompt=first_prompt(shipdir, seat), max_budget_usd=role.get("max_budget_usd"),
+        add_dir=seat_mod.add_dirs(shipdir, team, cwd), prompt=first_prompt(shipdir, seat), max_budget_usd=role.get("max_budget_usd"),
         setting_sources=",".join(team.get("setting_sources") or claude.DEFAULT_SETTING_SOURCES.split(",")),
     )
     append_log(shipdir, seat, f"シフト開始 #{no} (headless) session={sid}" + (f" cwd={cwd}" if cwd else ""))

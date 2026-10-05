@@ -41,7 +41,7 @@ cd ~/dev/myapp && claude    # trust のダイアログで承認して終了
 
 | コマンド | 内容 |
 |---|---|
-| `ship create <name> [--workspace <path>]... [--path <dir>] [--template dev\|research]` | ひな形から艦フォルダを作る。`dev` (開発艦) は `--workspace` (作業対象の repo) が要る。複数回渡すと 1 艦で複数 repo を扱う (team.yaml の `workspace` が配列になる。先頭が席の cwd、呼び名はフォルダ名でかぶったらエラー)。`research` (調査艦) は repo なしで、艦フォルダ自身が席の作業ディレクトリ (下の「調査艦」) |
+| `ship create <name> [--workspace <path>]... [--path <dir>] [--template dev\|research]` | ひな形から艦フォルダを作る。`dev` (開発艦) は `--workspace` (作業対象の repo) が要る。複数回渡すと 1 艦で複数 repo を扱う (team.yaml の `workspace` が配列になる。先頭が席の cwd、残りは席の `--add-dir` に足される。呼び名はフォルダ名でかぶったらエラー。trust と存在は全 repo で確かめる)。`research` (調査艦) は repo なしで、艦フォルダ自身が席の作業ディレクトリ (下の「調査艦」) |
 | `up <ship> [--for 3h] [--seats <seat,...>]` | `.runtime/` を作り直し、deadline を書き、captain の席を起動 (persistent なら resume)。`--seats` の席と team.yaml の `up_seats` の席も一緒に起こす (和。順は up_seats → --seats、重複と hub は除く)。艦がすでに稼働中で `--for` を付けなければ、deadline は縮めない (`max(now + time_limit, 今の deadline)`。D-015)。`--for` を明示すればその値で上書きする (縮めたい意図を尊重) |
 | `down <ship> [--force]` | 終業 / 強制停止 |
 | `status [<ship>]` | 席ごとの状態。赤い席は `!!! <席>: ...` と出る (権限の確認待ち・API エラー (`state: failed`)・生きているのに `watch.stale_after` (既定 20m) より長く動いていない・per_task の席が生きているのに active の担当が無い)。`stopping` のまま 5 分を超えた席は止め直す (T-012) |
