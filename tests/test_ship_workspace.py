@@ -73,6 +73,7 @@ class MultiWorkspaceTest(ShipTestCase):
         with self.assertRaises(YamatoError) as cm:
             ship.create("t3", [str(self.base / "app"), str(self.base / "x" / "app")], str(self.base / "ship3"), "dev")
         self.assertIn("かぶっている", str(cm.exception))
+        self.assertFalse((self.base / "ship3").exists())
 
     def test_missing_repo_is_an_error(self):
         with self.assertRaises(YamatoError):

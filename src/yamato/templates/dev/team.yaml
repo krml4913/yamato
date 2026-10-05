@@ -95,7 +95,7 @@ deny:
   - "Bash(gh pr merge*)"
   # 作業対象の repo 本体には書かず、yamato worktree add で作った worktree (艦フォルダの worktrees/) で作業する
   # Bash 経由の書き込みまでは止まらないので、役割プロンプトの git の流れと合わせて使う
-  # 艦フォルダを workspace の中に置いた艦では、この 2 行が艦の記録 (handoff.md など) への書き込みも止めるので消す
+  # 艦フォルダを workspace の中に置いた艦では、この Edit / Write の行が艦の記録 (handoff.md など) への書き込みも止めるので消す
   - "Edit(/{{workspace}}/**)"
   - "Write(/{{workspace}}/**)"
   # 席の出入りは yamato を通す (自分を止めるのは seat-stop だけ)

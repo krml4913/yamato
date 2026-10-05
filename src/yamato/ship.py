@@ -59,6 +59,11 @@ def create(name: str, workspace: str | list[str] | None, path: str | None, templ
             if not w.is_dir():
                 raise YamatoError(f"workspace がありません: {w}")
     ws = wss[0] if wss else None
+    seen: dict[str, Path] = {}
+    for w in wss:   # same message as load_team, but before anything is written to the ship folder
+        if w.name in seen:
+            raise YamatoError(f"team.yaml: workspace の呼び名 (フォルダ名) {w.name!r} がかぶっている: {seen[w.name]} / {w}")
+        seen[w.name] = w
     shipdir = Path(path).expanduser().resolve() if path else yamato_home() / name
     if shipdir.exists() and any(shipdir.iterdir()):
         raise YamatoError(f"{shipdir} はすでにあって空ではありません")
