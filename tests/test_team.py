@@ -46,6 +46,19 @@ class TeamTest(unittest.TestCase):
         t = validate(base(workspace="work"), Path("/ship"))
         self.assertEqual(Path(t["workspace"]), Path("/ship").resolve() / "work")
 
+    def test_workspace_string_and_list(self):
+        one = validate(base(workspace="/r/app"), Path("/ship"))
+        self.assertEqual(one["workspaces"], [{"name": "app", "path": str(Path("/r/app").resolve())}])
+        many = validate(base(workspace=["/r/app", "lib"]), Path("/ship"))
+        self.assertEqual([w["name"] for w in many["workspaces"]], ["app", "lib"])
+        self.assertEqual(many["workspace"], many["workspaces"][0]["path"])
+        self.assertEqual(Path(many["workspaces"][1]["path"]), Path("/ship").resolve() / "lib")
+
+    def test_workspace_list_rejects_duplicate_names_and_junk(self):
+        for bad in (["/a/app", "/b/app"], [], [1], ["/a", ""]):
+            with self.assertRaises(YamatoError, msg=repr(bad)):
+                validate(base(workspace=bad), Path("/ship"))
+
     def test_time_limit_and_grace(self):
         t = validate(base(time_limit="20m", grace="90s"), Path("/ship"))
         self.assertEqual((t["time_limit"], t["grace"]), (1200, 90))

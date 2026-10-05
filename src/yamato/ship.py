@@ -10,7 +10,34 @@ TEMPLATES = Path(__file__).resolve().parent / "templates"
 SCHEMA = Path(__file__).resolve().parent / "schema" / "team.schema.json"   # team.yaml's JSON Schema (T-057)
 
 
-def create(name: str, workspace: str | None, path: str | None, template: str, *,
+def _fill_workspace(text: str, wss: list[Path]) -> str:
+    """Fill `{{workspace}}`. Both spots sit in YAML "..." strings, so `\\` and `"` need escaping (W5);
+    `/{{workspace}}/` is a permission rule (Windows: `//c/Users/x`). With several repos the `workspace:`
+    line becomes a list and every rule line is repeated per repo (D-071)."""
+    from .runtime import rule_path
+
+    def esc(v: str) -> str:
+        return v.replace("\\", "\\\\").replace('"', '\\"')
+
+    if len(wss) == 1:
+        w = wss[0]
+        return text.replace("/{{workspace}}/", "/" + esc(rule_path(w)) + "/").replace("{{workspace}}", esc(str(w)))
+    out = []
+    for line in text.splitlines(keepends=True):
+        if "{{workspace}}" not in line:
+            out.append(line)
+        elif line.startswith("workspace:"):
+            head, _, comment = line.partition("#")
+            out.append("workspace:" + (("   #" + comment) if comment else "\n"))
+            out.extend(f'  - "{esc(str(w))}"\n' for w in wss)
+        elif "/{{workspace}}/" in line:
+            out.extend(line.replace("/{{workspace}}/", "/" + esc(rule_path(w)) + "/") for w in wss)
+        else:
+            out.append(line.replace("{{workspace}}", esc(str(wss[0]))))
+    return "".join(out)
+
+
+def create(name: str, workspace: str | list[str] | None, path: str | None, template: str, *,
            register: bool = True) -> tuple[Path, list[str]]:
     """``register=False``: build the folder (same shape as any ship) without adding it to
     ``ships.json`` (T-020: the admiral's ``_admiral/`` stays out of ``ships`` / the registry;
@@ -21,14 +48,17 @@ def create(name: str, workspace: str | None, path: str | None, template: str, *,
         known = ", ".join(sorted(p.name for p in TEMPLATES.iterdir() if p.is_dir()))
         raise YamatoError(f"ひな形 {template} はありません (ある: {known})")
     # a template without a repo (research: `workspace: .`) needs no --workspace
-    if workspace is None:
+    if not workspace:
         if "{{workspace}}" in (tdir / "team.yaml").read_text(encoding="utf-8"):
             raise YamatoError(f"ひな形 {template} は --workspace (席の作業ディレクトリ) が要る")
-        ws = None
+        wss: list[Path] = []
     else:
-        ws = Path(workspace).expanduser().resolve()
-        if not ws.is_dir():
-            raise YamatoError(f"workspace がありません: {ws}")
+        # one --workspace stays a string in team.yaml; several become a flat list (D-071)
+        wss = [Path(w).expanduser().resolve() for w in ([workspace] if isinstance(workspace, str) else workspace)]
+        for w in wss:
+            if not w.is_dir():
+                raise YamatoError(f"workspace がありません: {w}")
+    ws = wss[0] if wss else None
     shipdir = Path(path).expanduser().resolve() if path else yamato_home() / name
     if shipdir.exists() and any(shipdir.iterdir()):
         raise YamatoError(f"{shipdir} はすでにあって空ではありません")
@@ -39,16 +69,8 @@ def create(name: str, workspace: str | None, path: str | None, template: str, *,
         dst = shipdir / src.relative_to(tdir)
         dst.parent.mkdir(parents=True, exist_ok=True)
         text = src.read_text(encoding="utf-8")
-        if ws is not None:
-            # both spots sit in YAML "..." strings, so `\` and `"` need escaping (W5);
-            # `/{{workspace}}/**` is a permission rule (Windows: `//c/Users/x`)
-            from .runtime import rule_path
-
-            def esc(v: str) -> str:
-                return v.replace("\\", "\\\\").replace('"', '\\"')
-
-            text = text.replace("/{{workspace}}/", "/" + esc(rule_path(ws)) + "/")
-            text = text.replace("{{workspace}}", esc(str(ws)))
+        if wss:
+            text = _fill_workspace(text, wss)
         # the schema is addressed by the checkout's absolute path (the repo is private, so no URL);
         # as_uri() also gives a Windows path the file:///C:/... form the YAML extension reads
         text = text.replace("{{schema}}", SCHEMA.as_uri())
@@ -65,8 +87,9 @@ def create(name: str, workspace: str | None, path: str | None, template: str, *,
 
     if ws is not None and ws != Path(team["workspace"]):
         warnings.append(f"ひな形 {template} は --workspace を使わない (席の作業ディレクトリは {team['workspace']})")
-    ws = Path(team["workspace"])
-    trusted = is_trusted(ws)
-    if not trusted:
-        warnings.append(untrusted_message(ws) if trusted is False else unknown_trust_message(ws))
+    for w in team["workspaces"]:   # trust is checked for every repo (D-071)
+        wp = Path(w["path"])
+        trusted = is_trusted(wp)
+        if not trusted:
+            warnings.append(untrusted_message(wp) if trusted is False else unknown_trust_message(wp))
     return shipdir, warnings

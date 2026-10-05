@@ -165,6 +165,7 @@ owner (人間)
 ### 4.1 起動場所と設定の渡し方
 
 - 席の作業ディレクトリ (cwd) は `team.yaml` の `workspace`。開発チームなら作業対象の repo、調査チームのように repo がないチームなら艦フォルダ自身
+- `workspace` は文字列か、パスを並べたフラットな配列 (D-071。1 艦で複数 repo、共通ライブラリとアプリなど)。文字列は要素 1 つの配列と同じ扱いで、挙動も記録の形も変わらない。先頭が席の cwd。各 repo の呼び名はフォルダ名 (basename) で、かぶったら読み込みエラー。読み込んだ結果は `team["workspace"]` (先頭のパス) と `team["workspaces"]` (`[{name, path}]`) に入る。`ship create --workspace` は複数回渡せる (順番どおりに配列へ。1 回なら今と同じ文字列で、dev ひな形の `/{{workspace}}/**` の権限ルールは全 repo に展開する)。trust の確認は全 repo に対して行う。起動 (残りの repo の `--add-dir`) と worktree・pr の repo ごとの動きは T-067 / T-068
 - **チームの設定は全て起動時のフラグで渡す。作業対象の repo にも `~/.claude` にも書き込まない**。起動の形は検証 B の起動レシピどおり (`src/yamato/claude.py` に集約。Claude Code とのやり取りをそこ 1 か所に閉じ込める)
 
   ```
@@ -207,7 +208,7 @@ owner (人間)
 name: dev
 hub: pm                          # captain を務める役割 (count: 1)
 charter: charter.md              # 何のためのチームか (人間が書く)
-workspace: ~/dev/myapp           # 席の作業ディレクトリ (作業対象の repo。repo のないチームは艦フォルダ)
+workspace: ~/dev/myapp           # 席の作業ディレクトリ (作業対象の repo。repo のないチームは艦フォルダ。複数 repo はパスのリスト、先頭が cwd)
 
 time_limit: 3h                   # yamato up からの稼働時間 (up --for で上書き)
 grace: 20m                       # 終業の指示から強制停止までの猶予 (§12.1)
@@ -566,7 +567,7 @@ grace: 20m            # 終了時刻のあと、キリのいいところまで�
 
 | コマンド | 内容 |
 |---|---|
-| `ship create <name> --workspace <path> [--path <dir>] [--template dev]` | ひな形から艦フォルダを作り、艦の登録簿に載せる。workspace が trust されていなければ (確かめられなければ、その旨を) 警告する |
+| `ship create <name> --workspace <path> [--workspace <path2> ...] [--path <dir>] [--template dev]` | ひな形から艦フォルダを作り、艦の登録簿に載せる。`--workspace` を複数回渡すと複数 repo の艦 (team.yaml の workspace が配列になる)。workspace が trust されていなければ (確かめられなければ、その旨を) 警告する |
 | `up <ship> [--for 3h] [--seats a,b]` / `down <ship> [--force]` | 起動 (稼働時間つき。`.runtime/` の作り直し、deadline、captain の席の起動。`--seats` と team.yaml の `up_seats` の席も一緒に起こす (和、重複と hub は除く。既定は空)) / 終業 (`--force` で即時に強制停止) |
 | `status [<ship>]` | 席ごとの状態 (生存、最後に動いた時刻、権限の確認で止まっている「詰まり」)、deadline までの残り、未読 inbox |
 | `send <ship> <seat\|owner> "<msg>" [--from <seat>]` | メッセージを送る (§7) |

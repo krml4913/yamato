@@ -189,11 +189,22 @@ def validate(data: dict, shipdir: Path) -> dict:
             raise YamatoError(f"team.yaml: roles.{role}.report_to={spec['report_to']!r} は席の名前か owner")
 
     ws = data.get("workspace")
-    if not ws:
-        raise YamatoError("team.yaml: workspace がありません")
-    wpath = Path(str(ws)).expanduser()
-    if not wpath.is_absolute():
-        wpath = shipdir / wpath
+    # a string (one repo, as ever) or a flat list of paths (D-071); the seat cwd is the first one
+    raw_ws = ws if isinstance(ws, list) else [ws]
+    if not ws or not all(isinstance(x, str) and x for x in raw_ws):
+        raise YamatoError("team.yaml: workspace がありません (パスの文字列か、パスのリスト)")
+    workspaces = []
+    for item in raw_ws:
+        wp = Path(item).expanduser()
+        if not wp.is_absolute():
+            wp = shipdir / wp
+        workspaces.append({"name": wp.resolve().name, "path": str(wp.resolve())})
+    seen_names: dict[str, str] = {}
+    for w in workspaces:
+        if w["name"] in seen_names:
+            raise YamatoError(f"team.yaml: workspace の呼び名 (フォルダ名) {w['name']!r} がかぶっている: "
+                              f"{seen_names[w['name']]} / {w['path']}")
+        seen_names[w["name"]] = w["path"]
 
     deny = data.get("deny") or []
     if not isinstance(deny, list) or not all(isinstance(x, str) for x in deny):
@@ -293,7 +304,8 @@ def validate(data: dict, shipdir: Path) -> dict:
     return {
         "name": name,
         "hub": hub,
-        "workspace": str(wpath.resolve()),
+        "workspace": workspaces[0]["path"],   # the seat cwd = the first repo
+        "workspaces": workspaces,             # [{name: basename, path}]; one entry for a string workspace
         "charter": str(data.get("charter") or "charter.md"),
         "time_limit": time_limit,
         "grace": parse_duration(DEFAULT_GRACE if data.get("grace") is None else data["grace"]),

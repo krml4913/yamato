@@ -7,6 +7,7 @@ from unittest import mock
 
 from yamato import runtime, ship
 from yamato.team import load_team
+from yamato.util import YamatoError
 from tests.helpers import ShipTestCase
 
 
@@ -35,6 +36,47 @@ class WorkspaceEscapeTest(ShipTestCase):
         denied = [r for r in team["deny"] if r.startswith("Edit(")]
         self.assertTrue(denied, team["deny"])
         self.assertNotIn("\\\\", denied[0])
+
+
+class MultiWorkspaceTest(ShipTestCase):
+    def setUp(self):
+        super().setUp()
+        self._tmp_ws = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp_ws.cleanup)
+        self.base = Path(self._tmp_ws.name)
+        for n in ("lib", "app"):
+            (self.base / n).mkdir()
+
+    def create(self, *names):
+        return ship.create("t3", [str(self.base / n) for n in names], str(self.base / "ship3"), "dev")[0]
+
+    def test_create_many_gives_a_list_and_rules_per_repo(self):
+        shipdir = self.create("app", "lib")
+        team = load_team(shipdir)
+        self.assertEqual([w["name"] for w in team["workspaces"]], ["app", "lib"])
+        self.assertEqual(Path(team["workspace"]), (self.base / "app").resolve())
+        for kind in ("Edit", "Write"):
+            rules = [r for r in team["deny"] if r.startswith(kind + "(/") and r.endswith(("/app/**)", "/lib/**)"))]
+            self.assertEqual(len(rules), 2, rules)
+        self.assertIn("workspace:", (shipdir / "team.yaml").read_text(encoding="utf-8"))
+
+    def test_create_one_stays_a_string(self):
+        shipdir = self.create("app")
+        self.assertRegex((shipdir / "team.yaml").read_text(encoding="utf-8"), r'(?m)^workspace: "')
+        team = load_team(shipdir)
+        self.assertEqual(len(team["workspaces"]), 1)
+        self.assertEqual(team["workspaces"][0]["name"], "app")
+
+    def test_same_basename_is_an_error(self):
+        (self.base / "x").mkdir()
+        (self.base / "x" / "app").mkdir()
+        with self.assertRaises(YamatoError) as cm:
+            ship.create("t3", [str(self.base / "app"), str(self.base / "x" / "app")], str(self.base / "ship3"), "dev")
+        self.assertIn("かぶっている", str(cm.exception))
+
+    def test_missing_repo_is_an_error(self):
+        with self.assertRaises(YamatoError):
+            self.create("app", "nope")
 
 
 if __name__ == "__main__":

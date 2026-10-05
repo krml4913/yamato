@@ -28,7 +28,8 @@ def _parser(hook_only: bool = False) -> argparse.ArgumentParser:
     ship_sub = ship.add_subparsers(dest="ship_cmd", required=True)
     c = ship_sub.add_parser("create", help="ひな形から艦フォルダを作る")
     c.add_argument("name")
-    c.add_argument("--workspace", help="席の作業ディレクトリ (作業対象の repo)。repo の無いひな形 (research) では省く")
+    c.add_argument("--workspace", action="append", help="席の作業ディレクトリ (作業対象の repo)。複数回渡すと複数 repo の艦になる "
+                   "(先頭が席の cwd)。repo の無いひな形 (research) では省く")
     c.add_argument("--path", help="艦フォルダの場所 (既定 ~/yamato/<name>)")
     c.add_argument("--template", default="dev", help="dev (開発艦) / research (調査艦)")
     banner.add_quiet(c)
