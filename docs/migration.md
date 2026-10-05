@@ -21,8 +21,31 @@ v1.0.0 以降の変更のうち、**既存の艦・利用者が何かをしな�
 
 ## 未リリース
 
+## v1.0.0 → v1.1.0
+
+### 全体の手順
+v1.1.0 の項目は**すべて opt-in**。何もしなくても、艦は今のまま動く。使いたい機能・取り込みたいひな形の変更があるものだけ、次の手順で反映する。
+1. 艦を止める: `yamato down <艦>`
+2. yamato を更新する: `git -C ~/dev/yamato pull` (v1.1.0 の tag を使うなら `git -C ~/dev/yamato checkout v1.1.0`)
+3. 下の各項目のうち要るものだけ、艦の写しに反映する
+   - 本命は `yamato ship upgrade <艦> --from v1.0.0`。`roles/` と `team.yaml` をひな形の新しい版と突き合わせ、対話の claude が変更を 1 件ずつ owner に出して、決まったものだけ写しに入れる。役割プロンプトや team.yaml を書き換えている艦でも、書き換えを壊さずに取り込める。v1.0.0 で作った艦には template の記録がないので `--from v1.0.0` が要る (dev 以外のひな形は `--template research` なども)
+   - 手で写すなら、`git -C ~/dev/yamato diff v1.0.0 v1.1.0 -- src/yamato/templates/dev/` で差分を見て、艦フォルダの `roles/` と `team.yaml` の同じ箇所に写す
+4. 艦を起こす: `yamato up <艦>`。team.yaml を変えたときは、この `up` で `.runtime/team.json` に写って効く
+
+### team.yaml に `up_seats` を足した: up で captain と一緒に起こす席を艦ごとに決める (T-064)
+- 何が変わったか: team.yaml のトップに `up_seats` (席のリスト) が増えた。`yamato up` が captain に加えてこの席も起こす (`--seats` との和。重複と hub は除く)。既定は空 = captain だけで、今と同じ
+- 既存の艦がやること: なし。常に起こしておきたい席がある艦だけ、team.yaml に `up_seats: [reviewer]` のように書き、次の `yamato up` から効く
+- やらないと: 動作は変わらない (captain だけが起きる)
+- PR: #90 (T-064)
+
+### team.yaml の `workspace` を配列にできる: 1 艦で複数 repo (T-066・T-067・T-068, D-071)
+- 何が変わったか: `workspace` が文字列かパスの配列になった (共通ライブラリとアプリなど)。先頭が席の cwd、残りは席の `--add-dir` に足される。各 repo の呼び名はフォルダ名で、かぶったら読み込みエラー。trust と存在は全 repo で確かめる。`ship create --workspace` は複数回渡せる。`worktree add` / `path` / `rm` は `--repo <呼び名>` で repo を選び (省略時は先頭、`add` は繰り返せる)、worktree は `<艦>/worktrees/<id>/<呼び名>/` に repo ごとに切る。`pr open` / `merge` も repo ごとに動く
+- 既存の艦がやること: なし。`workspace` を文字列のまま (要素 1 つの配列と同じ扱い) にしておけば、挙動も記録の形も変わらない。複数 repo にしたい艦だけ、team.yaml の `workspace` を配列に書き換え、追加する repo を Claude Code に trust させて、`yamato down` → `yamato up` する (席の起動引数は次の起動から変わる)。役割プロンプトの worktree の使い方は、ひな形の変更を `ship upgrade` で取り込む
+- やらないと: 動作は変わらない (1 repo のまま)
+- PR: #91 (T-066)、#92 (T-067)、#93 (T-068)
+
 ### team.yaml に `template` を足した・`yamato ship upgrade` で艦の写しを新しい版に上げられる (T-070, D-081)
-- 何が変わったか: team.yaml のトップに `template: {name: dev, version: 1.1.0}` (写しの元のひな形と yamato の版) が増えた。`ship create` が書く。実行時には読まない。あわせて `yamato ship upgrade <艦> [--from <版>] [--template <名>]` と `ship upgrade-done` が増えた。upgrade は `roles/` と `team.yaml` を `<艦>/.upgrade/` に控え、upgrade 専用の対話 claude が変更を 1 件ずつownerに出して、決まったものだけ写しに入れる
+- 何が変わったか: team.yaml のトップに `template: {name: dev, version: 1.1.0}` (写しの元のひな形と yamato の版) が増えた。`ship create` が書く。実行時には読まない。あわせて `yamato ship upgrade <艦> [--from <版>] [--template <名>]` と `ship upgrade-done` が増えた。upgrade は `roles/` と `team.yaml` を `<艦>/.upgrade/` に控え、upgrade 専用の対話 claude が変更を 1 件ずつowner に出して、決まったものだけ写しに入れる
 - 既存の艦がやること: v1.0.0 で作った艦は `template` の記録がない (書かなくても動く)。今後の版に上げるときは `yamato ship upgrade <艦> --from v1.0.0` を流す (dev 以外のひな形は `--template research` なども)。終わると `template` の行が足される。記録だけ先に足したい艦は `yamato ship upgrade-done <艦> --version 1.0.0` でもよい。以降、この文書の「ひな形の写しに関わる項目」の手で写す手順は、`yamato ship upgrade` で取り込める
 - やらないと: 動作は変わらない。次の版からの upgrade で `--from` を毎回渡す
 - PR: T-070
