@@ -898,10 +898,6 @@ class RealClaudeProcessTest(_SeatBase):
     test_resume_runs_in_the_workspace = SeatTest.test_resume_runs_in_the_workspace
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class MultiWorkspaceTest(_SeatBase):
     """T-067 (D-071): seat cwd = first repo, the rest are --add-dir, trust/existence for every repo."""
 
@@ -957,6 +953,22 @@ class MultiWorkspaceTest(_SeatBase):
         self.assertEqual(seat.add_dirs(self.shipdir, team, "/some/worktree"), [str(self.shipdir)])
 
     def test_bg_isolation_judged_on_first_repo(self):
+        import subprocess
         self.two_repos()
-        self.assertEqual(runtime.needs_no_isolation(self.shipdir, self.team()),
-                         runtime.needs_no_isolation(self.shipdir, {**self.team(), "workspace": str(self.workspace)}))
+        subprocess.run(["git", "init", "-q", str(self.lib)], check=True)
+        team = self.team()   # [ws (not git), lib (git)]: the first decides
+        self.assertTrue(runtime.needs_no_isolation(self.shipdir, team))
+        swapped = {**team, "workspace": team["workspaces"][1]["path"], "workspaces": team["workspaces"][::-1]}
+        self.assertFalse(runtime.needs_no_isolation(self.shipdir, swapped))
+
+    def test_cwd_label_only_for_the_first_repo(self):
+        self.two_repos()
+        self.lib.rmdir()
+        with self.assertRaises(YamatoError) as cm:
+            seat.check_workspaces(self.team(), self.tmp)
+        self.assertNotIn("--cwd", str(cm.exception))
+        self.assertIn(str(self.lib), str(cm.exception))
+
+
+if __name__ == "__main__":
+    unittest.main()

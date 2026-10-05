@@ -143,9 +143,9 @@ def check_workspaces(team: dict, first: Path | None = None) -> None:
     """Existence and trust for every repo of the ship (D-071). ``first``: the seat's cwd when it is
     not the first repo (``send --cwd``): that one is checked in place of the first."""
     paths = [first or Path(team["workspaces"][0]["path"]), *(Path(w["path"]) for w in team["workspaces"][1:])]
-    for p in paths:
+    for i, p in enumerate(paths):
         if not p.is_dir():
-            raise YamatoError(f"{'--cwd の場所' if first and first != Path(team['workspace']) else 'workspace'}がありません: {p}")
+            raise YamatoError(f"{'--cwd の場所' if i == 0 and first and first != Path(team['workspace']) else 'workspace'}がありません: {p}")
         unsure = claude.check_trust(p)
         if unsure:
             out(f"注意: {unsure}")
@@ -157,8 +157,6 @@ def start_new_shift(shipdir: Path, team: dict, seat: str, rotated: list[str] | N
     spec = seat_spec(team, seat)
     cwd = roster.seat(shipdir, seat).get("nextCwd")
     workspace = Path(cwd or team["workspace"])
-    if not workspace.is_dir():
-        raise YamatoError(f"{'--cwd の場所' if cwd else 'workspace'}がありません: {workspace}")
     check_workspaces(team, workspace)
     settings = runtime.settings_path(shipdir, seat)
     if cwd:
