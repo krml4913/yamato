@@ -253,18 +253,15 @@ class TwoRepoTest(GitShipTestCase):
 
         team = self.team()
         a, b, c = self.item(), self.item(), self.item()
-        for t in (a, b):
+        for t in (a, b):                                         # a, b: lib only
             worktree.add(self.shipdir, team, t, repo="lib")
-        worktree.add(self.shipdir, team, a)
-        worktree.add(self.shipdir, team, c)                      # c: the first repo (ws) only
-        for t in (a, b):
             self.commit(worktree.path_of(self.shipdir, team, t, "lib"), f"{t}.txt")
-        self.commit(worktree.path_of(self.shipdir, team, a), "a.txt")
+        worktree.add(self.shipdir, team, c)                      # c: the first repo (ws) only
         self.commit(worktree.path_of(self.shipdir, team, c), "c.txt")
         for t in (a, b, c):
             self.quiet(pr.open_pr, self.shipdir, team, t, by="impl")
         pa, pb, pc = (self.board().read(t)[0]["pr"] for t in (a, b, c))
-        self.assertEqual((set(pa), set(pb), set(pc)), ({"ws", "lib"}, {"lib"}, {"ws"}))
+        self.assertEqual((set(pa), set(pb), set(pc)), ({"lib"}, {"lib"}, {"ws"}))
         # b's lib PR and c's ws PR both conflict; a's lib merge concerns only the lib one
         prs = self.gh()["prs"]
         self.set_gh(prs={**prs, pb["lib"]: {**prs[pb["lib"]], "mergeable": "CONFLICTING"},
