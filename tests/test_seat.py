@@ -964,8 +964,9 @@ class MultiWorkspaceTest(_SeatBase):
     def test_cwd_label_only_for_the_first_repo(self):
         self.two_repos()
         self.lib.rmdir()
+        (self.workspace / "sub").mkdir()
         with self.assertRaises(YamatoError) as cm:
-            seat.check_workspaces(self.team(), self.tmp)
+            seat.check_workspaces(self.team(), self.workspace / "sub")
         self.assertNotIn("--cwd", str(cm.exception))
         self.assertIn(str(self.lib), str(cm.exception))
 
