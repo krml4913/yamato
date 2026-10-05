@@ -6,6 +6,7 @@ workspace: "{{workspace}}"   # 席の作業ディレクトリ (作業対象の r
 charter: charter.md
 
 talk_default: pm            # yamato talk <ship> で席を省いたときに attach する席 (省略時は hub)
+# up_seats: [impl]          # yamato up で captain と一緒に起こす席 (既定は空 = captain だけ。up --seats との和)
 
 time_limit: 3h               # yamato up からの稼働時間 (up --for で上書き)
 grace: 20m                   # 終業の指示から強制停止までの猶予

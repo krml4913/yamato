@@ -150,7 +150,9 @@ def parse_seats(team: dict, text: str | None) -> list[str]:
 
 
 def up(shipdir: Path, for_: str | None, seats: str | None) -> int:
-    extra = parse_seats(load_team(shipdir), seats)   # a wrong name fails before anything starts
+    team0 = load_team(shipdir)
+    # team.yaml's up_seats first, then --seats; duplicates and the hub drop out
+    extra = parse_seats(team0, ",".join([*(team0.get("up_seats") or []), seats or ""]))   # a wrong name fails before anything starts
     rc = seat.up(shipdir, for_)
     if rc or not extra:
         return rc

@@ -7,6 +7,7 @@ workspace: .                 # 艦フォルダ自身 (repo なし。自動 workt
 charter: charter.md
 
 talk_default: editor         # yamato talk <ship> で席を省いたときに attach する席
+# up_seats: [researcher]     # yamato up で hub と一緒に起こす席 (既定は空 = hub だけ。up --seats との和)
 
 time_limit: 3h               # yamato up からの稼働時間 (up --for で上書き)
 grace: 20m                   # 終業の指示から強制停止までの猶予
