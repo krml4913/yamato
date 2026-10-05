@@ -272,8 +272,15 @@ def check_trust(workspace: Path) -> str | None:
 DEFAULT_SETTING_SOURCES = "project,local"
 
 
+def add_dir_args(add_dir: str | list[str]) -> list[str]:
+    """``--add-dir`` takes several values after one flag (it eats trailing values, so the prompt
+    follows ``--``). The ship folder comes first; a multi-repo ship adds its other repos (D-071)."""
+    dirs = [add_dir] if isinstance(add_dir, str) else list(add_dir)
+    return ["--add-dir", *dirs]
+
+
 def launch(*, cwd: str, name: str, role: str, agents_json: str, model: str,
-           settings: str, add_dir: str, prompt: str, env_unset=(), remote_control: bool = False,
+           settings: str, add_dir: str | list[str], prompt: str, env_unset=(), remote_control: bool = False,
            setting_sources: str = DEFAULT_SETTING_SOURCES) -> tuple[str, str]:
     """Start a new background session; returns (short id, full sessionId).
 
@@ -286,7 +293,7 @@ def launch(*, cwd: str, name: str, role: str, agents_json: str, model: str,
         "--setting-sources", setting_sources,
         "--settings", settings,
         *(["--remote-control"] if remote_control else []),
-        "--add-dir", add_dir,
+        *add_dir_args(add_dir),
         "--", prompt,
     ]
     started = time.time()
@@ -326,7 +333,7 @@ def resume(session_id: str, prompt: str, env_unset=(), cwd: str | None = None) -
 
 
 def headless_argv(*, session_id: str, name: str, role: str, agents_json: str, model: str,
-                  settings: str, add_dir: str, prompt: str, max_budget_usd=None,
+                  settings: str, add_dir: str | list[str], prompt: str, max_budget_usd=None,
                   setting_sources: str = DEFAULT_SETTING_SOURCES) -> list[str]:
     """One headless shift = one ``claude -p`` (design-p1 §4.2, verify-p1-d V1-V4).
 
@@ -346,7 +353,7 @@ def headless_argv(*, session_id: str, name: str, role: str, agents_json: str, mo
     ]
     if max_budget_usd is not None:
         args += ["--max-budget-usd", str(max_budget_usd)]
-    return _claude_argv(args + ["--add-dir", add_dir, "--", prompt])
+    return _claude_argv(args + [*add_dir_args(add_dir), "--", prompt])
 
 
 def stop(short_id: str) -> bool:

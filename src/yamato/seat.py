@@ -132,17 +132,32 @@ def _resume_prompt(shipdir: Path, seat: str, reason: str = "send") -> str:
     return (f"[yamato] inbox に新しいメッセージがあります。`{yamato_invocation()} inbox {ship_arg(shipdir)} {seat}` で読んで対応してください。")
 
 
+def add_dirs(shipdir: Path, team: dict, cwd: str | None = None) -> list[str]:
+    """The seat's ``--add-dir``: the ship folder, then the repos after the first (the seat's cwd).
+    A shift started in a given directory (``send --cwd``) is in a worktree: the main repos stay out."""
+    rest = [] if cwd else [w["path"] for w in team["workspaces"][1:]]
+    return [str(shipdir), *rest]
+
+
+def check_workspaces(team: dict, first: Path | None = None) -> None:
+    """Existence and trust for every repo of the ship (D-071). ``first``: the seat's cwd when it is
+    not the first repo (``send --cwd``): that one is checked in place of the first."""
+    paths = [first or Path(team["workspaces"][0]["path"]), *(Path(w["path"]) for w in team["workspaces"][1:])]
+    for i, p in enumerate(paths):
+        if not p.is_dir():
+            raise YamatoError(f"{'--cwd の場所' if i == 0 and first and first != Path(team['workspace']) else 'workspace'}がありません: {p}")
+        unsure = claude.check_trust(p)
+        if unsure:
+            out(f"注意: {unsure}")
+
+
 def start_new_shift(shipdir: Path, team: dict, seat: str, rotated: list[str] | None = None) -> dict:
     """``rotated``: why a persistent seat gets this instead of a resume (design-p1 §5.3).
     A ``nextCwd`` left by ``send --cwd`` is used (and used up) here (§8.2 の 2)."""
     spec = seat_spec(team, seat)
     cwd = roster.seat(shipdir, seat).get("nextCwd")
     workspace = Path(cwd or team["workspace"])
-    if not workspace.is_dir():
-        raise YamatoError(f"{'--cwd の場所' if cwd else 'workspace'}がありません: {workspace}")
-    unsure = claude.check_trust(workspace)
-    if unsure:
-        out(f"注意: {unsure}")
+    check_workspaces(team, workspace)
     settings = runtime.settings_path(shipdir, seat)
     if cwd:
         # in a worktree already: Claude Code must not cut another one from it (bgIsolation: none)
@@ -153,7 +168,7 @@ def start_new_shift(shipdir: Path, team: dict, seat: str, rotated: list[str] | N
         cwd=str(workspace), name=name, role=spec["role"],
         agents_json=runtime.agents_path(shipdir).read_text(encoding="utf-8"),
         model=spec["model"], settings=str(settings),
-        add_dir=str(shipdir), prompt=_first_prompt(shipdir, seat), env_unset=team.get("env_unset") or (),
+        add_dir=add_dirs(shipdir, team, cwd), prompt=_first_prompt(shipdir, seat), env_unset=team.get("env_unset") or (),
         remote_control=bool(team["roles"][spec["role"]].get("remote_control")),
         setting_sources=",".join(team.get("setting_sources") or claude.DEFAULT_SETTING_SOURCES.split(",")),
     )
@@ -452,12 +467,7 @@ def up(shipdir: Path, for_: str | None) -> int:
     team = prepare(shipdir)
     for w in team.get("warnings") or []:
         out(f"注意: {w}")
-    workspace = Path(team["workspace"])
-    if not workspace.is_dir():
-        raise YamatoError(f"workspace がありません: {workspace}")
-    unsure = claude.check_trust(workspace)
-    if unsure:
-        out(f"注意: {unsure}")
+    check_workspaces(team)
     now = time.time()
     limit = parse_duration(for_) if for_ else team["time_limit"]
     if for_ is None and limit is not None:

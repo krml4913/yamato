@@ -898,5 +898,78 @@ class RealClaudeProcessTest(_SeatBase):
     test_resume_runs_in_the_workspace = SeatTest.test_resume_runs_in_the_workspace
 
 
+class MultiWorkspaceTest(_SeatBase):
+    """T-067 (D-071): seat cwd = first repo, the rest are --add-dir, trust/existence for every repo."""
+
+    def two_repos(self, trust_second=True):
+        import re
+        self.lib = self.tmp / "lib"
+        self.lib.mkdir()
+        if trust_second:
+            cfg = self.config / ".claude.json"
+            data = json.loads(cfg.read_text(encoding="utf-8"))
+            data["projects"][str(self.lib)] = {"hasTrustDialogAccepted": True}
+            cfg.write_text(json.dumps(data), encoding="utf-8")
+        ty = self.shipdir / "team.yaml"
+        text = ty.read_text(encoding="utf-8")
+        text = re.sub(r"(?m)^workspace:.*$", f'workspace: ["{self.workspace}", "{self.lib}"]', text, count=1)
+        ty.write_text(text, encoding="utf-8")
+
+    def test_two_repos_cwd_first_and_add_dir_rest(self):
+        self.two_repos()
+        self.up()
+        [call] = self.bg_calls()
+        a = call["argv"]
+        self.assertEqual(call["cwd"], str(self.workspace))
+        i = a.index("--add-dir")
+        self.assertEqual(a[i + 1:i + 3], [str(self.shipdir), str(self.lib)])
+        self.assertEqual(a[i + 3], "--")
+
+    def test_one_repo_add_dir_unchanged(self):
+        self.up()
+        [call] = self.bg_calls()
+        a = call["argv"]
+        i = a.index("--add-dir")
+        self.assertEqual(a[i + 1:i + 3], [str(self.shipdir), "--"])
+
+    def test_missing_second_repo_stops_up(self):
+        self.two_repos()
+        self.lib.rmdir()
+        with self.assertRaises(YamatoError) as cm:
+            self.up()
+        self.assertIn(str(self.lib), str(cm.exception))
+        self.assertEqual(self.bg_calls(), [])
+
+    def test_untrusted_second_repo_is_reported(self):
+        self.two_repos(trust_second=False)
+        with self.assertRaises(YamatoError) as cm:
+            self.up()
+        self.assertIn(str(self.lib), str(cm.exception))
+
+    def test_headless_add_dirs(self):
+        self.two_repos()
+        team = self.team()
+        self.assertEqual(seat.add_dirs(self.shipdir, team), [str(self.shipdir), str(self.lib)])
+        self.assertEqual(seat.add_dirs(self.shipdir, team, "/some/worktree"), [str(self.shipdir)])
+
+    def test_bg_isolation_judged_on_first_repo(self):
+        import subprocess
+        self.two_repos()
+        subprocess.run(["git", "init", "-q", str(self.lib)], check=True)
+        team = self.team()   # [ws (not git), lib (git)]: the first decides
+        self.assertTrue(runtime.needs_no_isolation(self.shipdir, team))
+        swapped = {**team, "workspace": team["workspaces"][1]["path"], "workspaces": team["workspaces"][::-1]}
+        self.assertFalse(runtime.needs_no_isolation(self.shipdir, swapped))
+
+    def test_cwd_label_only_for_the_first_repo(self):
+        self.two_repos()
+        self.lib.rmdir()
+        (self.workspace / "sub").mkdir()
+        with self.assertRaises(YamatoError) as cm:
+            seat.check_workspaces(self.team(), self.workspace / "sub")
+        self.assertNotIn("--cwd", str(cm.exception))
+        self.assertIn(str(self.lib), str(cm.exception))
+
+
 if __name__ == "__main__":
     unittest.main()
