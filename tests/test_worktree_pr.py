@@ -138,6 +138,156 @@ class GitShipTestCase(ShipTestCase):
         return events.read(self.shipdir, kinds=kinds)
 
 
+class TwoRepoTest(GitShipTestCase):
+    """One ship over two repos (``ws`` first, then ``lib``): a task's worktrees, PRs and merges per repo."""
+
+    def setUp(self):
+        super().setUp()
+        remote, ws = self._template
+        env = {**os.environ, **git_env(self.tmp)}
+        self.lib_remote, self.lib = self.tmp / "libremote.git", self.tmp / "lib"
+        shutil.copytree(remote, self.lib_remote, symlinks=True)
+        shutil.copytree(ws, self.lib, symlinks=True)
+        run("git", "remote", "set-url", "origin", str(self.lib_remote), cwd=self.lib, env=env)
+
+    def team(self):
+        team = super().team()
+        team["workspaces"] = [{"name": "ws", "path": str(self.workspace)}, {"name": "lib", "path": str(self.lib)}]
+        return team
+
+    def commit(self, wt: Path, name="x.txt"):
+        (wt / name).write_text("x\n", encoding="utf-8")
+        run("git", "add", ".", cwd=wt)
+        run("git", "commit", "-q", "-m", name, cwd=wt)
+
+    def test_worktrees_sit_side_by_side_and_are_recorded_per_repo(self):
+        from yamato import worktree
+
+        tid = self.item()
+        team = self.team()
+        app, _ = worktree.add(self.shipdir, team, tid)             # no --repo: the first repo
+        lib, _ = worktree.add(self.shipdir, team, tid, repo="lib", branch="feature/issues/12")
+        self.assertEqual(app, (self.shipdir / "worktrees" / tid / "ws").resolve())
+        self.assertEqual(lib, (self.shipdir / "worktrees" / tid / "lib").resolve())
+        self.assertEqual((app / ".." / "lib").resolve(), lib)       # ../lib from the app is the same task's lib
+        self.assertEqual(run("git", "branch", "--show-current", cwd=lib), "feature/issues/12")
+        self.assertEqual(run("git", "branch", "--show-current", cwd=app), f"yamato/t1/{tid}")
+        meta = self.board().read(tid)[0]
+        self.assertEqual(meta["worktree"], {"ws": str(app), "lib": str(lib)})
+        self.assertEqual(meta["branch"], {"ws": f"yamato/t1/{tid}", "lib": "feature/issues/12"})
+        self.assertEqual(worktree.path_of(self.shipdir, team, tid), app)
+        self.assertEqual(worktree.path_of(self.shipdir, team, tid, "lib"), lib)
+        # idempotent per repo
+        self.assertEqual(worktree.add(self.shipdir, team, tid, repo="lib"), (lib, False))
+        rows = {(r["repo"], r["item"]) for r in worktree.listing(self.shipdir, team)}
+        self.assertEqual(rows, {("ws", tid), ("lib", tid)})
+        self.assertEqual({e["data"]["repo"] for e in self.recorded("worktree_add")}, {"ws", "lib"})
+        # a worktree the item no longer points at still lists under the task id, not the repo name
+        self.board().set(tid, {"worktree": ""}, by="impl")
+        self.assertEqual({r["item"] for r in worktree.listing(self.shipdir, team)}, {tid})
+        with self.assertRaisesRegex(YamatoError, "workspace にありません"):
+            worktree.add(self.shipdir, team, tid, repo="nope")
+
+    def test_rm_is_per_repo(self):
+        from yamato import worktree
+
+        tid = self.item()
+        team = self.team()
+        app, _ = worktree.add(self.shipdir, team, tid)
+        lib, _ = worktree.add(self.shipdir, team, tid, repo="lib")
+        worktree.rm(self.shipdir, team, tid, repo="lib")
+        self.assertFalse(lib.exists())
+        self.assertTrue(app.is_dir())
+        self.assertEqual(self.board().read(tid)[0]["worktree"], {"ws": str(app)})
+
+    def test_cli_branch_per_repo(self):
+        from yamato import worktree
+
+        team = self.team()
+        self.assertEqual(worktree.per_repo(team, ["ws", "lib"], ["lib=feature/a", "common"], "branch"),
+                         {"lib": "feature/a", "ws": "common"})
+        with self.assertRaisesRegex(YamatoError, "選んでいない"):
+            worktree.per_repo(team, ["ws"], ["lib=x"], "branch")
+
+    def test_pr_open_and_merge_per_repo(self):
+        from yamato import pr, worktree
+
+        tid = self.item()
+        team = self.team()
+        app, _ = worktree.add(self.shipdir, team, tid)
+        lib, _ = worktree.add(self.shipdir, team, tid, repo="lib", branch="feature/issues/12")
+        with self.assertRaisesRegex(YamatoError, "PR を開く repo がありません"):
+            pr.open_pr(self.shipdir, team, tid, by="impl")           # nothing to open yet
+        self.commit(lib)
+        self.quiet(pr.open_pr, self.shipdir, team, tid, by="impl")   # only lib has commits: only lib gets a PR
+        self.assertEqual(list(self.board().read(tid)[0]["pr"]), ["lib"])
+        self.commit(app)
+        self.quiet(pr.open_pr, self.shipdir, team, tid, by="impl")
+        meta = self.board().read(tid)[0]
+        self.assertEqual(set(meta["pr"]), {"ws", "lib"})
+        self.assertNotEqual(meta["pr"]["ws"], meta["pr"]["lib"])
+        heads = {n: p["head"] for n, p in self.gh()["prs"].items()}
+        self.assertEqual(heads[meta["pr"]["lib"]], "feature/issues/12")
+        self.assertEqual(heads[meta["pr"]["ws"]], f"yamato/t1/{tid}")
+        calls = [c for c in self.gh()["calls"] if c["argv"][:2] == ["pr", "create"]]
+        self.assertEqual({Path(c["cwd"]) for c in calls}, {app.resolve(), lib.resolve()})
+        self.assertEqual({e["data"]["repo"] for e in self.recorded("pr_open")}, {"ws", "lib"})
+        # merge: the repos named, in the order given; only that repo is marked merged
+        self.board().set(tid, {"review": "approved"}, by="reviewer")
+        self.quiet(pr.merge_pr, self.shipdir, team, tid, "reviewer", ["lib"])
+        meta = self.board().read(tid)[0]
+        self.assertEqual(meta["merged_by"], {"lib": "reviewer"})
+        self.assertEqual(self.gh()["prs"][meta["pr"]["lib"]]["state"], "MERGED")
+        self.assertEqual(self.gh()["prs"][meta["pr"]["ws"]]["state"], "OPEN")
+        # no --repo: whatever is still open
+        self.quiet(pr.merge_pr, self.shipdir, team, tid, "reviewer")
+        meta = self.board().read(tid)[0]
+        self.assertEqual(meta["merged_by"], {"lib": "reviewer", "ws": "reviewer"})
+        self.assertEqual(self.gh()["prs"][meta["pr"]["ws"]]["state"], "MERGED")
+        self.assertEqual([e["data"]["repo"] for e in self.recorded("pr_merge")], ["lib", "ws"])
+        with self.assertRaisesRegex(YamatoError, "merge する PR がありません"):
+            pr.merge_pr(self.shipdir, team, tid, "reviewer")
+
+    def test_merge_requires_is_checked_per_repo_and_conflicts_stay_in_the_repo(self):
+        from yamato import pr, worktree
+
+        team = self.team()
+        a, b, c = self.item(), self.item(), self.item()
+        for t in (a, b):                                         # a, b: lib only
+            worktree.add(self.shipdir, team, t, repo="lib")
+            self.commit(worktree.path_of(self.shipdir, team, t, "lib"), f"{t}.txt")
+        worktree.add(self.shipdir, team, c)                      # c: the first repo (ws) only
+        self.commit(worktree.path_of(self.shipdir, team, c), "c.txt")
+        for t in (a, b, c):
+            self.quiet(pr.open_pr, self.shipdir, team, t, by="impl")
+        pa, pb, pc = (self.board().read(t)[0]["pr"] for t in (a, b, c))
+        self.assertEqual((set(pa), set(pb), set(pc)), ({"lib"}, {"lib"}, {"ws"}))
+        # b's lib PR and c's ws PR both conflict; a's lib merge concerns only the lib one
+        prs = self.gh()["prs"]
+        self.set_gh(prs={**prs, pb["lib"]: {**prs[pb["lib"]], "mergeable": "CONFLICTING"},
+                         pc["ws"]: {**prs[pc["ws"]], "mergeable": "CONFLICTING"}})
+        self.board().set(a, {"review": "approved"}, by="reviewer")
+        self.quiet(pr.merge_pr, self.shipdir, team, a, "reviewer", ["lib"])
+        conflicts = self.recorded("pr_conflict")
+        self.assertEqual([(e["item"], e["data"]["repo"]) for e in conflicts], [(b, "lib")])
+        with self.assertRaisesRegex(YamatoError, "merge の条件"):       # b has no review=approved
+            pr.merge_pr(self.shipdir, team, b, "reviewer", ["lib"])
+
+    def test_one_repo_ship_keeps_the_plain_record(self):
+        from yamato import pr, worktree
+
+        tid = self.item()
+        team = super().team()                       # workspaces: just the one
+        wt, _ = worktree.add(self.shipdir, team, tid)
+        self.assertEqual(wt, (self.shipdir / "worktrees" / tid).resolve())
+        self.commit(wt)
+        self.quiet(pr.open_pr, self.shipdir, team, tid, by="impl")
+        meta = self.board().read(tid)[0]
+        self.assertEqual(meta["worktree"], str(wt))
+        self.assertIsInstance(meta["pr"], str)
+        self.assertNotIn("repo", self.recorded("pr_open")[0]["data"])
+
+
 class WorktreeTest(GitShipTestCase):
     def test_add_is_idempotent_and_records_on_the_item(self):
         from yamato import worktree
@@ -241,6 +391,7 @@ class WorktreeTest(GitShipTestCase):
         plain = self.tmp / "plain"
         plain.mkdir()
         team["workspace"] = str(plain)
+        team["workspaces"] = [{"name": "plain", "path": str(plain)}]
         with self.assertRaisesRegex(YamatoError, "git repo ではない"):
             worktree.add(self.shipdir, team, tid)
 

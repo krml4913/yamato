@@ -20,6 +20,7 @@ from .util import YamatoError, atomic_write, ship_lock
 STATES = ("open", "active", "blocked", "done")
 FIXED = ("id", "title", "kind", "parent", "assignee", "state", "blocked_on", "links")
 LIST_FIELDS = ("blocked_on", "links")
+REPO_FIELDS = ("worktree", "branch", "pr", "merged_by")   # {repo: value} maps in a several-repo ship
 ID_PREFIX = "T-"
 ID_RE = re.compile(r"^T-(\d+)$")
 KEY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
@@ -153,6 +154,10 @@ class Board:
                     if v == item_id or not self.exists(v):
                         raise YamatoError(f"blocked_on={v} が board にありません")
             return vals
+        if key in REPO_FIELDS and isinstance(value, dict):
+            # several-repo ships: {repo: value} (design.md §0 の workspace 配列)
+            value = {str(k): str(v) for k, v in value.items() if v not in (None, "")}
+            return value or None
         # column and team-defined fields are free text (mechanism-not-policy)
         if not KEY_RE.match(key):
             raise YamatoError(f"項目名が不正です: {key!r} (英数字・_・-)")
