@@ -20,8 +20,19 @@
       "type": "string"
     },
     "workspace": {
-      "description": "席の作業ディレクトリ (作業対象の repo。repo のない艦は . = 艦フォルダ)。",
-      "type": "string"
+      "description": "席の作業ディレクトリ (作業対象の repo。repo のない艦は . = 艦フォルダ)。複数の repo を 1 艦で扱うときはパスのリスト (先頭が席の cwd。呼び名はフォルダ名で、かぶったら読み込みエラー)。",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
     },
     "charter": {
       "description": "何のための艦かを書いたファイル (人間が書く)。省略時 charter.md。",
