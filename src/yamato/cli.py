@@ -33,6 +33,13 @@ def _parser(hook_only: bool = False) -> argparse.ArgumentParser:
     c.add_argument("--path", help="艦フォルダの場所 (既定 ~/yamato/<name>)")
     c.add_argument("--template", default="dev", help="dev (開発艦) / research (調査艦)")
     banner.add_quiet(c)
+    up_ = ship_sub.add_parser("upgrade", help="艦の写し (roles/*.md・team.yaml) を新しい版に上げる (upgrade 専用の claude を端末で起動)")
+    up_.add_argument("name")
+    up_.add_argument("--from", dest="from_version", help="写しを作った版 (例 v1.0.0)。team.yaml に template の記録がない艦で要る")
+    up_.add_argument("--template", help="元のひな形 (既定は team.yaml の template.name、なければ dev)")
+    ud = ship_sub.add_parser("upgrade-done", help="(upgrade の claude が使う) team.yaml の template.version を新しい版にする")
+    ud.add_argument("name")
+    ud.add_argument("--version", help="既定は今動いている yamato の版")
 
     u = sub.add_parser("up", help="captain の席を起動し、稼働時間の上限を設定する")
     u.add_argument("ship")
@@ -286,6 +293,16 @@ def main(argv: list[str] | None = None) -> int:
 
             from . import banner
 
+            if args.ship_cmd == "upgrade":
+                from . import upgrade
+
+                return upgrade.upgrade(resolve_ship(args.name), args.from_version, args.template)
+            if args.ship_cmd == "upgrade-done":
+                from . import upgrade
+
+                ver = upgrade.done(resolve_ship(args.name), args.version)
+                print(f"team.yaml の template.version を {ver} にした")
+                return 0
             path, warnings = ship.create(args.name, args.workspace, args.path, args.template)
             banner.show("create", path, template=args.template, quiet=args.quiet)
             print(f"艦 {args.name} を作った: {path}")
