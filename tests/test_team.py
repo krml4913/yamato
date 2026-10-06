@@ -105,6 +105,20 @@ class TeamTest(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(YamatoError):
                 validate(base(inject=bad), Path("/ship"))
 
+    def test_inject_limits_shape_per_key(self):
+        """T-073: [lines, chars] keys refuse a bare int (it used to crash `cap_text(*limit)` at run time);
+        the single-int keys refuse a list. Both fail at validate with the key named."""
+        for k in ("handoff", "log_tail", "last_report", "charter"):
+            for bad in (500, [10], [10, 500, 1], [0, 500], [10, "x"], [True, 500], "big"):
+                with self.subTest(key=k, bad=bad), self.assertRaisesRegex(YamatoError, f"inject.limits.{k} は"):
+                    validate(base(inject={"limits": {k: bad}}), Path("/ship"))
+            t = validate(base(inject={"limits": {k: [10, 500]}}), Path("/ship"))
+            self.assertEqual(t["inject"]["limits"], {k: (10, 500)})
+        for k in ("mine_items", "inbox_messages", "inbox_chars", "total_chars", "board_items", "fleet_items"):
+            for bad in ([10, 500], 0, True):
+                with self.subTest(key=k, bad=bad), self.assertRaisesRegex(YamatoError, f"inject.limits.{k} は"):
+                    validate(base(inject={"limits": {k: bad}}), Path("/ship"))
+
     def test_inject_fleet_part_and_limit(self):
         """T-022: `fleet` (admiral の全艦の要約) is a selectable part with its own limit key."""
         from yamato.team import inject_parts

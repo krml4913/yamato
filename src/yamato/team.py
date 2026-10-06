@@ -28,6 +28,8 @@ DEFAULT_INJECT_PARTS = tuple(p for p in INJECT_PARTS
 # the role's memory and knowledge.md are cut at `memory.limits` (the limits `memory apply` keeps to)
 INJECT_LIMIT_KEYS = ("handoff", "log_tail", "mine_items", "inbox_messages", "inbox_chars", "total_chars",
                      "last_report", "board_items", "fleet_items", "charter")
+# [lines, chars] limits (two positive ints); the others are one positive int (T-073)
+INJECT_PAIR_LIMIT_KEYS = ("handoff", "log_tail", "last_report", "charter")
 RESERVED_SEATS = ("owner",)   # the human's inbox; not a seat
 SEAT_STOP_DEFAULTS = {"require_handoff": True, "require_delivery": True}
 ROLE_KEYS = {"model", "shift", "count", "description", "inject", "max_duration", "max_budget_usd", "report_to",
@@ -592,13 +594,19 @@ def _check_parts(parts, where: str) -> None:
 def _limits(limits: dict) -> dict:
     out = {}
     for k, v in limits.items():
-        if isinstance(v, list) and len(v) == 2 and all(isinstance(x, int) for x in v):
-            out[k] = tuple(v)                     # [lines, chars]
-        elif isinstance(v, int) and v > 0:
+        if k in INJECT_PAIR_LIMIT_KEYS:
+            if not (isinstance(v, list) and len(v) == 2 and all(_pos_int(x) for x in v)):
+                raise YamatoError(f"team.yaml: inject.limits.{k} は [行数, 文字数] (正の整数 2 個)。整数 1 個は不可")
+            out[k] = tuple(v)
+        elif _pos_int(v):
             out[k] = v
         else:
-            raise YamatoError(f"team.yaml: inject.limits.{k} は正の整数か [行数, 文字数]")
+            raise YamatoError(f"team.yaml: inject.limits.{k} は正の整数")
     return out
+
+
+def _pos_int(x) -> bool:
+    return isinstance(x, int) and not isinstance(x, bool) and x > 0
 
 
 def inject_parts(team: dict, seat: str) -> list[str]:

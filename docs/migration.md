@@ -21,6 +21,12 @@ v1.0.0 以降の変更のうち、**既存の艦・利用者が何かをしな�
 
 ## 未リリース
 
+### `inject.limits` の形を検査で揃えた: `handoff`・`log_tail`・`last_report`・`charter` は `[行数, 文字数]` だけ (T-073)
+- 何が変わったか: この 4 つに整数 1 個を書いても team.yaml の検査を通り、起動後の注入で `TypeError` で落ちていた。検査 (`team.py` と schema) で拒否するようにした。逆に `mine_items` など整数のキーに `[行, 文字]` の配列を書いても拒否する。`[行数, 文字数]` の値は正の整数 2 個
+- 既存の艦がやること: `inject.limits` のこの 4 つに整数 1 個を書いている艦だけ、`[行数, 文字数]` に直す (例: `handoff: [40, 2000]`)。ひな形どおりの艦は何もしない
+- やらないと: 整数 1 個を書いた艦は、`yamato up` の検査が「inject.limits.<キー> は [行数, 文字数]」で止まる (前は起動後に落ちていた)
+- PR: T-073
+
 ### 注入の部品に `charter` を足した: captain と planner に艦の charter を読ませる (T-072, D-086)
 - 何が変わったか: `inject` の部品に `charter` が増えた (opt-in。既定の部品には入らない)。入れた席の SessionStart の知見の hook (hook B) の先頭に、team.yaml の `charter:` が指すファイルの中身が入る。無い・空なら「(charter なし)」の 1 行。`inject.limits.charter` (`[行数, 文字数]`、省略時 `[60, 3000]`) を超えたら切って全文のパスを出す。ひな形は dev の pm・planner、research の editor、admiral の admiral に `charter` を足した
 - 既存の艦がやること: `roles.<captain>.inject` と、planner がいる艦は `roles.planner.inject` に `charter` を足す (planner が inject を持たず既定で動いている艦は、既定の部品 `[handoff, log_tail, mine, inbox, memory, knowledge]` に `charter` を足して明示する)。`inject.limits.charter` はコードに省略時の値があるので、上限を変えたい艦だけ書く。次の `yamato up` から効く。`yamato ship upgrade` でも取り込める
