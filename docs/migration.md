@@ -21,6 +21,12 @@ v1.0.0 以降の変更のうち、**既存の艦・利用者が何かをしな�
 
 ## 未リリース
 
+### 注入の部品に `charter` を足した: captain と planner に艦の charter を読ませる (T-072, D-086)
+- 何が変わったか: `inject` の部品に `charter` が増えた (opt-in。既定の部品には入らない)。入れた席の SessionStart の知見の hook (hook B) の先頭に、team.yaml の `charter:` が指すファイルの中身が入る。無い・空なら「(charter なし)」の 1 行。`inject.limits.charter` (`[行数, 文字数]`、省略時 `[60, 3000]`) を超えたら切って全文のパスを出す。ひな形は dev の pm・planner、research の editor、admiral の admiral に `charter` を足した
+- 既存の艦がやること: `roles.<captain>.inject` と、planner がいる艦は `roles.planner.inject` に `charter` を足す (planner が inject を持たず既定で動いている艦は、既定の部品 `[handoff, log_tail, mine, inbox, memory, knowledge]` に `charter` を足して明示する)。`inject.limits.charter` はコードに省略時の値があるので、上限を変えたい艦だけ書く。次の `yamato up` から効く。`yamato ship upgrade` でも取り込める
+- やらないと: 動作は変わらない (charter は注入されない)
+- PR: T-072
+
 ## v1.0.0 → v1.1.0
 
 ### 全体の手順

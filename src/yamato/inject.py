@@ -28,6 +28,7 @@ LIMITS = {
     "total_chars": 9500,       # per hook: Claude Code takes 10,000 chars from one (verify-p0-c Q1)
     "last_report": (30, 1500), # the previous daily report's 3 sections (design-p1 §2.3)
     "board_items": 20,         # the `board` part's overview (T-030); over this, "…ほか N 件"
+    "charter": (60, 3000),     # the `charter` part (T-072): charter.md at the head of hook B
     "fleet_items": 20,         # the `fleet` part (T-022); over this, "全文は `yamato ships`"
 }
 
@@ -96,6 +97,17 @@ def _last_report(shipdir: Path, limit: tuple[int, int]) -> str:
     text = report.excerpt(_read(path)).replace("\n## ", "\n### ")
     text = text.replace("## ", "### ", 1) if text.startswith("## ") else (text or "(3 節が見つからない)")
     return f"## 前回の日報 ({path.stem}。全文: {path})\n{cap_text(text, *limit, source=str(path))}"
+
+
+def _charter(shipdir: Path, team: dict, limit: tuple[int, int]) -> str:
+    """The `charter` part (T-072, D-086): team.yaml's charter file at the head of hook B.
+    Missing or empty is one line, not an error; over the limit it is cut and points at the file."""
+    path = shipdir / team.get("charter", "charter.md")
+    title = f"## 艦の charter ({path.name})"
+    text = _read(path).strip()
+    if not text:
+        return f"{title}\n(charter なし)"
+    return f"{title}\n{cap_text(text, *limit, source=str(path))}"
 
 
 def _board(shipdir: Path, team: dict, limit: int, y: str) -> str:
@@ -249,10 +261,12 @@ def build_knowledge(shipdir: Path, team: dict, seat: str, limits: dict | None = 
     ``inject`` has neither."""
     lim = _limits(team, limits)
     want = set(inject_parts(team, seat))
-    if not want & {"memory", "knowledge"}:
+    if not want & {"memory", "knowledge", "charter"}:
         return ""
     shipdir = Path(shipdir)
     parts = [f"# yamato: 役割の memory と艦の knowledge (席 {seat})"]
+    if "charter" in want:
+        parts.append(_charter(shipdir, team, lim["charter"]))
     if "memory" in want:
         memory.migrate(shipdir, team)   # a P0 ship's seats/<seat>/memory.md moves in on first read
         role = team["seats"][seat]["role"]

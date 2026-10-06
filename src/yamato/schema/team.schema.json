@@ -181,7 +181,7 @@
             "type": "string"
           },
           "inject": {
-            "description": "この役割だけの注入の部品 (トップの inject.parts を上書き)。SessionStart で席に読ませるもの (design §8.2)。handoff 引き継ぎ / log_tail 作業ログの末尾 / mine 自分の担当 / inbox 未読 / memory 役割の memory / knowledge 艦の knowledge.md / last_report 前回の日報の抜粋 / orphans 担当が落ちて active のまま残った項目 (captain 用) / board 艦全体の進み具合 / fleet 全艦の要約 (admiral 用)。",
+            "description": "この役割だけの注入の部品 (トップの inject.parts を上書き)。SessionStart で席に読ませるもの (design §8.2)。handoff 引き継ぎ / log_tail 作業ログの末尾 / mine 自分の担当 / inbox 未読 / memory 役割の memory / knowledge 艦の knowledge.md / last_report 前回の日報の抜粋 / orphans 担当が落ちて active のまま残った項目 (captain 用) / board 艦全体の進み具合 / fleet 全艦の要約 (admiral 用) / charter 艦の charter.md (captain と planner 用。opt-in)。",
             "type": "array",
             "items": {
               "enum": [
@@ -194,7 +194,8 @@
                 "last_report",
                 "orphans",
                 "board",
-                "fleet"
+                "fleet",
+                "charter"
               ]
             }
           },
@@ -518,7 +519,7 @@
       "description": "SessionStart で席に読ませるもの (design §8.2)。",
       "properties": {
         "parts": {
-          "description": "注入する部品 (役割ごとに roles.<role>.inject で上書き)。SessionStart で席に読ませるもの (design §8.2)。handoff 引き継ぎ / log_tail 作業ログの末尾 / mine 自分の担当 / inbox 未読 / memory 役割の memory / knowledge 艦の knowledge.md / last_report 前回の日報の抜粋 / orphans 担当が落ちて active のまま残った項目 (captain 用) / board 艦全体の進み具合 / fleet 全艦の要約 (admiral 用)。",
+          "description": "注入する部品 (役割ごとに roles.<role>.inject で上書き)。SessionStart で席に読ませるもの (design §8.2)。handoff 引き継ぎ / log_tail 作業ログの末尾 / mine 自分の担当 / inbox 未読 / memory 役割の memory / knowledge 艦の knowledge.md / last_report 前回の日報の抜粋 / orphans 担当が落ちて active のまま残った項目 (captain 用) / board 艦全体の進み具合 / fleet 全艦の要約 (admiral 用) / charter 艦の charter.md (captain と planner 用。opt-in)。",
           "type": "array",
           "items": {
             "enum": [
@@ -531,7 +532,8 @@
               "last_report",
               "orphans",
               "board",
-              "fleet"
+              "fleet",
+              "charter"
             ]
           }
         },
@@ -595,6 +597,23 @@
             },
             "last_report": {
               "description": "上限。正の整数か [行数, 文字数]。",
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": {
+                    "type": "integer"
+                  }
+                }
+              ]
+            },
+            "charter": {
+              "description": "charter の部品の上限。正の整数か [行数, 文字数]。省略時 [60, 3000]。",
               "anyOf": [
                 {
                   "type": "integer",

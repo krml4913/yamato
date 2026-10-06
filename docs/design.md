@@ -428,11 +428,12 @@ SessionStart hook が、次を注入する。**何を読ませるかは設定** 
 | `inbox` | 未読の inbox |
 | `memory` | 役割の memory (`roles/<role>/memory.md`。design-p1 §3) |
 | `knowledge` | チームの knowledge.md |
+| `charter` (opt-in) | team.yaml の `charter:` のファイル (既定 charter.md) の中身。知見の hook の先頭に入る。無い・空は「(charter なし)」の 1 行 (エラーにしない)。`inject.limits.charter` (`[行数, 文字数]`、省略時 60 行 / 3000 文字) を超えたら切って全文のパスを出す。ひな形は captain (hub) と planner に入れる (T-072、D-086) |
 | `board` (P1、opt-in) | 艦全体の進み具合 (kanban 風): state ごとの件数 + blocked→active→open の項目一覧。`mine` と重なっても省かない。`inject.limits.board_items` で件数に上限、超えた分は「…ほか N 件」(T-030、design-drift #4/#14、D-018) |
 | `fleet` (P1、opt-in) | 全艦の様子 (`yamato ships` 相当を 1 艦 1 行): 稼働中か・残り時間・captain の生死・赤い席・owner の判断待ち・今日のトークン。admiral (D-011、D-013) だけが使う想定。`inject.limits.fleet_items` で件数に上限、超えた分は「…ほか N 件 (`yamato ships` で見る)」(T-022) |
 
 - 役割のプロンプトは注入ではなく、`--agents` の JSON で渡す (§4.1)
-- 注入は **SessionStart hook 2 本**に分ける。記録の hook (ヘッダ・`handoff`・`log_tail`・`mine`・`inbox` と注記) と、知見の hook (`memory`・`knowledge`)。Claude Code は hook 1 本の出力を 10,000 文字まで受け取り、超えると本文の代わりに約 2KB のプレビューを渡す (検証 C Q1。判定は hook ごとで、文字数で数える)
+- 注入は **SessionStart hook 2 本**に分ける。記録の hook (ヘッダ・`handoff`・`log_tail`・`mine`・`inbox` と注記) と、知見の hook (`charter`・`memory`・`knowledge`)。Claude Code は hook 1 本の出力を 10,000 文字まで受け取り、超えると本文の代わりに約 2KB のプレビューを渡す (検証 C Q1。判定は hook ごとで、文字数で数える)
 - 上限は `inject.limits` で持つ (ひな形の値: handoff 40 行 / 2000 文字、担当 15 件、未読 10 通、**hook 1 本の全体 9500 文字**)。memory と knowledge は `memory.limits` (ひな形: memory 80 行 / 4000 文字、knowledge 120 行 / 5000 文字。`memory apply` が反映を拒否する上限と同じ) で切る。切ったところには「全文は `<path>` を Read せよ」と付ける (hook の全体で切ったときは、全文を `.runtime/` に書いてそのパスを付ける)。全体の上限は安全網として残し、個々の中身は設定に置く
 - captain は、これに加えてカンバン風の `board` と日報を読む (P1、設定の `inject`。日報は前回の「一言」「判断待ち」「明日」の 3 節だけ。design-p1 §2.3、`board` は T-030・§6.2)。ほか P1 で、孤児になった項目の一覧や棚卸し案の有無も注入に載る (design-p1 §5.6、§3.4)
 
