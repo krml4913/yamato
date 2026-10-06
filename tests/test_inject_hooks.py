@@ -121,6 +121,49 @@ class InjectTest(ShipTestCase):
         self.assertIn("board kanban", text)
         self.assertNotIn("done one", text)
 
+    def test_charter_part_is_opt_in_and_heads_the_knowledge_hook(self):
+        (self.shipdir / "charter.md").write_text("# charter\nCHARTER-X", encoding="utf-8")
+        self.assertEqual(self.t["charter"], "charter.md")
+        # not in the defaults: a seat that does not name it does not get it
+        know = inject.build_knowledge(self.shipdir, self.t, "impl")
+        self.assertNotIn("CHARTER-X", know)
+        self.t["roles"]["impl"]["inject"] = ["memory", "knowledge", "charter"]
+        know = inject.build_knowledge(self.shipdir, self.t, "impl")
+        self.assertIn("CHARTER-X", know)
+        self.assertIn("艦の charter (charter.md)", know)
+        self.assertLess(know.index("艦の charter"), know.index("## 役割の memory"))
+        text, _ = self.build()
+        self.assertNotIn("CHARTER-X", text)   # hook B's, not the records hook's
+        # charter alone is enough to make hook B speak
+        self.t["roles"]["impl"]["inject"] = ["charter"]
+        self.assertIn("CHARTER-X", inject.build_knowledge(self.shipdir, self.t, "impl"))
+
+    def test_charter_missing_or_empty_is_one_line(self):
+        self.t["roles"]["impl"]["inject"] = ["charter"]
+        (self.shipdir / "charter.md").unlink()
+        know = inject.build_knowledge(self.shipdir, self.t, "impl")
+        self.assertIn("(charter なし)", know)
+        (self.shipdir / "charter.md").write_text("  \n", encoding="utf-8")
+        self.assertIn("(charter なし)", inject.build_knowledge(self.shipdir, self.t, "impl"))
+
+    def test_charter_capped_and_points_at_the_file(self):
+        (self.shipdir / "charter.md").write_text("\n".join(f"c{i}" for i in range(100)), encoding="utf-8")
+        self.t["roles"]["impl"]["inject"] = ["charter"]
+        know = inject.build_knowledge(self.shipdir, self.t, "impl")
+        self.assertIn("c59", know)
+        self.assertNotIn("c60\n", know)
+        self.assertIn(str(self.shipdir / "charter.md"), know)
+        self.t["inject"] = {"limits": {"charter": (3, 100)}}
+        know = inject.build_knowledge(self.shipdir, self.t, "impl")
+        self.assertNotIn("c3\n", know)
+        self.assertIn("上限で切った", know)
+
+    def test_charter_is_a_valid_part_and_limit_in_team_yaml(self):
+        from yamato import team as team_mod
+        self.assertIn("charter", team_mod.INJECT_PARTS)
+        self.assertNotIn("charter", team_mod.DEFAULT_INJECT_PARTS)
+        self.assertIn("charter", team_mod.INJECT_LIMIT_KEYS)
+
     def test_fleet_part_is_opt_in_and_lists_every_ship(self):
         """T-022: the `fleet` part (admiral's own; opt-in like `board`) is a one-line-per-ship
         summary, the same shape as `yamato ships` (admiral.ship_line), not just this ship."""
