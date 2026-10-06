@@ -18,19 +18,10 @@
     "template": {
       "description": "この艦の写し (roles/*.md・team.yaml) の元のひな形と yamato の版。ship create が書き、ship upgrade が新しい版に書き換える。実行時には読まない。",
       "type": "object",
-      "required": [
-        "name",
-        "version"
-      ],
+      "required": ["name", "version"],
       "properties": {
-        "name": {
-          "description": "ひな形の名前 (dev / research ...)。",
-          "type": "string"
-        },
-        "version": {
-          "description": "写しを作った (または上げた) yamato の版。例 1.1.0。",
-          "type": "string"
-        }
+        "name": {"description": "ひな形の名前 (dev / research ...)。", "type": "string"},
+        "version": {"description": "写しを作った (または上げた) yamato の版。例 1.1.0。", "type": "string"}
       },
       "additionalProperties": false
     },
@@ -497,18 +488,11 @@
       "description": "席に読ませる Claude Code の設定の出どころ (--setting-sources に渡す)。既定は [project, local]。user を足すと ~/.claude の CLAUDE.md だけでなく hooks・plugin・env・remoteControlAtStartup なども席に入る (design §4.1)。",
       "type": "array",
       "items": {
-        "enum": [
-          "user",
-          "project",
-          "local"
-        ]
+        "enum": ["user", "project", "local"]
       },
       "minItems": 1,
       "uniqueItems": true,
-      "default": [
-        "project",
-        "local"
-      ]
+      "default": ["project", "local"]
     },
     "settings": {
       "type": "object",
