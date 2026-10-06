@@ -114,6 +114,15 @@ class TeamSchemaTest(ShipTestCase):
         self.assertEqual(self.keys("report"), {"daily"})
         self.assertEqual(self.keys("board"), {"archive_on_done", "kinds", "fields", "columns"})
 
+    def test_inject_limits_shape_matches_team_py(self):
+        """T-073: the pair keys are [lines, chars] only in the schema too (no bare int)."""
+        props = find(self.schema, "inject", "limits")["properties"]
+        for k in team.INJECT_LIMIT_KEYS:
+            good, bad = ([10, 500], 500) if k in team.INJECT_PAIR_LIMIT_KEYS else (10, [10, 500])
+            with self.subTest(key=k):
+                self.assertIsNone(check(good, props[k]))
+                self.assertIsNotNone(check(bad, props[k]))
+
     def test_the_values_match_team_py(self):
         s = self.schema
         self.assertEqual(find(s, "roles", "*")["properties"]["shift"]["enum"], list(team.SHIFTS))

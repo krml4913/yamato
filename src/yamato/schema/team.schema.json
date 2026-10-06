@@ -542,38 +542,24 @@
           "description": "注入の上限。超えた分は切って「全文は <パス> を Read せよ」と書く。memory と knowledge は memory.limits で切る。",
           "properties": {
             "handoff": {
-              "description": "上限。正の整数か [行数, 文字数]。",
-              "anyOf": [
-                {
-                  "type": "integer",
-                  "minimum": 1
-                },
-                {
-                  "type": "array",
-                  "minItems": 2,
-                  "maxItems": 2,
-                  "items": {
-                    "type": "integer"
-                  }
-                }
-              ]
+              "description": "上限。[行数, 文字数] (正の整数 2 個。整数 1 個は不可)。",
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "integer",
+                "minimum": 1
+              }
             },
             "log_tail": {
-              "description": "上限。正の整数か [行数, 文字数]。",
-              "anyOf": [
-                {
-                  "type": "integer",
-                  "minimum": 1
-                },
-                {
-                  "type": "array",
-                  "minItems": 2,
-                  "maxItems": 2,
-                  "items": {
-                    "type": "integer"
-                  }
-                }
-              ]
+              "description": "上限。[行数, 文字数] (正の整数 2 個。整数 1 個は不可)。",
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "integer",
+                "minimum": 1
+              }
             },
             "mine_items": {
               "description": "担当の項目数の上限。",
@@ -596,38 +582,24 @@
               "minimum": 1
             },
             "last_report": {
-              "description": "上限。正の整数か [行数, 文字数]。",
-              "anyOf": [
-                {
-                  "type": "integer",
-                  "minimum": 1
-                },
-                {
-                  "type": "array",
-                  "minItems": 2,
-                  "maxItems": 2,
-                  "items": {
-                    "type": "integer"
-                  }
-                }
-              ]
+              "description": "上限。[行数, 文字数] (正の整数 2 個。整数 1 個は不可)。",
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "integer",
+                "minimum": 1
+              }
             },
             "charter": {
-              "description": "charter の部品の上限。正の整数か [行数, 文字数]。省略時 [60, 3000]。",
-              "anyOf": [
-                {
-                  "type": "integer",
-                  "minimum": 1
-                },
-                {
-                  "type": "array",
-                  "minItems": 2,
-                  "maxItems": 2,
-                  "items": {
-                    "type": "integer"
-                  }
-                }
-              ]
+              "description": "charter の部品の上限。[行数, 文字数] (正の整数 2 個。整数 1 個は不可)。省略時 [60, 3000]。",
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "integer",
+                "minimum": 1
+              }
             },
             "board_items": {
               "description": "board の部品の項目数の上限。",

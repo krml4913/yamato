@@ -434,7 +434,7 @@ SessionStart hook が、次を注入する。**何を読ませるかは設定** 
 
 - 役割のプロンプトは注入ではなく、`--agents` の JSON で渡す (§4.1)
 - 注入は **SessionStart hook 2 本**に分ける。記録の hook (ヘッダ・`handoff`・`log_tail`・`mine`・`inbox` と注記) と、知見の hook (`charter`・`memory`・`knowledge`)。Claude Code は hook 1 本の出力を 10,000 文字まで受け取り、超えると本文の代わりに約 2KB のプレビューを渡す (検証 C Q1。判定は hook ごとで、文字数で数える)
-- 上限は `inject.limits` で持つ (ひな形の値: handoff 40 行 / 2000 文字、担当 15 件、未読 10 通、**hook 1 本の全体 9500 文字**)。memory と knowledge は `memory.limits` (ひな形: memory 80 行 / 4000 文字、knowledge 120 行 / 5000 文字。`memory apply` が反映を拒否する上限と同じ) で切る。切ったところには「全文は `<path>` を Read せよ」と付ける (hook の全体で切ったときは、全文を `.runtime/` に書いてそのパスを付ける)。全体の上限は安全網として残し、個々の中身は設定に置く
+- 上限は `inject.limits` で持つ。`handoff`・`log_tail`・`last_report`・`charter` は `[行数, 文字数]` (正の整数 2 個。整数 1 個は検査で拒否)、それ以外は正の整数 (T-073)。(ひな形の値: handoff 40 行 / 2000 文字、担当 15 件、未読 10 通、**hook 1 本の全体 9500 文字**)。memory と knowledge は `memory.limits` (ひな形: memory 80 行 / 4000 文字、knowledge 120 行 / 5000 文字。`memory apply` が反映を拒否する上限と同じ) で切る。切ったところには「全文は `<path>` を Read せよ」と付ける (hook の全体で切ったときは、全文を `.runtime/` に書いてそのパスを付ける)。全体の上限は安全網として残し、個々の中身は設定に置く
 - captain は、これに加えてカンバン風の `board` と日報を読む (P1、設定の `inject`。日報は前回の「一言」「判断待ち」「明日」の 3 節だけ。design-p1 §2.3、`board` は T-030・§6.2)。ほか P1 で、孤児になった項目の一覧や棚卸し案の有無も注入に載る (design-p1 §5.6、§3.4)
 
 ### 8.3 シフトの終わり
