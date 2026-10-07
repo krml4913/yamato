@@ -8,7 +8,6 @@
 name: {{name}}
 hub: admiral                 # captain に相当する、この艦でただ 1 つの役割
 workspace: .                 # 艦フォルダ自身 (repo なし。自動 worktree は作らない)
-charter: charter.md
 
 talk_default: admiral        # yamato talk _admiral で席を省いたときに attach する席
 
@@ -21,7 +20,7 @@ roles:
     remote_control: true      # スマホから話せる (design-p1 §1.5)。owner はこの席にだけ Remote Control でつながる
     # 全艦の要約 (fleet, T-022) は admiral 自身の記録・直近の日報に加えて注入する (T-036)。
     # 上限は下の inject.limits.fleet_items (既定 20) のまま
-    inject: [handoff, log_tail, last_report, inbox, memory, knowledge, fleet, charter]
+    inject: [handoff, log_tail, last_report, inbox, fleet, file:charter, memory, knowledge]
     description: owner の窓口。艦を作り・構成 (team.yaml・役割プロンプト・charter) を変え・出撃/延長/帰投/緊急停止させ、
       全艦を一望し、owner の判断を代筆する。艦の中の仕事 (task の割り振り・実装・レビュー・merge) には踏み込まない (D-011)
     rotate:                   # 常駐で時間の上限がないので、時間 (hours) では入れ替えない。context / compaction / idle / new_day は残す
@@ -103,6 +102,8 @@ memory:
     knowledge_chars: 5000
 
 inject:
+  files:
+    charter: charter.md      # 名前: パス (相対は艦フォルダ基点)。inject のリストでは file:charter で参照する (T-075)
   limits:
     handoff: [40, 2000]
     log_tail: [20, 1200]
@@ -110,7 +111,8 @@ inject:
     inbox_chars: 400
     total_chars: 9500
     last_report: [30, 1500]
-    charter: [60, 3000]
+    files:
+      default: [60, 3000]
 
 notify:
   via: []

@@ -18,10 +18,19 @@
     "template": {
       "description": "この艦の写し (roles/*.md・team.yaml) の元のひな形と yamato の版。ship create が書き、ship upgrade が新しい版に書き換える。実行時には読まない。",
       "type": "object",
-      "required": ["name", "version"],
+      "required": [
+        "name",
+        "version"
+      ],
       "properties": {
-        "name": {"description": "ひな形の名前 (dev / research ...)。", "type": "string"},
-        "version": {"description": "写しを作った (または上げた) yamato の版。例 1.1.0。", "type": "string"}
+        "name": {
+          "description": "ひな形の名前 (dev / research ...)。",
+          "type": "string"
+        },
+        "version": {
+          "description": "写しを作った (または上げた) yamato の版。例 1.1.0。",
+          "type": "string"
+        }
       },
       "additionalProperties": false
     },
@@ -45,8 +54,9 @@
       ]
     },
     "charter": {
-      "description": "何のための艦かを書いたファイル (人間が書く)。省略時 charter.md。",
-      "type": "string"
+      "description": "(古い書き方。次の版で消える) inject.files.charter に書く。今は inject.files.charter が無ければこの値で補う。",
+      "type": "string",
+      "deprecated": true
     },
     "talk_default": {
       "description": "yamato talk で席を省いたときに attach する席 (省略時は hub)。",
@@ -181,21 +191,28 @@
             "type": "string"
           },
           "inject": {
-            "description": "この役割だけの注入の部品 (トップの inject.parts を上書き)。SessionStart で席に読ませるもの (design §8.2)。handoff 引き継ぎ / log_tail 作業ログの末尾 / mine 自分の担当 / inbox 未読 / memory 役割の memory / knowledge 艦の knowledge.md / last_report 前回の日報の抜粋 / orphans 担当が落ちて active のまま残った項目 (captain 用) / board 艦全体の進み具合 / fleet 全艦の要約 (admiral 用) / charter 艦の charter.md (captain と planner 用。opt-in)。",
+            "description": "この役割だけの注入の部品 (トップの inject.parts を上書き)。SessionStart で席に読ませるもの (design §8.2)。handoff 引き継ぎ / log_tail 作業ログの末尾 / mine 自分の担当 / inbox 未読 / memory 役割の memory / knowledge 艦の knowledge.md / last_report 前回の日報の抜粋 / orphans 担当が落ちて active のまま残った項目 (captain 用) / board 艦全体の進み具合 / fleet 全艦の要約 (admiral 用) / file:<名前> inject.files で名前をつけたファイル (例 file:charter。opt-in)。",
             "type": "array",
             "items": {
-              "enum": [
-                "handoff",
-                "log_tail",
-                "mine",
-                "inbox",
-                "memory",
-                "knowledge",
-                "last_report",
-                "orphans",
-                "board",
-                "fleet",
-                "charter"
+              "anyOf": [
+                {
+                  "enum": [
+                    "handoff",
+                    "log_tail",
+                    "mine",
+                    "inbox",
+                    "memory",
+                    "knowledge",
+                    "last_report",
+                    "orphans",
+                    "board",
+                    "fleet"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "pattern": "^file:.+$"
+                }
               ]
             }
           },
@@ -488,11 +505,18 @@
       "description": "席に読ませる Claude Code の設定の出どころ (--setting-sources に渡す)。既定は [project, local]。user を足すと ~/.claude の CLAUDE.md だけでなく hooks・plugin・env・remoteControlAtStartup なども席に入る (design §4.1)。",
       "type": "array",
       "items": {
-        "enum": ["user", "project", "local"]
+        "enum": [
+          "user",
+          "project",
+          "local"
+        ]
       },
       "minItems": 1,
       "uniqueItems": true,
-      "default": ["project", "local"]
+      "default": [
+        "project",
+        "local"
+      ]
     },
     "settings": {
       "type": "object",
@@ -518,22 +542,37 @@
       "type": "object",
       "description": "SessionStart で席に読ませるもの (design §8.2)。",
       "properties": {
+        "files": {
+          "type": "object",
+          "description": "注入に足す任意のファイル。名前 → パス。相対は艦フォルダ基点、~ と絶対パスも可、repo の中は @<workspace の呼び名>/<パス>。inject のリストでは file:<名前> で参照する (例 file:charter)。名前 default は予約語。",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
         "parts": {
-          "description": "注入する部品 (役割ごとに roles.<role>.inject で上書き)。SessionStart で席に読ませるもの (design §8.2)。handoff 引き継ぎ / log_tail 作業ログの末尾 / mine 自分の担当 / inbox 未読 / memory 役割の memory / knowledge 艦の knowledge.md / last_report 前回の日報の抜粋 / orphans 担当が落ちて active のまま残った項目 (captain 用) / board 艦全体の進み具合 / fleet 全艦の要約 (admiral 用) / charter 艦の charter.md (captain と planner 用。opt-in)。",
+          "description": "注入する部品 (役割ごとに roles.<role>.inject で上書き)。SessionStart で席に読ませるもの (design §8.2)。handoff 引き継ぎ / log_tail 作業ログの末尾 / mine 自分の担当 / inbox 未読 / memory 役割の memory / knowledge 艦の knowledge.md / last_report 前回の日報の抜粋 / orphans 担当が落ちて active のまま残った項目 (captain 用) / board 艦全体の進み具合 / fleet 全艦の要約 (admiral 用) / file:<名前> inject.files で名前をつけたファイル (例 file:charter。opt-in)。",
           "type": "array",
           "items": {
-            "enum": [
-              "handoff",
-              "log_tail",
-              "mine",
-              "inbox",
-              "memory",
-              "knowledge",
-              "last_report",
-              "orphans",
-              "board",
-              "fleet",
-              "charter"
+            "anyOf": [
+              {
+                "enum": [
+                  "handoff",
+                  "log_tail",
+                  "mine",
+                  "inbox",
+                  "memory",
+                  "knowledge",
+                  "last_report",
+                  "orphans",
+                  "board",
+                  "fleet"
+                ]
+              },
+              {
+                "type": "string",
+                "pattern": "^file:.+$"
+              }
             ]
           }
         },
@@ -591,16 +630,6 @@
                 "minimum": 1
               }
             },
-            "charter": {
-              "description": "charter の部品の上限。[行数, 文字数] (正の整数 2 個。整数 1 個は不可)。省略時 [60, 3000]。",
-              "type": "array",
-              "minItems": 2,
-              "maxItems": 2,
-              "items": {
-                "type": "integer",
-                "minimum": 1
-              }
-            },
             "board_items": {
               "description": "board の部品の項目数の上限。",
               "type": "integer",
@@ -610,6 +639,32 @@
               "description": "fleet の部品の項目数の上限。",
               "type": "integer",
               "minimum": 1
+            },
+            "files": {
+              "type": "object",
+              "description": "inject.files の各ファイルの上限。名前ごと、無ければ default、無ければ [60, 3000]。超えたら切って「全文は <パス> を Read せよ」と書く。",
+              "properties": {
+                "default": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "description": "名前ごとの上限が無いファイルの上限。[行数, 文字数]。省略時 [60, 3000]。"
+                }
+              },
+              "additionalProperties": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "description": "このファイルの上限。[行数, 文字数] (正の整数 2 個)。名前は inject.files にあるもの。"
+              }
             }
           },
           "additionalProperties": false

@@ -18,18 +18,21 @@ TOP_KEYS = {"name", "hub", "workspace", "charter", "roles", "time_limit", "grace
             "watch", "talk_default", "up_seats", "profiles", "memory", "last_call", "context_windows", "template"}
 # what SessionStart can inject (design §8.2); the header is always there
 INJECT_PARTS = ("handoff", "log_tail", "mine", "inbox", "memory", "knowledge", "last_report", "orphans", "board",
-                "fleet", "charter")
+                "fleet")
+# plus `file:<名前>` for each name under `inject.files` (T-075, D-089): any file the ship wants read at start
+FILE_PREFIX = "file:"
+FILES_RESERVED = "default"   # `inject.limits.files.default` is the limit for a file without its own
 # what a ship that names no parts gets: the captain's report excerpt (design-p1 §2.3) is opt-in,
 # the orphaned items (§5.6) go to the captain only, the board overview (T-030) is opt-in too, and
-# the fleet-wide summary (T-022, admiral's `ships` 相当) is opt-in since only admiral wants it,
-# and so is the charter (T-072, D-086: captain と planner だけに読ませる)
+# the fleet-wide summary (T-022, admiral's `ships` 相当) is opt-in since only admiral wants it.
+# `file:<名前>` parts (the charter among them, T-072 → T-075) are never default
 DEFAULT_INJECT_PARTS = tuple(p for p in INJECT_PARTS
-                             if p not in ("last_report", "orphans", "board", "fleet", "charter"))
+                             if p not in ("last_report", "orphans", "board", "fleet"))
 # the role's memory and knowledge.md are cut at `memory.limits` (the limits `memory apply` keeps to)
 INJECT_LIMIT_KEYS = ("handoff", "log_tail", "mine_items", "inbox_messages", "inbox_chars", "total_chars",
-                     "last_report", "board_items", "fleet_items", "charter")
+                     "last_report", "board_items", "fleet_items")
 # [lines, chars] limits (two positive ints); the others are one positive int (T-073)
-INJECT_PAIR_LIMIT_KEYS = ("handoff", "log_tail", "last_report", "charter")
+INJECT_PAIR_LIMIT_KEYS = ("handoff", "log_tail", "last_report")
 RESERVED_SEATS = ("owner",)   # the human's inbox; not a seat
 SEAT_STOP_DEFAULTS = {"require_handoff": True, "require_delivery": True}
 ROLE_KEYS = {"model", "shift", "count", "description", "inject", "max_duration", "max_budget_usd", "report_to",
@@ -121,6 +124,7 @@ def validate(data: dict, shipdir: Path) -> dict:
     name = check_name("艦", str(data.get("name") or ""))
 
     warnings: list[str] = []
+    legacy: dict = {}   # the old `charter` spellings met on the way (T-075: read for one version, with a warning)
     # `0` must not silently become the default (review N4)
     raw_time_limit = data.get("time_limit")
     if isinstance(raw_time_limit, str) and raw_time_limit.strip().lower() == NO_TIME_LIMIT:
@@ -162,9 +166,7 @@ def validate(data: dict, shipdir: Path) -> dict:
         count = spec.get("count", 1)
         if not isinstance(count, int) or count < 1:
             raise YamatoError(f"team.yaml: roles.{role}.count は 1 以上の整数 (今: {count!r})")
-        parts = spec.get("inject")
-        if parts is not None:
-            _check_parts(parts, f"roles.{role}.inject")
+        parts = _legacy_parts(spec.get("inject"), f"roles.{role}.inject", warnings, legacy)
         max_duration = spec.get("max_duration")
         if max_duration is not None:
             max_duration = parse_duration(max_duration)
@@ -245,16 +247,28 @@ def validate(data: dict, shipdir: Path) -> dict:
         raise YamatoError("team.yaml: env_unset は環境変数名のリスト")
 
     inject = data.get("inject") or {}
-    if not isinstance(inject, dict) or set(inject) - {"parts", "limits"}:
-        raise YamatoError("team.yaml: inject は {parts: [...], limits: {...}}")
-    if inject.get("parts") is not None:
-        _check_parts(inject["parts"], "inject.parts")
+    if not isinstance(inject, dict) or set(inject) - {"parts", "limits", "files"}:
+        raise YamatoError("team.yaml: inject は {files: {...}, parts: [...], limits: {...}}")
+    inject_parts_in = _legacy_parts(inject.get("parts"), "inject.parts", warnings, legacy)
     limits = inject.get("limits") or {}
-    if isinstance(limits, dict) and set(limits) & {"memory", "knowledge"}:
+    if not isinstance(limits, dict):
+        raise YamatoError(f"team.yaml: inject.limits の項目は {', '.join(INJECT_LIMIT_KEYS)}, files")
+    if set(limits) & {"memory", "knowledge"}:
         raise YamatoError("team.yaml: inject.limits の memory / knowledge は memory.limits に一本化した "
                           "(memory_lines / memory_chars / knowledge_lines / knowledge_chars。memory apply の上限と同じ)")
-    if not isinstance(limits, dict) or set(limits) - set(INJECT_LIMIT_KEYS):
-        raise YamatoError(f"team.yaml: inject.limits の項目は {', '.join(INJECT_LIMIT_KEYS)}")
+    limits = dict(limits)
+    if "charter" in limits:   # old spelling (T-072): becomes limits.files.charter
+        legacy["limit"] = limits.pop("charter")
+        warnings.append("team.yaml: inject.limits.charter は inject.limits.files.charter に書き換えろ (読み替えて動かす。次の版で消える)")
+    if set(limits) - {*INJECT_LIMIT_KEYS, "files"}:
+        raise YamatoError(f"team.yaml: inject.limits の項目は {', '.join(INJECT_LIMIT_KEYS)}, files")
+    files, files_limits = _inject_files(inject.get("files"), limits.pop("files", None), data.get("charter"),
+                                        legacy, workspaces, shipdir, warnings)
+    if inject_parts_in is not None:
+        _check_parts(inject_parts_in, "inject.parts", files)
+    for role, spec in roles.items():
+        if spec["inject"] is not None:
+            _check_parts(spec["inject"], f"roles.{role}.inject", files)
 
     notify = data.get("notify") or {}
     if not isinstance(notify, dict) or not isinstance(notify.get("via") or [], list):
@@ -322,7 +336,6 @@ def validate(data: dict, shipdir: Path) -> dict:
         "hub": hub,
         "workspace": workspaces[0]["path"],   # the seat cwd = the first repo
         "workspaces": workspaces,             # [{name: basename, path}]; one entry for a string workspace
-        "charter": str(data.get("charter") or "charter.md"),
         "time_limit": time_limit,
         "grace": parse_duration(DEFAULT_GRACE if data.get("grace") is None else data["grace"]),
         "deny": deny,
@@ -335,7 +348,8 @@ def validate(data: dict, shipdir: Path) -> dict:
         "board": {"kinds": [str(k) for k in kinds], "columns": columns, "fields": [str(f) for f in fields],
                   "archive_on_done": archive_on_done},
         "env_unset": env_unset,
-        "inject": {"parts": inject.get("parts"), "limits": _limits(limits)},
+        "inject": {"parts": inject_parts_in, "limits": {**_limits(limits), **({"files": files_limits} if files_limits else {})},
+                   "files": files},
         "notify": {"via": [str(v) for v in notify.get("via") or []], "command": notify.get("command"),
                    "slack": {"webhook_env": slack.get("webhook_env")},
                    "decisions": notify_decisions},
@@ -586,18 +600,99 @@ def _decisions(table, seats: dict) -> dict:
     return out
 
 
-def _check_parts(parts, where: str) -> None:
-    if not isinstance(parts, list) or set(parts) - set(INJECT_PARTS):
-        raise YamatoError(f"team.yaml: {where} は {', '.join(INJECT_PARTS)} から選んだリスト")
+def _legacy_parts(parts, where: str, warnings: list[str], legacy: dict):
+    """The part `charter` (T-072) is `file:charter` now (T-075, D-089). Read as that for one version,
+    with a warning; the compatibility goes in the next version."""
+    if not isinstance(parts, list) or "charter" not in parts:
+        return parts
+    warnings.append(f"team.yaml: {where} の charter は file:charter に書き換えろ (読み替えて動かす。次の版で消える)")
+    legacy["part"] = True
+    return [FILE_PREFIX + "charter" if p == "charter" else p for p in parts]
+
+
+def _check_parts(parts, where: str, files: dict) -> None:
+    if not isinstance(parts, list) or not all(isinstance(p, str) for p in parts):
+        raise YamatoError(f"team.yaml: {where} は {', '.join(INJECT_PARTS)}, file:<名前> から選んだリスト")
+    for p in parts:
+        if p.startswith(FILE_PREFIX):
+            name = p[len(FILE_PREFIX):]
+            if not name:
+                raise YamatoError(f"team.yaml: {where} の {p!r}: file: の後に inject.files の名前を書く")
+            if name not in files:
+                raise YamatoError(f"team.yaml: {where} の {p!r}: inject.files に {name!r} がない "
+                                  f"(ある: {', '.join(files) or 'なし'})")
+        elif p not in INJECT_PARTS:
+            raise YamatoError(f"team.yaml: {where} は {', '.join(INJECT_PARTS)}, file:<名前> から選んだリスト (知らない部品: {p})")
+
+
+def _inject_files(raw, raw_limits, top_charter, legacy: dict, workspaces: list, shipdir: Path,
+                  warnings: list[str]) -> tuple[dict, dict]:
+    """``inject.files`` (T-075, D-089): name -> path, and ``inject.limits.files`` (name or ``default`` -> [lines, chars]).
+
+    Paths: relative = from the ship folder, ``~`` and absolute as is, ``@<workspace 名>/<path>`` inside a repo.
+    Returns ({name: {"path": as written, "abs": resolved}}, {name: (lines, chars)}).
+    The old `charter` spellings are mapped here: top-level ``charter:`` / the part / the limit."""
+    raw = {} if raw is None else raw
+    if not isinstance(raw, dict):
+        raise YamatoError("team.yaml: inject.files は {名前: パス} の mapping")
+    paths: dict = {}
+    for name, path in raw.items():
+        if not isinstance(name, str) or not name.strip() or ":" in name or name != name.strip():
+            raise YamatoError(f"team.yaml: inject.files の名前は空でない文字列 (: を含まない) (今: {name!r})")
+        if name == FILES_RESERVED:
+            raise YamatoError(f"team.yaml: inject.files の名前 {FILES_RESERVED!r} は予約語 (limits.files.default の名前)")
+        if not isinstance(path, str) or not path.strip():
+            raise YamatoError(f"team.yaml: inject.files.{name} はパスの文字列 (今: {path!r})")
+        paths[name] = path
+    if top_charter is not None:
+        warnings.append("team.yaml: トップの charter: は inject.files.charter に書き換えろ (読み替えて動かす。次の版で消える)")
+    if (legacy or top_charter) and "charter" not in paths:
+        paths["charter"] = str(top_charter or "charter.md")
+    files = {}
+    for name, path in paths.items():
+        resolved = _file_path(name, path, workspaces, shipdir)
+        files[name] = {"path": path, "abs": str(resolved)}
+        if not resolved.is_file():
+            warnings.append(f"inject.files.{name}: {resolved} がない (注入では「(なし)」の 1 行になる)")
+    limits = {} if raw_limits is None else raw_limits
+    if not isinstance(limits, dict):
+        raise YamatoError("team.yaml: inject.limits.files は {名前: [行数, 文字数]} (default も可)")
+    if "limit" in legacy:
+        limits = {"charter": legacy["limit"], **limits}   # an explicit limits.files.charter wins
+    out = {}
+    for name, v in limits.items():
+        if name != FILES_RESERVED and name not in files:
+            raise YamatoError(f"team.yaml: inject.limits.files.{name} は inject.files にない名前 "
+                              f"(ある: {', '.join(files) or 'なし'}。default も可)")
+        out[name] = _pair(v, f"inject.limits.files.{name}")
+    return files, out
+
+
+def _file_path(name: str, raw: str, workspaces: list, shipdir: Path) -> Path:
+    if raw.startswith("@"):
+        ws_name, _, rest = raw[1:].partition("/")
+        found = next((w for w in workspaces if w["name"] == ws_name), None)
+        if found is None:
+            raise YamatoError(f"team.yaml: inject.files.{name}={raw!r}: workspace {ws_name!r} がない "
+                              f"(ある: {', '.join(w['name'] for w in workspaces)})")
+        if not rest.strip("/"):
+            raise YamatoError(f"team.yaml: inject.files.{name}={raw!r}: @{ws_name}/ の後にパスを書く")
+        return Path(found["path"]) / rest
+    p = Path(raw).expanduser()
+    return p if p.is_absolute() else Path(shipdir) / p
+
+
+def _pair(v, where: str) -> tuple:
+    if not (isinstance(v, list) and len(v) == 2 and all(_pos_int(x) for x in v)):
+        raise YamatoError(f"team.yaml: {where} は [行数, 文字数] (正の整数 2 個)。整数 1 個は不可")
+    return tuple(v)
 
 
 def _limits(limits: dict) -> dict:
     out = {}
     for k, v in limits.items():
         if k in INJECT_PAIR_LIMIT_KEYS:
-            if not (isinstance(v, list) and len(v) == 2 and all(_pos_int(x) for x in v)):
-                raise YamatoError(f"team.yaml: inject.limits.{k} は [行数, 文字数] (正の整数 2 個)。整数 1 個は不可")
-            out[k] = tuple(v)
+            out[k] = _pair(v, f"inject.limits.{k}")
         elif _pos_int(v):
             out[k] = v
         else:

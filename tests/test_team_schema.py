@@ -101,8 +101,8 @@ class TeamSchemaTest(ShipTestCase):
         self.assertEqual(self.keys("roles", "*", "rotate"), set(team.ROTATE_KEYS))
         self.assertEqual(self.keys("profiles", "*"), team.PROFILE_KEYS)
         self.assertEqual(self.keys("git"), team.GIT_KEYS | team.GIT_REMOVED_KEYS)
-        self.assertEqual(self.keys("inject"), {"parts", "limits"})
-        self.assertEqual(self.keys("inject", "limits"), set(team.INJECT_LIMIT_KEYS))
+        self.assertEqual(self.keys("inject"), {"parts", "limits", "files"})
+        self.assertEqual(self.keys("inject", "limits"), {*team.INJECT_LIMIT_KEYS, "files"})
         self.assertEqual(self.keys("memory"), memory.MEMORY_KEYS)
         self.assertEqual(self.keys("memory", "limits"), set(memory.LIMIT_KEYS))
         self.assertEqual(self.keys("seat_stop"), set(team.SEAT_STOP_DEFAULTS))
@@ -122,11 +122,26 @@ class TeamSchemaTest(ShipTestCase):
             with self.subTest(key=k):
                 self.assertIsNone(check(good, props[k]))
                 self.assertIsNotNone(check(bad, props[k]))
+        # T-075: limits.files is {名前 or default: [行数, 文字数]}
+        self.assertIsNone(check({"default": [60, 3000], "design": [80, 4000]}, props["files"]))
+        for bad in ({"design": 500}, {"design": [1, "x"]}, {"default": "x"}):
+            self.assertIsNotNone(check(bad, props["files"]), bad)
+
+    def test_inject_parts_accept_file_references(self):
+        """T-075: the lists take the fixed parts and `file:<名前>`; inject.files is {名前: パス}."""
+        for node in (find(self.schema, "inject")["properties"]["parts"],
+                     find(self.schema, "roles", "*")["properties"]["inject"]):
+            self.assertIsNone(check(["handoff", "file:charter"], node))
+            self.assertIsNotNone(check(["charter"], node))
+            self.assertIsNotNone(check(["file:"], node))
+        files = find(self.schema, "inject")["properties"]["files"]
+        self.assertIsNone(check({"charter": "charter.md"}, files))
+        self.assertIsNotNone(check({"charter": 1}, files))
 
     def test_the_values_match_team_py(self):
         s = self.schema
         self.assertEqual(find(s, "roles", "*")["properties"]["shift"]["enum"], list(team.SHIFTS))
-        inject_item = find(s, "inject")["properties"]["parts"]["items"]["enum"]
+        inject_item = find(s, "inject")["properties"]["parts"]["items"]["anyOf"][0]["enum"]
         self.assertEqual(inject_item, list(team.INJECT_PARTS))
         self.assertEqual(find(s, "git")["properties"]["strategy"]["enum"], list(team.GIT_STRATEGIES))
         self.assertEqual(find(s, "git")["properties"]["merge_requires"]["items"]["enum"], list(team.GIT_REQUIRES))

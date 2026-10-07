@@ -108,7 +108,7 @@ class TeamTest(unittest.TestCase):
     def test_inject_limits_shape_per_key(self):
         """T-073: [lines, chars] keys refuse a bare int (it used to crash `cap_text(*limit)` at run time);
         the single-int keys refuse a list. Both fail at validate with the key named."""
-        for k in ("handoff", "log_tail", "last_report", "charter"):
+        for k in ("handoff", "log_tail", "last_report"):
             for bad in (500, [10], [10, 500, 1], [0, 500], [10, "x"], [True, 500], "big"):
                 with self.subTest(key=k, bad=bad), self.assertRaisesRegex(YamatoError, f"inject.limits.{k} は"):
                     validate(base(inject={"limits": {k: bad}}), Path("/ship"))
@@ -118,6 +118,67 @@ class TeamTest(unittest.TestCase):
             for bad in ([10, 500], 0, True):
                 with self.subTest(key=k, bad=bad), self.assertRaisesRegex(YamatoError, f"inject.limits.{k} は"):
                     validate(base(inject={"limits": {k: bad}}), Path("/ship"))
+
+    def test_inject_files_resolve_and_validate(self):
+        """T-075 (D-089): `inject.files` names a path, `file:<名前>` refers to it."""
+        ws = [{"name": "tmp", "path": "/tmp"}]
+        t = validate(base(workspace="/tmp", inject={
+            "files": {"charter": "charter.md", "home": "~/x.md", "abs": "/etc/hosts", "repo": "@tmp/docs/d.md"},
+            "limits": {"files": {"default": [5, 50], "repo": [3, 30]}},
+            "parts": ["handoff", "file:charter"]}), Path("/ship"))
+        f = t["inject"]["files"]
+        self.assertEqual(f["charter"], {"path": "charter.md", "abs": str(Path("/ship/charter.md"))})
+        self.assertEqual(f["home"]["abs"], str(Path("~/x.md").expanduser()))
+        self.assertEqual(f["abs"]["abs"], "/etc/hosts")
+        self.assertEqual(f["repo"]["abs"], str(Path("/tmp").resolve() / "docs" / "d.md"))
+        self.assertEqual(t["inject"]["limits"]["files"], {"default": (5, 50), "repo": (3, 30)})
+        self.assertTrue(any("inject.files.charter" in w and "がない" in w for w in t["warnings"]))
+        self.assertEqual(ws[0]["name"], "tmp")
+
+    def test_inject_files_refusals(self):
+        def inj(**kw):
+            return base(inject={"files": {"a": "a.md"}, **kw})
+        for bad in (
+                {"parts": ["file:"]},                          # nothing after file:
+                {"parts": ["file:nope"]},                      # not in inject.files
+                {"files": {"default": "x.md"}},                # reserved
+                {"files": {"a": 3}},                           # not a string
+                {"files": {"a": ""}},                          # empty
+                {"files": {"a": "@nowhere/x.md"}},             # no such workspace
+                {"files": {"a": "@tmp"}},                      # no path after the workspace
+                {"files": ["a.md"]},                           # not a mapping
+                {"limits": {"files": {"b": [1, 2]}}},          # not in inject.files
+                {"limits": {"files": {"a": 5}}},               # not a pair
+                {"limits": {"files": {"default": [0, 5]}}},
+                {"limits": {"files": {"a": [1, "x"]}}}):
+            with self.subTest(bad=bad), self.assertRaises(YamatoError):
+                validate(inj(**bad), Path("/ship"))
+        with self.assertRaises(YamatoError):   # a role's list too
+            validate(base(roles={"pm": {"shift": "persistent", "inject": ["file:zzz"]}}, inject={"files": {"a": "a.md"}}),
+                     Path("/ship"))
+        ok = validate(inj(parts=["file:a"]), Path("/ship"))
+        self.assertEqual(ok["inject"]["parts"], ["file:a"])
+
+    def test_old_charter_spellings_are_read_with_a_warning(self):
+        """T-075: the part `charter`, the top-level `charter:` and `limits.charter` work for one version."""
+        t = validate(base(charter="doc/c.md", inject={"parts": ["handoff", "charter"], "limits": {"charter": [7, 70]}},
+                          roles={"pm": {"shift": "persistent", "inject": ["charter", "memory"]}, "impl": {}}),
+                     Path("/ship"))
+        self.assertEqual(t["inject"]["parts"], ["handoff", "file:charter"])
+        self.assertEqual(t["roles"]["pm"]["inject"], ["file:charter", "memory"])
+        self.assertEqual(t["inject"]["files"]["charter"]["path"], "doc/c.md")   # the top-level value fills it
+        self.assertEqual(t["inject"]["limits"]["files"], {"charter": (7, 70)})
+        for what in ("inject.parts", "roles.pm.inject", "inject.limits.charter", "トップの charter:"):
+            self.assertTrue(any(what in w and "書き換えろ" in w for w in t["warnings"]), what)
+        # no top-level value: charter.md; an explicit inject.files.charter wins over the old keys
+        t = validate(base(inject={"parts": ["charter"]}), Path("/ship"))
+        self.assertEqual(t["inject"]["files"]["charter"]["path"], "charter.md")
+        t = validate(base(charter="old.md", inject={"files": {"charter": "new.md"}, "limits": {"charter": [7, 70], "files": {"charter": [9, 90]}}}),
+                     Path("/ship"))
+        self.assertEqual(t["inject"]["files"]["charter"]["path"], "new.md")
+        self.assertEqual(t["inject"]["limits"]["files"]["charter"], (9, 90))
+        with self.assertRaisesRegex(YamatoError, "inject.limits.files.charter は"):
+            validate(base(inject={"limits": {"charter": 500}}), Path("/ship"))
 
     def test_inject_fleet_part_and_limit(self):
         """T-022: `fleet` (admiral の全艦の要約) is a selectable part with its own limit key."""

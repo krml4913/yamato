@@ -21,9 +21,46 @@ v1.0.0 以降の変更のうち、**既存の艦・利用者が何かをしな�
 
 ## 未リリース
 
-### `inject.limits` の形を検査で揃えた: `handoff`・`log_tail`・`last_report`・`charter` は `[行数, 文字数]` だけ (T-073)
-- 何が変わったか: この 4 つに整数 1 個を書いても team.yaml の検査を通り、起動後の注入で `TypeError` で落ちていた。検査 (`team.py` と schema) で拒否するようにした。逆に `mine_items` など整数のキーに `[行, 文字]` の配列を書いても拒否する。`[行数, 文字数]` の値は正の整数 2 個
-- 既存の艦がやること: `inject.limits` を見て次の 3 つを直す。ひな形どおりの艦は何もしない。(a) この 4 つに整数 1 個を書いている → `[行数, 文字数]` に (例: `handoff: [40, 2000]`)。(b) この 4 つに 0 や負の値の配列 (例: `[0, 2000]`) を書いている → 正の整数に。前は検査を通っていた。(c) `mine_items`・`inbox_messages`・`inbox_chars`・`total_chars`・`board_items`・`fleet_items` に配列を書いている → 正の整数 1 個に (例: `mine_items: 15`)。前は検査を通っていた
+### `inject.limits` の形を検査で揃えた: `handoff`・`log_tail`・`last_report` は `[行数, 文字数]` だけ (T-073)
+- 何が変わったか: この 3 つに整数 1 個を書いても team.yaml の検査を通り、起動後の注入で `TypeError` で落ちていた。検査 (`team.py` と schema) で拒否するようにした。逆に `mine_items` など整数のキーに `[行, 文字]` の配列を書いても拒否する。`[行数, 文字数]` の値は正の整数 2 個
+- 既存の艦がやること: `inject.limits` を見て次の 3 つを直す。ひな形どおりの艦は何もしない。(a) この 3 つに整数 1 個を書いている → `[行数, 文字数]` に (例: `handoff: [40, 2000]`)。(b) この 3 つに 0 や負の値の配列 (例: `[0, 2000]`) を書いている → 正の整数に。前は検査を通っていた。(c) `mine_items`・`inbox_messages`・`inbox_chars`・`total_chars`・`board_items`・`fleet_items` に配列を書いている → 正の整数 1 個に (例: `mine_items: 15`)。前は検査を通っていた
+- やらないと: (a)(b)(c) のどれも、`yamato up` の検査が「inject.limits.<キー> は …」で止まる (a は前は起動後に落ちていた)
+- PR: T-073
+
+### 注入に任意のファイルを足せるようにした: `inject.files` と `file:<名前>`。部品 `charter` はこれに置き換わった (T-075, D-089。T-072, D-086 の charter を含む)
+- 何が変わったか
+  - team.yaml のトップの `inject.files` に `名前: パス` を書くと、`inject` のリスト (`inject.parts` と `roles.<role>.inject`) で `file:<名前>` と参照できる。入れた席の SessionStart の知見の hook (hook B) に、リストに書いた順で載る (`total_chars` で切られるのは末尾から)。パスは相対なら艦フォルダ基点、`~` と絶対パスも可、repo の中は `@<workspace の呼び名>/<パス>`
+  - 上限は `inject.limits.files.<名前>` (`[行数, 文字数]`)、無ければ `inject.limits.files.default`、それも無ければ `[60, 3000]`。超えたら切って全文のパスを出す。ファイルが無い・空なら `(なし: <パス>)` の 1 行 (up の warnings にも出る)。`default` は名前に使えない (予約語)
+  - 部品名 `charter`・トップの `charter:`・`inject.limits.charter` はなくなった。ひな形 (dev・research・admiral) は `inject.files.charter: charter.md` と `file:charter` に書き換えた。memory と knowledge は部品のまま
+  - hook B の並びが変わった: 前は charter → memory → knowledge の固定順、今は `inject` のリストに書いた順。ひな形は `file:charter` を `memory` の前に置く (charter が先頭)
+- 既存の艦がやること: **何もしなくても 1 版は動く**。古い書き方 (リストの `charter`・トップの `charter:`・`inject.limits.charter`) は `file:charter`・`inject.files.charter`・`inject.limits.files.charter` と読み替え、team.yaml を読むたびに warnings に「書き換えろ」と出る。inject.files に charter が無ければ `charter.md` (トップの `charter:` があればその値) で補う。この互換は**次の版で消える**。直すとき: (1) トップの `charter: <パス>` を消して `inject:` の下に `files: {charter: <パス>}` を書く (2) `roles.<role>.inject` と `inject.parts` の `charter` を `file:charter` に (hook B の先頭に載せたいなら `memory` の前) (3) `inject.limits.charter` があれば `inject.limits.files.charter` に。`yamato ship upgrade` でも取り込める。任意のファイルを足すなら `inject.files` に書いて `file:<名前>` を入れる
+- やらないと: 古い書き方のままだと警告が出る (動きは同じ)。次の版で検査が拒否する。古い yamato (v1.1.0 以前) は `file:`・`inject.files` を読めず load で落ちる。`~/dev/yamato` を pull してから team.yaml を書く
+- PR: T-072, T-075
+
+## v1.0.0 → v1.1.0` など) に改め、その上に空の「未リリース」を作り直す。
+
+## 移行手順が要る変更の種類
+- team.yaml の形・既定値 (キーの追加・改名・削除、既定値の変更)
+- 艦フォルダの記録の形式 (board・inbox・decisions・memory・events・roster・usage など)
+- コマンドの名前・引数
+- ひな形 (`roles/*.md`・team.yaml) の変更で、既存の艦の写しに反映が要るもの
+- settings・hooks・permission 規則
+- Python の下限・依存
+
+内部の修正・テストだけの変更 (既存の艦が何もしなくてよいもの) は書かなくてよい。PR の本文には「移行手順: あり / なし」を書く。
+
+## 項目の書き方
+各項目に次を書く。
+- 何が変わったか
+- 既存の艦・利用者がやること (コマンド、編集するファイル、`yamato up` のやり直しが要るか)
+- やらないと何が起きるか
+- 該当 PR
+
+## 未リリース
+
+### `inject.limits` の形を検査で揃えた: `handoff`・`log_tail`・`last_report` は `[行数, 文字数]` だけ (T-073)
+- 何が変わったか: この 3 つに整数 1 個を書いても team.yaml の検査を通り、起動後の注入で `TypeError` で落ちていた。検査 (`team.py` と schema) で拒否するようにした。逆に `mine_items` など整数のキーに `[行, 文字]` の配列を書いても拒否する。`[行数, 文字数]` の値は正の整数 2 個
+- 既存の艦がやること: `inject.limits` を見て次の 3 つを直す。ひな形どおりの艦は何もしない。(a) この 3 つに整数 1 個を書いている → `[行数, 文字数]` に (例: `handoff: [40, 2000]`)。(b) この 3 つに 0 や負の値の配列 (例: `[0, 2000]`) を書いている → 正の整数に。前は検査を通っていた。(c) `mine_items`・`inbox_messages`・`inbox_chars`・`total_chars`・`board_items`・`fleet_items` に配列を書いている → 正の整数 1 個に (例: `mine_items: 15`)。前は検査を通っていた
 - やらないと: (a)(b)(c) のどれも、`yamato up` の検査が「inject.limits.<キー> は …」で止まる (a は前は起動後に落ちていた)
 - PR: T-073
 

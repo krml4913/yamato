@@ -13,7 +13,7 @@
 
 - **起動レシピの注記** (§4.1): 起動側の環境変数は bg の席に届かない (Q2。席の環境は daemon とユーザー設定の `env` から来る)。消す手段は settings の `env` に空で書くことで、e2e-p1 の D (#24) で対応済み。Remote Control に繋がった席は attach なしでも 1 時間で止まらない (Q3)。ひな形は captain 以外 `remoteControlAtStartup: false`
 - **起動の確かめ** (§4.1): `claude --bg` は worker が起動前に落ちても exit 0。起動のあとに `claude agents --json` で `state == failed`・pid なしを見て、失敗として扱う (Q5)
-- **注入の上限** (§8.2): Claude Code は SessionStart hook 1 本あたり 10,000 文字まで受け取る (Q1)。注入を記録と知見 (memory・knowledge) の hook 2 本に分け、それぞれ 9,500 文字で切る。memory と knowledge は `memory.limits` (`memory apply` の上限と同じ) で切る
+- **注入の上限** (§8.2): Claude Code は SessionStart hook 1 本あたり 10,000 文字まで受け取る (Q1)。注入を記録と知見 (memory・knowledge・`file:<名前>`) の hook 2 本に分け、それぞれ 9,500 文字で切る。memory と knowledge は `memory.limits` (`memory apply` の上限と同じ)、艦が足したファイル (`inject.files`) は `inject.limits.files` で切る (D-089)
 - **`state` の意味** (§14): `state` は席の発言の意味づけで、生死は pid、詰まりは `status` / `waitingFor` で見る (Q5)
 
 ## 改訂の要約 (v2, 2026-09-26)
@@ -209,7 +209,9 @@ owner (人間)
 ```yaml
 name: dev
 hub: pm                          # captain を務める役割 (count: 1)
-charter: charter.md              # 何のためのチームか (人間が書く)
+inject:
+  files:
+    charter: charter.md          # 何のためのチームか (人間が書く)。注入には file:charter で参照する (§8.2)
 workspace: ~/dev/myapp           # 席の作業ディレクトリ (作業対象の repo。repo のないチームは艦フォルダ。複数 repo はパスのリスト、先頭が cwd)
 
 time_limit: 3h                   # yamato up からの稼働時間 (up --for で上書き)
@@ -428,13 +430,13 @@ SessionStart hook が、次を注入する。**何を読ませるかは設定** 
 | `inbox` | 未読の inbox |
 | `memory` | 役割の memory (`roles/<role>/memory.md`。design-p1 §3) |
 | `knowledge` | チームの knowledge.md |
-| `charter` (opt-in) | team.yaml の `charter:` のファイル (既定 charter.md) の中身。知見の hook の先頭に入る。無い・空は「(charter なし)」の 1 行 (エラーにしない)。`inject.limits.charter` (`[行数, 文字数]`、省略時 60 行 / 3000 文字) を超えたら切って全文のパスを出す。ひな形は captain (hub) と planner に入れる (T-072、D-086) |
+| `file:<名前>` (opt-in) | team.yaml の `inject.files.<名前>` のファイルの中身 (T-075、D-089。charter は `inject.files.charter` + `file:charter`、T-072 の部品 `charter` を置き換えた)。パスは相対なら艦フォルダ基点、`~`・絶対パス可、repo の中は `@<workspace の呼び名>/<パス>`。見出しは `## <名前> (file: <パス>)`。知見の hook に、inject のリストに書いた順で載る。無い・空・読めないは `(なし: <パス>)` の 1 行 (エラーにしない。無いファイルは検査で warnings)。`inject.limits.files.<名前>` → `inject.limits.files.default` → `[60, 3000]` (`[行数, 文字数]`) を超えたら切って全文のパスを出す。ひな形は captain (hub) と planner に `file:charter` を入れる。古い書き方 (部品 `charter`・トップの `charter:`・`inject.limits.charter`) は 1 版だけ読み替えて warnings に「書き換えろ」と出す |
 | `board` (P1、opt-in) | 艦全体の進み具合 (kanban 風): state ごとの件数 + blocked→active→open の項目一覧。`mine` と重なっても省かない。`inject.limits.board_items` で件数に上限、超えた分は「…ほか N 件」(T-030、design-drift #4/#14、D-018) |
 | `fleet` (P1、opt-in) | 全艦の様子 (`yamato ships` 相当を 1 艦 1 行): 稼働中か・残り時間・captain の生死・赤い席・owner の判断待ち・今日のトークン。admiral (D-011、D-013) だけが使う想定。`inject.limits.fleet_items` で件数に上限、超えた分は「…ほか N 件 (`yamato ships` で見る)」(T-022) |
 
 - 役割のプロンプトは注入ではなく、`--agents` の JSON で渡す (§4.1)
-- 注入は **SessionStart hook 2 本**に分ける。記録の hook (ヘッダ・`handoff`・`log_tail`・`mine`・`inbox` と注記) と、知見の hook (`charter`・`memory`・`knowledge`)。Claude Code は hook 1 本の出力を 10,000 文字まで受け取り、超えると本文の代わりに約 2KB のプレビューを渡す (検証 C Q1。判定は hook ごとで、文字数で数える)
-- 上限は `inject.limits` で持つ。`handoff`・`log_tail`・`last_report`・`charter` は `[行数, 文字数]` (正の整数 2 個。整数 1 個は検査で拒否)、それ以外は正の整数 (T-073)。(ひな形の値: handoff 40 行 / 2000 文字、担当 15 件、未読 10 通、**hook 1 本の全体 9500 文字**)。memory と knowledge は `memory.limits` (ひな形: memory 80 行 / 4000 文字、knowledge 120 行 / 5000 文字。`memory apply` が反映を拒否する上限と同じ) で切る。切ったところには「全文は `<path>` を Read せよ」と付ける (hook の全体で切ったときは、全文を `.runtime/` に書いてそのパスを付ける)。全体の上限は安全網として残し、個々の中身は設定に置く
+- 注入は **SessionStart hook 2 本**に分ける。記録の hook (ヘッダ・`handoff`・`log_tail`・`mine`・`inbox` と注記) と、知見の hook (`memory`・`knowledge`・`file:<名前>`。リストに書いた順)。Claude Code は hook 1 本の出力を 10,000 文字まで受け取り、超えると本文の代わりに約 2KB のプレビューを渡す (検証 C Q1。判定は hook ごとで、文字数で数える)
+- 上限は `inject.limits` で持つ。`handoff`・`log_tail`・`last_report` は `[行数, 文字数]` (正の整数 2 個。整数 1 個は検査で拒否)、それ以外は正の整数 (T-073)。`inject.files` の各ファイルの上限は一段下の `inject.limits.files.<名前>` (と `files.default`、T-075)。(ひな形の値: handoff 40 行 / 2000 文字、担当 15 件、未読 10 通、**hook 1 本の全体 9500 文字**)。memory と knowledge は `memory.limits` (ひな形: memory 80 行 / 4000 文字、knowledge 120 行 / 5000 文字。`memory apply` が反映を拒否する上限と同じ) で切る。切ったところには「全文は `<path>` を Read せよ」と付ける (hook の全体で切ったときは、全文を `.runtime/` に書いてそのパスを付ける)。全体の上限は安全網として残し、個々の中身は設定に置く
 - captain は、これに加えてカンバン風の `board` と日報を読む (P1、設定の `inject`。日報は前回の「一言」「判断待ち」「明日」の 3 節だけ。design-p1 §2.3、`board` は T-030・§6.2)。ほか P1 で、孤児になった項目の一覧や棚卸し案の有無も注入に載る (design-p1 §5.6、§3.4)
 
 ### 8.3 シフトの終わり
