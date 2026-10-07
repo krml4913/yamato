@@ -2,6 +2,7 @@ import contextlib
 import io
 import json
 import os
+import shlex
 import signal
 import subprocess
 import sys
@@ -726,7 +727,6 @@ class AttachProcessTest(ShipTestCase):
         super().setUp()
         self.fake_bin = self.tmp / "claude-view"
         self.fake_bin.write_text(FAKE_VIEW_CLAUDE, encoding="utf-8")
-        self.fake_bin.chmod(0o755)
         self.agents = self.tmp / "agents.json"
         self.log = self.tmp / "attach.log"
         self.log.touch()
@@ -738,10 +738,10 @@ class AttachProcessTest(ShipTestCase):
         self.agents.write_text(json.dumps([{"sessionId": SID_A, "id": SID_A[:8], "pid": pid}]), encoding="utf-8")
 
     def start(self):
-        env = dict(os.environ, YAMATO_CLAUDE=str(self.fake_bin), FAKE_VIEW_AGENTS=str(self.agents),
+        env = dict(os.environ, YAMATO_CLAUDE=shlex.join([sys.executable, str(self.fake_bin)]), FAKE_VIEW_AGENTS=str(self.agents),
                    FAKE_VIEW_LOG=str(self.log), FAKE_VIEW_POLLS=str(self.polls))
         return subprocess.Popen([sys.executable, str(YAMATO_BIN), "view", "attach", "t1", "pm",
-                                 "--poll", "0.05"], env=env, stdout=subprocess.PIPE, text=True, encoding="utf-8")
+                                 "--poll", "0.005"], env=env, stdout=subprocess.PIPE, text=True, encoding="utf-8")
 
     def stop(self, proc):
         proc.send_signal(signal.SIGINT)
