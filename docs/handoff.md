@@ -91,7 +91,7 @@ PR の一覧 (すべて merge 済み):
 
 コードで強制しているもの (policy-audit §4 と、そのあと足したもの):
 - 記録の整合性: board の固定の項目の検査、ロック 1 本の直列化、inbox の既読カーソル、decider の固定と `blocked_on`、閉じた判断を書き換えない、同じ席で 2 シフトを走らせない、merge を艦で 1 本ずつ
-- 安全網: 時間の上限 (deadline・最終受付・終業・強制停止)、無人の席の PermissionRequest の全 deny、headless の終了報告を定型文にする、`memory.limits` を超える反映の拒否、注入の上限
+- 安全網: 時間の上限 (deadline・最終受付・終業・強制停止)、無人の席の PermissionRequest の全 deny、headless の終了報告を定型文にする、`inject.limits.memory` / `knowledge` を超える反映の拒否、注入の上限
 - そのあと足したもの: `send: false` のプロファイルの席からの `send` を断る (#18)、Stop hook の watcher が席の外からの未読で idle の席を起こす (#24)、`env_unset` を席の settings の `env` に空文字で書く (#24)、起動・resume のあとに pid を確かめて失敗を返す (#26)、`seat_stop.require_handoff` / `require_delivery` の確認 (P0、設定で外せる)
 - ひな形の既定値 (艦ごとに変えてよい): deny リスト、`env_unset`、`trust:` のプロファイルの中身、`merge_requires`、`decisions` の表、`remoteControlAtStartup: false`
 - 技術的な制約: repo のない艦の `bgIsolation: none`、生きている席にだけ attach、workspace の trust の確認、Haiku で auto が使えないことの警告

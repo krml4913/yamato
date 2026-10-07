@@ -18,7 +18,8 @@ from .runtime import posix_path, ship_arg, yamato_invocation
 from .util import YamatoError, today
 
 # fallback only: the template's team.yaml spells these out (`inject.limits`). The role's
-# memory and knowledge.md are cut at `memory.limits`, the limits `memory apply` keeps to
+# memory and knowledge.md are cut at `inject.limits.memory` / `knowledge` (memory.py's defaults),
+# the limits `memory apply` keeps to
 LIMITS = {
     "handoff": (40, 2000),     # (lines, chars)
     "log_tail": (20, 1200),
@@ -76,7 +77,7 @@ def _file_section(title: str, path: Path, limit: tuple[int, int]) -> str:
 
 
 def _memory_section(title: str, path: Path, team: dict, kind: str) -> str:
-    """The role's memory / knowledge.md, cut at ``memory.limits``: the same limits ``memory apply``
+    """The role's memory / knowledge.md, cut at ``inject.limits.memory`` / ``knowledge``: the same limits ``memory apply``
     keeps to, so only a hand edit is ever cut, and says so (design-p1 §3.5)."""
     text = _read(path).strip()
     if not text:

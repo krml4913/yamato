@@ -99,8 +99,8 @@ class TeamTest(unittest.TestCase):
         self.assertEqual(inject_parts(t, "pm"), ["inbox"])
         self.assertEqual(inject_parts(t, "impl"), ["handoff", "inbox"])
         self.assertEqual(t["inject"]["limits"], {"handoff": (10, 500), "mine_items": 3})
-        with self.assertRaisesRegex(YamatoError, "memory.limits に一本化"):
-            validate(base(inject={"limits": {"memory": [40, 1500]}}), Path("/ship"))
+        t = validate(base(inject={"limits": {"memory": [40, 1500], "knowledge": [60, 2000]}}), Path("/ship"))
+        self.assertEqual(t["inject"]["limits"], {"memory": (40, 1500), "knowledge": (60, 2000)})
         for bad in ({"parts": ["nope"]}, {"limits": {"x": 1}}, {"limits": {"handoff": "big"}}, {"other": 1}):
             with self.subTest(bad=bad), self.assertRaises(YamatoError):
                 validate(base(inject=bad), Path("/ship"))
@@ -108,7 +108,7 @@ class TeamTest(unittest.TestCase):
     def test_inject_limits_shape_per_key(self):
         """T-073: [lines, chars] keys refuse a bare int (it used to crash `cap_text(*limit)` at run time);
         the single-int keys refuse a list. Both fail at validate with the key named."""
-        for k in ("handoff", "log_tail", "last_report"):
+        for k in ("handoff", "log_tail", "last_report", "memory", "knowledge"):
             for bad in (500, [10], [10, 500, 1], [0, 500], [10, "x"], [True, 500], "big"):
                 with self.subTest(key=k, bad=bad), self.assertRaisesRegex(YamatoError, f"inject.limits.{k} は"):
                     validate(base(inject={"limits": {k: bad}}), Path("/ship"))

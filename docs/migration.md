@@ -27,6 +27,12 @@ v1.0.0 以降の変更のうち、**既存の艦・利用者が何かをしな�
 - やらないと: (a)(b)(c) のどれも、`yamato up` の検査が「inject.limits.<キー> は …」で止まる (a は前は起動後に落ちていた)
 - PR: T-073
 
+### memory と knowledge の上限を `memory.limits` から `inject.limits.memory` / `knowledge` に移した (T-076, D-089)
+- 何が変わったか: 上限の書き場所が 1 つになった。`inject.limits.memory: [80, 4000]` と `inject.limits.knowledge: [120, 5000]` ([行数, 文字数]、正の整数 2 個。既定は前の `memory.limits` の既定と同じ)。`memory apply` が超える案を拒否する上限、注入で切る上限、`memory curate` の案・プロンプト・`memory status` の上限は、すべてここを読む。前の `memory.limits` の 4 キー (`memory_lines` / `memory_chars` / `knowledge_lines` / `knowledge_chars`) は `memory:` 節から外れた。ひな形 (dev・research・admiral) は新しい書き方にした
+- 既存の艦がやること: **何もしなくても 1 版は動く**。`memory.limits` があれば `inject.limits.memory` / `knowledge` と読み替え (4 キーのうち書いていない方は既定のまま)、team.yaml を読むたびに warnings に「書き換えろ」と出る。両方に書いてあれば `inject.limits` が勝ち、warnings にそう出る。この互換は**次の版で消える**。直すとき: team.yaml の `memory.limits` を消し、`inject.limits` に `memory: [<memory_lines>, <memory_chars>]` と `knowledge: [<knowledge_lines>, <knowledge_chars>]` を書く (例: `memory_lines: 60` / `memory_chars: 3000` なら `memory: [60, 3000]`)。`yamato ship upgrade` でも取り込める
+- やらないと: 古い書き方のままだと警告が出る (動きは同じ)。次の版で `memory.limits` が検査で拒否される。古い yamato (v1.1.0 以前) は `inject.limits.memory` / `knowledge` を「memory.limits に一本化した」と拒否して load で落ちる。`~/dev/yamato` を pull してから team.yaml を書く。`inject.limits.memory` / `knowledge` に整数 1 個や 0・負の値を書くと、up の検査が止まる
+- PR: T-076
+
 ### 注入に任意のファイルを足せるようにした: `inject.files` と `file:<名前>`。部品 `charter` はこれに置き換わった (T-075, D-089。T-072, D-086 の charter を含む)
 - 何が変わったか
   - team.yaml のトップの `inject.files` に `名前: パス` を書くと、`inject` のリスト (`inject.parts` と `roles.<role>.inject`) で `file:<名前>` と参照できる。入れた席の SessionStart の知見の hook (hook B) に、リストに書いた順で載る (`total_chars` で切られるのは末尾から)。パスは相対なら艦フォルダ基点、`~` と絶対パスも可、repo の中は `@<workspace の呼び名>/<パス>`

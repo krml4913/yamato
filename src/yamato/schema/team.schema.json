@@ -572,7 +572,7 @@
         },
         "limits": {
           "type": "object",
-          "description": "注入の上限。超えた分は切って「全文は <パス> を Read せよ」と書く。memory と knowledge は memory.limits で切る。",
+          "description": "注入の上限。超えた分は切って「全文は <パス> を Read せよ」と書く。memory と knowledge も同じ (memory apply が反映を拒否する上限もこれ)。",
           "properties": {
             "handoff": {
               "description": "上限。[行数, 文字数] (正の整数 2 個。整数 1 個は不可)。",
@@ -633,6 +633,26 @@
               "description": "fleet の部品の項目数の上限。",
               "type": "integer",
               "minimum": 1
+            },
+            "memory": {
+              "description": "役割の memory の上限。[行数, 文字数] (正の整数 2 個)。memory apply が超える案の反映を拒否する上限でもある。省略時 [80, 4000]。",
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "knowledge": {
+              "description": "knowledge.md の上限。[行数, 文字数] (正の整数 2 個)。knowledge の反映を拒否する上限でもある。省略時 [120, 5000]。",
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "integer",
+                "minimum": 1
+              }
             },
             "files": {
               "type": "object",
@@ -716,7 +736,8 @@
         },
         "limits": {
           "type": "object",
-          "description": "memory apply が反映を拒否する上限。注入もこれで切る。",
+          "deprecated": true,
+          "description": "(古い書き方。次の版で消える) inject.limits.memory / knowledge に [行数, 文字数] で書く。両方に書いてあれば inject.limits が勝つ。",
           "properties": {
             "memory_lines": {
               "description": "役割の memory の行数。",

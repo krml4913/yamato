@@ -95,11 +95,7 @@ memory:
   curate_every: 7d
   curate_at: 30
   max_duration: 15m
-  limits:
-    memory_lines: 80
-    memory_chars: 4000
-    knowledge_lines: 120
-    knowledge_chars: 5000
+  # 上限 (memory_lines など) は inject.limits.memory / knowledge に移した (T-076)
 
 inject:
   files:
@@ -111,6 +107,8 @@ inject:
     inbox_chars: 400
     total_chars: 9500
     last_report: [30, 1500]
+    memory: [80, 4000]
+    knowledge: [120, 5000]
     files:
       default: [60, 3000]
 

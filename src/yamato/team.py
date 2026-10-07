@@ -28,11 +28,12 @@ FILES_RESERVED = "default"   # `inject.limits.files.default` is the limit for a 
 # `file:<名前>` parts (the charter among them, T-072 → T-075) are never default
 DEFAULT_INJECT_PARTS = tuple(p for p in INJECT_PARTS
                              if p not in ("last_report", "orphans", "board", "fleet"))
-# the role's memory and knowledge.md are cut at `memory.limits` (the limits `memory apply` keeps to)
+# `memory` / `knowledge`: the role's memory and knowledge.md are cut here, and `memory apply` refuses
+# a proposal over it (T-076; used to be `memory.limits`)
 INJECT_LIMIT_KEYS = ("handoff", "log_tail", "mine_items", "inbox_messages", "inbox_chars", "total_chars",
-                     "last_report", "board_items", "fleet_items")
+                     "last_report", "board_items", "fleet_items", "memory", "knowledge")
 # [lines, chars] limits (two positive ints); the others are one positive int (T-073)
-INJECT_PAIR_LIMIT_KEYS = ("handoff", "log_tail", "last_report")
+INJECT_PAIR_LIMIT_KEYS = ("handoff", "log_tail", "last_report", "memory", "knowledge")
 RESERVED_SEATS = ("owner",)   # the human's inbox; not a seat
 SEAT_STOP_DEFAULTS = {"require_handoff": True, "require_delivery": True}
 ROLE_KEYS = {"model", "shift", "count", "description", "inject", "max_duration", "max_budget_usd", "report_to",
@@ -253,9 +254,6 @@ def validate(data: dict, shipdir: Path) -> dict:
     limits = inject.get("limits") or {}
     if not isinstance(limits, dict):
         raise YamatoError(f"team.yaml: inject.limits の項目は {', '.join(INJECT_LIMIT_KEYS)}, files")
-    if set(limits) & {"memory", "knowledge"}:
-        raise YamatoError("team.yaml: inject.limits の memory / knowledge は memory.limits に一本化した "
-                          "(memory_lines / memory_chars / knowledge_lines / knowledge_chars。memory apply の上限と同じ)")
     limits = dict(limits)
     if "charter" in limits:   # old spelling (T-072): becomes limits.files.charter
         legacy["limit"] = limits.pop("charter")
@@ -264,6 +262,9 @@ def validate(data: dict, shipdir: Path) -> dict:
         raise YamatoError(f"team.yaml: inject.limits の項目は {', '.join(INJECT_LIMIT_KEYS)}, files")
     files, files_limits = _inject_files(inject.get("files"), limits.pop("files", None), data.get("charter"),
                                         legacy, workspaces, shipdir, warnings)
+    memory_conf = _memory(data.get("memory"), roles)
+    limits = _limits(limits)
+    _legacy_memory_limits(memory_conf.pop("legacy_limits"), limits, warnings)
     if inject_parts_in is not None:
         _check_parts(inject_parts_in, "inject.parts", files)
     for role, spec in roles.items():
@@ -348,7 +349,7 @@ def validate(data: dict, shipdir: Path) -> dict:
         "board": {"kinds": [str(k) for k in kinds], "columns": columns, "fields": [str(f) for f in fields],
                   "archive_on_done": archive_on_done},
         "env_unset": env_unset,
-        "inject": {"parts": inject_parts_in, "limits": {**_limits(limits), **({"files": files_limits} if files_limits else {})},
+        "inject": {"parts": inject_parts_in, "limits": {**limits, **({"files": files_limits} if files_limits else {})},
                    "files": files},
         "notify": {"via": [str(v) for v in notify.get("via") or []], "command": notify.get("command"),
                    "slack": {"webhook_env": slack.get("webhook_env")},
@@ -359,7 +360,7 @@ def validate(data: dict, shipdir: Path) -> dict:
         "watch": {"stale_after": stale_after, **_watch_lifecycle(watch)},
         "talk_default": talk_default,
         "up_seats": up_seats,
-        "memory": _memory(data.get("memory"), roles),
+        "memory": memory_conf,
         "last_call": _last_call(data.get("last_call")),
         "context_windows": _context_windows(data.get("context_windows")),
         "warnings": warnings,
@@ -598,6 +599,24 @@ def _decisions(table, seats: dict) -> dict:
                               f"(席: {', '.join(seats)})")
         out[str(cat)] = {"decider": decider, "when": None if spec.get("when") is None else str(spec["when"])}
     return out
+
+
+def _legacy_memory_limits(old: dict, limits: dict, warnings: list[str]) -> None:
+    """The four keys of ``memory.limits`` are ``inject.limits.memory`` / ``knowledge`` now (T-076, D-089).
+    Read as those for one version, with a warning; the compatibility goes in the next version.
+    ``limits`` is the validated ``inject.limits`` (changed in place); when both are written,
+    ``inject.limits`` wins."""
+    from .memory import legacy_pairs
+
+    if not old:
+        return
+    warnings.append("team.yaml: memory.limits は inject.limits.memory / knowledge に書き換えろ "
+                    "([行数, 文字数]。読み替えて動かす。次の版で消える)")
+    for kind, pair in legacy_pairs(old).items():
+        if kind in limits:
+            warnings.append(f"team.yaml: memory.limits と inject.limits.{kind} の両方がある。inject.limits.{kind} を使う")
+        else:
+            limits[kind] = pair
 
 
 def _legacy_parts(parts, where: str, warnings: list[str], legacy: dict):

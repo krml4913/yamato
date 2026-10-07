@@ -15,7 +15,7 @@
 
 - **V8 を判定した** (§11): SessionStart hook の注入は **hook 1 本あたり 10,000 文字**まで (合算ではない。数え方はバイトではなく文字数)。超えると本文の代わりに約 2KB のプレビューが届く (検証 C Q1)
 - **注入を hook 2 本に分けた** (§3.5): 記録 (handoff・作業ログ・担当・日報・inbox・注記) の hook と、知見 (役割の memory・knowledge.md) の hook。それぞれ `inject.limits.total_chars` (既定 9,500 文字) まで。切ったところには「全文は `<path>` を Read せよ」を付ける
-- **memory の上限を 1 つにした** (§3.5): `memory.limits` (`memory apply` が反映を拒否する上限) を注入でも使う。`inject.limits.memory` / `knowledge` は無くした。単位はバイトから文字数に変え、既定は memory 80 行 / 4,000 文字、knowledge 120 行 / 5,000 文字 (知見の hook 1 本に収まる数字)
+- **memory の上限を 1 つにした** (§3.5): `memory apply` が反映を拒否する上限を注入でも使う。置き場は `inject.limits.memory` / `knowledge` に一本化した (T-076。前は `memory.limits` の 4 キーで、1 版だけ読み替える)。単位はバイトから文字数に変え、既定は memory 80 行 / 4,000 文字、knowledge 120 行 / 5,000 文字 (知見の hook 1 本に収まる数字)
 - **起動の失敗を検知する** (§5.1): `claude --bg` は worker が起動前に落ちても exit 0 を返す (検証 C Q5)。`yamato up` と `send` は起動・resume のあとに `claude agents --json` を見て、`state == failed` や pid なしを失敗として扱う
 - **`yamato status` の詰まりの表示** (§5.2): 生存は pid で見る。`status == waiting` は `waitingFor` を出して赤、`state == blocked` (idle のとき) は「人間の返事待ちの疑い」
 - **§2.2 の 1 を実装に合わせた**: captain の `seat-stop` は `report daily` を呼ばない。captain の役割プロンプトの終業の手順で captain が `report daily` を打つ (2 回目以降は更新。e2e-p1 の E)
@@ -122,7 +122,7 @@ memory:                     # §3
   curate_every: 7d
   curate_at: 30
   applier: pm               # 反映を打つ役 (省略時は hub)。注入と役割プロンプトに使うだけで、コードは検査しない
-  limits: { memory_lines: 80, knowledge_lines: 120 }
+  # 上限は inject.limits.memory / knowledge ([行数, 文字数]。T-076。前の memory.limits は 1 版だけ読み替える)
 deny: [...]                 # 無人の席にやらせない操作 (Claude Code の permissions.deny に書き出す)。安全網の中身 (ひな形の既定値)。最上位に置く (P0)
 env_unset: [GH_TOKEN]       # v1 のドラフト値。D-003 で既定は空に変更 (GH_TOKEN は外さず、gh の権限はトークンのスコープで絞る)
 settings:                   # 全席の settings に重ねる中身 (P0)。Remote Control は既定で切る (§1.5、V10)
@@ -388,8 +388,8 @@ knowledge.md は、各役割の棚卸しが挙げた knowledge 候補と `--scop
 | `knowledge.md` | 120 行 / 5,000 文字 | 同上 |
 | `memory-inbox.md` | 上限なし (起動時に読まないため) | 30 件で棚卸しの合図になる |
 
-- 上限の数値は team.yaml の `memory.limits` (`memory_lines` / `memory_chars` / `knowledge_lines` / `knowledge_chars`) で変えられる (既定は上の表)。**単位は文字数** (Claude Code の hook の上限と同じ数え方。検証 C Q1)
-- **同じ上限を注入でも使う** (v4)。`memory apply` が拒否する上限と、注入で切る上限が同じなので、`apply` を通った memory が注入で切られることはない。v3 までは注入の側に別の上限 (`inject.limits.memory` / `knowledge`、40 行 / 1,500 文字) があり、反映できた memory の後半が読まれない食い違いがあった
+- 上限の数値は team.yaml の `inject.limits.memory` / `knowledge` (`[行数, 文字数]`) で変えられる (既定は上の表)。前の `memory.limits` (`memory_lines` / `memory_chars` / `knowledge_lines` / `knowledge_chars`) は 1 版だけ読み替えて警告する (T-076)。**単位は文字数** (Claude Code の hook の上限と同じ数え方。検証 C Q1)
+- **同じ上限を注入でも使う** (v4)。`memory apply` が拒否する上限と、注入で切る上限が同じなので、`apply` を通った memory が注入で切られることはない。v3 までは注入の側に別の上限 (40 行 / 1,500 文字) があり、反映できた memory の後半が読まれない食い違いがあった。v4 で上限を `memory.limits` の 1 つにし、T-076 でその置き場を `inject.limits.memory` / `knowledge` に移した (注入の上限は注入に置く)
 - SessionStart hook の注入は、上限を超えたファイル (手で編集された場合) を**上限で切って**入れ、末尾に「(memory.md が上限を超えている (…)。上限で切った。棚卸しが必要。全文は `<path>` を Read せよ)」と書く
 - **注入の長さ** (V8、検証 C Q1): Claude Code は SessionStart hook 1 本の出力を **10,000 文字**まで受け取る (合算ではなく hook ごと。超えると本文の代わりに約 2KB のプレビューと保存先のパスが届き、hook のエラーにはならない)。yamato は注入を 2 本の hook に分ける
   - 記録の hook (`yamato hook session-start`): 見出し・最終受付の注意・handoff・作業ログの末尾・担当・孤児・前回の日報・memory status の注記・未読の inbox

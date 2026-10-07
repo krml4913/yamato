@@ -161,7 +161,7 @@ seat_stop:
 
 # SessionStart で席に読ませるもの (design §8.2)。役割ごとに roles.<role>.inject で上書きできる
 # 注入は hook 2 本 (記録: handoff・作業ログ・担当・日報・inbox など / 知見: 役割の memory と knowledge.md) に分かれ、
-# それぞれ total_chars まで。上限を超えた分は切って「全文は <パス> を Read せよ」と書く。memory と knowledge は下の memory.limits で切る
+# それぞれ total_chars まで。上限を超えた分は切って「全文は <パス> を Read せよ」と書く。memory と knowledge は inject.limits.memory / knowledge で切る
 inject:
   files:                     # 注入に足す任意のファイル。名前: パス (相対は艦フォルダ基点。~ と絶対パスも可。repo の中は @<workspace の呼び名>/<パス>)
     charter: charter.md      # inject のリストでは file:<名前> で参照する (例: design: "@myrepo/docs/design.md" を足して file:design)
@@ -175,6 +175,8 @@ inject:
     total_chars: 9500        # hook 1 本の全体 (Claude Code は hook 1 本あたり 1 万文字まで。検証 C Q1)
     last_report: [30, 1500]  # 前回の日報の 3 節 (inject に last_report を入れた役割だけ)
     board_items: 20          # 注入の部品 board (kanban 風) の項目数の上限。超えた分は「…ほか N 件」(T-030)
+    memory: [80, 4000]       # [行数, 文字数]。役割の memory の上限。超える案は memory apply が拒否し、注入もここで切る (手で編集して超えたら警告)
+    knowledge: [120, 5000]   # knowledge.md の上限。文字数は Claude Code の hook の数え方で、memory + knowledge が hook 1 本 (1 万文字) に収まる数字
     files:                   # inject.files の各ファイルの [行数, 文字数]。名前ごと、無ければ default (T-075)
       default: [60, 3000]
 
@@ -188,11 +190,7 @@ memory:
   curate_every: 7d           # 前回の反映からこの日数が経ったら棚卸しの目安 (memory status に出るだけ。自動では走らない)
   curate_at: 30              # 候補がこの件数に達したら棚卸しの目安
   max_duration: 15m          # 棚卸しのシフト 1 回の上限
-  limits:                    # 超える案は memory apply が反映を拒否する。注入もこの上限で切る (手で編集して超えたら警告)
-    memory_lines: 80
-    memory_chars: 4000       # 文字数 (Claude Code の hook の上限と同じ数え方)。memory + knowledge が注入の hook 1 本 (1 万文字) に収まる数字
-    knowledge_lines: 120
-    knowledge_chars: 5000
+  # 上限 (memory_lines など) は inject.limits.memory / knowledge に移した (T-076)
 
 # owner 宛ての send (`yamato send <ship> owner "..."`) の通知経路 (design-p1 §2.4)。
 # via に並べた方式すべてに送る (複数可)。どれかが失敗しても他は送り、失敗は events.jsonl (notify_failed) に残る。
