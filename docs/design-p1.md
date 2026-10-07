@@ -17,7 +17,7 @@
 - **注入を hook 2 本に分けた** (§3.5): 記録 (handoff・作業ログ・担当・日報・inbox・注記) の hook と、知見 (役割の memory・knowledge.md) の hook。それぞれ `inject.limits.total_chars` (既定 9,500 文字) まで。切ったところには「全文は `<path>` を Read せよ」を付ける
 - **memory の上限を 1 つにした** (§3.5): `memory apply` が反映を拒否する上限を注入でも使う。置き場は `inject.limits.memory` / `knowledge` に一本化した (T-076。前は `memory.limits` の 4 キーで、1 版だけ読み替える)。単位はバイトから文字数に変え、既定は memory 80 行 / 4,000 文字、knowledge 120 行 / 5,000 文字 (知見の hook 1 本に収まる数字)
 - **起動の失敗を検知する** (§5.1): `claude --bg` は worker が起動前に落ちても exit 0 を返す (検証 C Q5)。`yamato up` と `send` は起動・resume のあとに `claude agents --json` を見て、`state == failed` や pid なしを失敗として扱う
-- **`yamato status` の詰まりの表示** (§5.2): 生存は pid で見る。`status == waiting` は `waitingFor` を出して赤、`state == blocked` (idle のとき) は「人間の返事待ちの疑い」
+- **`yamato status` の詰まりの表示** (§5.2): 生存は pid で見る。`status == waiting` は `waitingFor` を出して赤、(v1.2.0 で廃止: idle の `state == blocked` を「人間の返事待ちの疑い」とする赤は、Claude Code の発言の分類で誤検知するので消した)
 - **§2.2 の 1 を実装に合わせた**: captain の `seat-stop` は `report daily` を呼ばない。captain の役割プロンプトの終業の手順で captain が `report daily` を打つ (2 回目以降は更新。e2e-p1 の E)
 
 ## 改訂の要約 (v3, 2026-09-26)
@@ -486,7 +486,7 @@ design §6.6 は「memory に書き込むのは PM の週次の棚卸しだけ�
 
 - 全席の SessionStart / UserPromptSubmit / Stop hook で `roster.json` のその席の `last_active` を更新する (hook の引数に艦と席が埋め込まれている、design §4.1)
 - 生きているかは `claude agents --json --all` の `pid != null` で見る (`state` は生死の判定には使えない、検証 A Q3)。**`state` は席の最後の発言から「人間に何を求めているか」を意味づけしたラベルで、プロセスの実状態は `status` と `pid`** (検証 C Q5)。`state` 単体で生死も完了も判定しない
-- 詰まりの見分け (検証 C Q5。v4): `status == "waiting"` は開いているダイアログ (`waitingFor` が `permission prompt` / `dialog open` など) で、`waitingFor` を出して赤。`state == "blocked"` で `status == "idle"` は、最後の発言が質問か「できなかった」の報告 = **人間の返事待ちの疑い**として赤。`blocked` で `busy` は Monitor の待ち (正常な常駐) なので赤くしない
+- 詰まりの見分け (検証 C Q5。v4): `status == "waiting"` は開いているダイアログ (`waitingFor` が `permission prompt` / `dialog open` など) で、`waitingFor` を出して赤。`state == "blocked"` は赤にしない (v1.2.0 で廃止。idle の blocked を「人間の返事待ちの疑い」とした赤は、state が発言の分類で誤検知したため。待機中かは `status=idle` で分かる。赤の state 判定は failed だけ)
 - bg の席の API エラーは `state == "failed"` で拾える。`pid` は生きたまま `status: idle` になり、JSON にエラー文のキーは無い (検証 D V5。存在しない model 名の 404 で確認。枠切れで同じになるかは未確認)。生死の判定には使わないが、異常の合図として赤く出す
 - **起動の失敗** (検証 C Q5。v4): `claude --bg` は worker が起動前に落ちても exit 0 で `backgrounded · <id>` を出す。失敗は後から `state == "failed"`・pid なしで分かる。`yamato up` と `send` (新しいシフトと resume) は、起動のあとに `claude agents --json` を見て、pid が付き `status` が出る (または 2 秒たつ) のを待つ。`failed` で pid なし、または 20 秒たっても起きないものは失敗として扱い、roster の `launchFailed` と events の `launch_failed` に残して、送り手にエラーを返す (send の本文は inbox に残る)。生きたまま `failed` のもの (モデル名の誤りなど) は、roster の外で動き続けないよう止める
 
@@ -497,7 +497,7 @@ design §6.6 は「memory に書き込むのは PM の週次の棚卸しだけ�
 | いつ | 何をする |
 |---|---|
 | メンバーが `send <hub>` / `seat-stop` を呼んだとき | captain が止まっていれば、§5.3 の規則で起こす (send の通常の動作)。**止まってから一度も起きていない時間**が 30 分 (設定) を超えていれば events に「captain 空白」を書く |
-| 誰かが `yamato status` / `ships` を見たとき | captain の `last_active` と、生きているのに `last_active` が古い (既定 20 分。設定で変えられる) 席を赤く出す。`status == waiting` (`waitingFor` を出す) と、idle の `state == blocked` (人間の返事待ちの疑い) も赤 (§5.1)。**per_task の席が生きているのに担当 (active) の board 項目が無い** (#11 / D-019) も同じく赤 |
+| 誰かが `yamato status` / `ships` を見たとき | captain の `last_active` と、生きているのに `last_active` が古い (既定 20 分。設定で変えられる) 席を赤く出す。`status == waiting` (`waitingFor` を出す) も赤 (§5.1。idle の `state == blocked` は v1.2.0 で赤をやめた)。**per_task の席が生きているのに担当 (active) の board 項目が無い** (#11 / D-019) も同じく赤 |
 | deadline の確認 (§0 B4 の hook と send) のついで | captain の最後の日報 (§2.2) が作られないまま終業を過ぎたら、`report daily --facts-only` を作る |
 
 - per_task が生きているのに担当なしは「前の task の会話が持ち込まれる疑い」だが、attach 中かどうかは外から見分けられない (`claude agents --json` に attach の有無は出ず、`/status` は対話コマンドで外から読めない。検証 `docs/verify/verify-p0-c.md:135`)。よって送り先を止めたり新しいシフトに切り替えたりはせず、send は今までどおり配送しつつ警告を 1 行出すだけにとどめる (D-019 のフォールバック)

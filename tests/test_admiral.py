@@ -349,8 +349,8 @@ class AdmiralTest(ShipTestCase):
         self.assertIn("!!! pm: API エラー", out)
 
     def test_status_flags_what_the_seat_waits_on(self):
-        """verify-p0-c Q5: status waiting names its waitingFor; blocked while idle is a question
-        to a human; blocked while busy is a Monitor wait (normal)."""
+        """verify-p0-c Q5: status waiting names its waitingFor; blocked alone is not red
+        (v1.2.0: the idle+blocked "waiting on a human" guess was dropped, it misfired)."""
         self.run_cmd(seat.up, self.shipdir, "1h")
         self.set_session("pm", status="waiting", waitingFor="dialog open", state="blocked")
         out = self.run_cmd(seat.status, self.shipdir)
@@ -358,7 +358,10 @@ class AdmiralTest(ShipTestCase):
         self.assertIn("state=blocked", out)
         self.assertNotIn("返事待ち", out)
         self.set_session("pm", status="idle", waitingFor=None, state="blocked")
-        self.assertIn("!!! pm: 人間の返事待ちの疑い", self.run_cmd(seat.status, self.shipdir))
+        out = self.run_cmd(seat.status, self.shipdir)
+        self.assertNotIn("!!!", out)
+        self.assertNotIn("返事待ち", out)
+        self.assertIn("state=blocked", out)
         self.set_session("pm", status="busy", state="blocked")
         self.assertNotIn("!!!", self.run_cmd(seat.status, self.shipdir))
         self.set_session("pm", pid=None, state="blocked")   # liveness is the pid, not state

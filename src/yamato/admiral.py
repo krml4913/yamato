@@ -68,10 +68,11 @@ def stale_after(team: dict) -> int:
 def red_flags(team: dict, seat_name: str, rec: dict, live: dict | None, now: float, *,
               has_active: bool = True) -> list[str]:
     """Why a seat shows red: a live seat idle for longer than ``watch.stale_after``, one
-    waiting on an open prompt (``status: waiting``), one whose last words ask something of
-    a human (``state: blocked`` while idle), or one whose API call failed (``state: failed``,
-    verify-p1-d V5). A stopped seat is not red: liveness is the pid, never ``state``
-    (verify-p0-c Q5). ``blocked`` while ``busy`` is a seat waiting on its Monitor: normal.
+    waiting on an open prompt (``status: waiting``), or one whose API call failed
+    (``state: failed``, verify-p1-d V5). A stopped seat is not red: liveness is the pid,
+    never ``state`` (verify-p0-c Q5). ``state: blocked`` alone is not red (v1.2.0): it is
+    Claude Code's label on the last words, so it misfires; ``status=idle`` already shows a
+    seat is idle.
 
     ``has_active``: whether the seat has an ``active`` board item (design-drift #11, D-019).
     A live ``per_task`` seat with none is flagged -- it should have been ``seat-stop``'d when
@@ -84,8 +85,6 @@ def red_flags(team: dict, seat_name: str, rec: dict, live: dict | None, now: flo
     status, state = live.get("status"), live.get("state")
     if status == "waiting" or waiting:
         flags.append(f"詰まり: {waiting or '何か'} で止まっている (status: waiting, waitingFor: {waiting or '-'})")
-    elif state == "blocked" and status != "busy":
-        flags.append("人間の返事待ちの疑い (state: blocked。最後の発言が質問か「できなかった」の報告)")
     if state == "failed":
         flags.append("API エラー (state: failed)")
     last = seat._last_active(rec)
