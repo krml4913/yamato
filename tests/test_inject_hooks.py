@@ -5,6 +5,7 @@ import subprocess
 import sys
 import time
 import unittest
+from pathlib import Path
 from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
@@ -121,48 +122,116 @@ class InjectTest(ShipTestCase):
         self.assertIn("board kanban", text)
         self.assertNotIn("done one", text)
 
-    def test_charter_part_is_opt_in_and_heads_the_knowledge_hook(self):
+    def _files(self, **files):
+        """Declare `inject.files` the way load_team would have (name -> {path, abs})."""
+        self.t["inject"] = {**(self.t.get("inject") or {}),
+                            "files": {n: {"path": p, "abs": str(self.shipdir / p) if not p.startswith(("/", "~")) else p}
+                                      for n, p in files.items()}}
+
+    def test_file_part_is_opt_in_and_hook_b_speaks_for_it_alone(self):
         (self.shipdir / "charter.md").write_text("# charter\nCHARTER-X", encoding="utf-8")
-        self.assertEqual(self.t["charter"], "charter.md")
+        self._files(charter="charter.md")
         # not in the defaults: a seat that does not name it does not get it
-        know = inject.build_knowledge(self.shipdir, self.t, "impl")
-        self.assertNotIn("CHARTER-X", know)
-        self.t["roles"]["impl"]["inject"] = ["memory", "knowledge", "charter"]
+        self.assertNotIn("CHARTER-X", inject.build_knowledge(self.shipdir, self.t, "impl"))
+        self.t["roles"]["impl"]["inject"] = ["file:charter", "memory", "knowledge"]
         know = inject.build_knowledge(self.shipdir, self.t, "impl")
         self.assertIn("CHARTER-X", know)
-        self.assertIn("艦の charter (charter.md)", know)
-        self.assertLess(know.index("艦の charter"), know.index("## 役割の memory"))
+        self.assertIn("## charter (file: charter.md)", know)
         text, _ = self.build()
         self.assertNotIn("CHARTER-X", text)   # hook B's, not the records hook's
-        # charter alone is enough to make hook B speak
-        self.t["roles"]["impl"]["inject"] = ["charter"]
+        self.t["roles"]["impl"]["inject"] = ["file:charter"]   # a file alone is enough to make hook B speak
         self.assertIn("CHARTER-X", inject.build_knowledge(self.shipdir, self.t, "impl"))
 
-    def test_charter_missing_or_empty_is_one_line(self):
-        self.t["roles"]["impl"]["inject"] = ["charter"]
-        (self.shipdir / "charter.md").unlink()
+    def test_hook_b_parts_follow_the_list_order(self):
+        (self.shipdir / "charter.md").write_text("CHARTER-X", encoding="utf-8")
+        (self.shipdir / "knowledge.md").write_text("KNOW-X", encoding="utf-8")
+        (self.shipdir / "design.md").write_text("DESIGN-X", encoding="utf-8")
+        self._files(charter="charter.md", design="design.md")
+        self.t["roles"]["impl"]["inject"] = ["knowledge", "file:design", "file:charter"]
         know = inject.build_knowledge(self.shipdir, self.t, "impl")
-        self.assertIn("(charter なし)", know)
-        (self.shipdir / "charter.md").write_text("  \n", encoding="utf-8")
-        self.assertIn("(charter なし)", inject.build_knowledge(self.shipdir, self.t, "impl"))
+        self.assertLess(know.index("KNOW-X"), know.index("DESIGN-X"))
+        self.assertLess(know.index("DESIGN-X"), know.index("CHARTER-X"))
+        self.t["roles"]["impl"]["inject"] = ["file:charter", "file:design", "knowledge"]
+        know = inject.build_knowledge(self.shipdir, self.t, "impl")
+        self.assertLess(know.index("CHARTER-X"), know.index("DESIGN-X"))
+        self.assertLess(know.index("DESIGN-X"), know.index("KNOW-X"))
 
-    def test_charter_capped_and_points_at_the_file(self):
-        (self.shipdir / "charter.md").write_text("\n".join(f"c{i}" for i in range(100)), encoding="utf-8")
-        self.t["roles"]["impl"]["inject"] = ["charter"]
+    def test_total_chars_cuts_the_end_of_the_list(self):
+        for n in ("a", "b"):
+            (self.shipdir / f"{n}.md").write_text(n.upper() * 300, encoding="utf-8")
+        self._files(a="a.md", b="b.md")
+        self.t["roles"]["impl"]["inject"] = ["file:a", "file:b"]
+        know = inject.build_knowledge(self.shipdir, self.t, "impl", {"total_chars": 500})
+        self.assertIn("A" * 100, know)
+        self.assertNotIn("B" * 300, know)
+        self.assertIn("注入の上限 500 文字で切った", know)
+
+    def test_file_missing_empty_or_unreadable_is_one_line(self):
+        self._files(charter="charter.md", dir="sub")
+        (self.shipdir / "charter.md").unlink(missing_ok=True)
+        (self.shipdir / "sub").mkdir()
+        self.t["roles"]["impl"]["inject"] = ["file:charter", "file:dir"]
         know = inject.build_knowledge(self.shipdir, self.t, "impl")
+        self.assertIn(f"(なし: {self.shipdir / 'charter.md'})", know)
+        self.assertIn(f"(なし: {self.shipdir / 'sub'})", know)   # a directory is not an error either
+        (self.shipdir / "charter.md").write_text("  \n", encoding="utf-8")
+        self.assertIn("(なし:", inject.build_knowledge(self.shipdir, self.t, "impl"))
+
+    def test_file_capped_by_name_then_default_then_fallback(self):
+        lines = "\n".join(f"c{i}" for i in range(100))
+        (self.shipdir / "charter.md").write_text(lines, encoding="utf-8")
+        (self.shipdir / "other.md").write_text(lines, encoding="utf-8")
+        self._files(charter="charter.md", other="other.md")
+        self.t["roles"]["impl"]["inject"] = ["file:charter"]
+        know = inject.build_knowledge(self.shipdir, self.t, "impl")   # fallback [60, 3000]
         self.assertIn("c59", know)
         self.assertNotIn("c60\n", know)
         self.assertIn(str(self.shipdir / "charter.md"), know)
-        self.t["inject"] = {"limits": {"charter": (3, 100)}}
+        self.t["inject"]["limits"] = {"files": {"default": (5, 1000)}}
+        self.assertNotIn("c5\n", inject.build_knowledge(self.shipdir, self.t, "impl"))
+        self.t["roles"]["impl"]["inject"] = ["file:charter", "file:other"]
+        self.t["inject"]["limits"] = {"files": {"default": (5, 1000), "other": (2, 1000)}}
         know = inject.build_knowledge(self.shipdir, self.t, "impl")
-        self.assertNotIn("c3\n", know)
+        self.assertIn("c4\n", know)       # charter: default 5 lines
+        self.assertEqual(know.count("c2\n"), 1)   # other: 2 lines only
         self.assertIn("上限で切った", know)
 
-    def test_charter_is_a_valid_part_and_limit_in_team_yaml(self):
+    def test_file_paths_in_a_real_team_yaml(self):
+        """@<workspace>/, ~ and absolute paths, through load_team (the path hook B reads)."""
+        import yaml
+        ws = Path(self.team()["workspace"])
+        (ws / "docs").mkdir(exist_ok=True)
+        (ws / "docs" / "d.md").write_text("REPO-DOC", encoding="utf-8")
+        outside = self.shipdir / "abs.md"
+        outside.write_text("ABS-DOC", encoding="utf-8")
+        raw = yaml.safe_load((self.shipdir / "team.yaml").read_text(encoding="utf-8"))
+        raw["inject"] = {"files": {"charter": "charter.md", "repo": f"@{ws.name}/docs/d.md", "abs": str(outside), "gone": "nope.md"}}
+        raw["roles"]["impl"]["inject"] = ["file:repo", "file:abs", "file:gone"]
+        (self.shipdir / "team.yaml").write_text(yaml.safe_dump(raw, allow_unicode=True), encoding="utf-8")
+        t = self.team()
+        self.assertTrue(any("inject.files.gone" in w for w in t["warnings"]))
+        know = inject.build_knowledge(self.shipdir, t, "impl")
+        self.assertIn("REPO-DOC", know)
+        self.assertIn("ABS-DOC", know)
+        self.assertIn(f"## repo (file: @{ws.name}/docs/d.md)", know)
+        self.assertIn("(なし:", know)
+
+    def test_charter_is_no_longer_a_fixed_part(self):
         from yamato import team as team_mod
-        self.assertIn("charter", team_mod.INJECT_PARTS)
-        self.assertNotIn("charter", team_mod.DEFAULT_INJECT_PARTS)
-        self.assertIn("charter", team_mod.INJECT_LIMIT_KEYS)
+        self.assertNotIn("charter", team_mod.INJECT_PARTS)
+        self.assertNotIn("charter", team_mod.INJECT_LIMIT_KEYS)
+
+    def test_templates_use_file_charter(self):
+        """T-075: dev / research / admiral spell the charter as inject.files.charter + file:charter, with no warning."""
+        from yamato import ship as ship_mod
+        import yaml
+        for name, seats in (("dev", ("pm", "planner")), ("research", ("editor",)), ("admiral", ("admiral",))):
+            raw = yaml.safe_load((Path(ship_mod.TEMPLATES) / name / "team.yaml").read_text(encoding="utf-8")
+                                 .replace("{{name}}", "x").replace("{{workspace}}", ".").replace("{{schema}}", ""))
+            self.assertEqual(raw["inject"]["files"], {"charter": "charter.md"}, name)
+            self.assertNotIn("charter", raw)
+            for role in seats:
+                self.assertIn("file:charter", raw["roles"][role]["inject"], (name, role))
 
     def test_fleet_part_is_opt_in_and_lists_every_ship(self):
         """T-022: the `fleet` part (admiral's own; opt-in like `board`) is a one-line-per-ship

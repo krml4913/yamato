@@ -13,7 +13,7 @@ from pathlib import Path
 
 from . import board as board_mod
 from . import board_view, deadline, inbox, memory, roster
-from .team import inject_parts
+from .team import FILE_PREFIX, inject_parts
 from .runtime import posix_path, ship_arg, yamato_invocation
 from .util import YamatoError, today
 
@@ -28,9 +28,9 @@ LIMITS = {
     "total_chars": 9500,       # per hook: Claude Code takes 10,000 chars from one (verify-p0-c Q1)
     "last_report": (30, 1500), # the previous daily report's 3 sections (design-p1 §2.3)
     "board_items": 20,         # the `board` part's overview (T-030); over this, "…ほか N 件"
-    "charter": (60, 3000),     # the `charter` part (T-072): charter.md at the head of hook B
     "fleet_items": 20,         # the `fleet` part (T-022); over this, "全文は `yamato ships`"
 }
+FILE_LIMIT = (60, 3000)        # a `file:<名前>` part without its own `inject.limits.files.<名前>` / `.default` (T-075)
 
 
 def cap_text(text: str, max_lines: int, max_chars: int, source: str = "") -> str:
@@ -99,14 +99,27 @@ def _last_report(shipdir: Path, limit: tuple[int, int]) -> str:
     return f"## 前回の日報 ({path.stem}。全文: {path})\n{cap_text(text, *limit, source=str(path))}"
 
 
-def _charter(shipdir: Path, team: dict, limit: tuple[int, int]) -> str:
-    """The `charter` part (T-072, D-086): team.yaml's charter file at the head of hook B.
-    Missing or empty is one line, not an error; over the limit it is cut and points at the file."""
-    path = shipdir / team.get("charter", "charter.md")
-    title = f"## 艦の charter ({path.name})"
-    text = _read(path).strip()
+def _read_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):   # missing, a directory, unreadable: one line, not an error
+        return ""
+
+
+def _file_part(name: str, team: dict, lim: dict) -> str:
+    """A `file:<名前>` part (T-075, D-089): a file named under `inject.files`. Missing, empty or unreadable
+    is one line, not an error; over the limit it is cut and points at the file."""
+    inject = team.get("inject") or {}
+    spec = (inject.get("files") or {}).get(name)
+    if spec is None:   # a team.json from before this part, or hand-edited: say so, don't fall over
+        return f"## {name}\n(inject.files に {name} がない)"
+    path = Path(spec["abs"])
+    title = f"## {name} (file: {spec['path']})"
+    text = _read_text(path).strip()
     if not text:
-        return f"{title}\n(charter なし)"
+        return f"{title}\n(なし: {path})"
+    by_name = lim.get("files") or {}
+    limit = by_name.get(name) or by_name.get("default") or FILE_LIMIT
     return f"{title}\n{cap_text(text, *limit, source=str(path))}"
 
 
@@ -260,18 +273,21 @@ def build_knowledge(shipdir: Path, team: dict, seat: str, limits: dict | None = 
     """The knowledge hook (hook B): the role's memory and knowledge.md, "" when the seat's
     ``inject`` has neither."""
     lim = _limits(team, limits)
-    want = set(inject_parts(team, seat))
-    if not want & {"memory", "knowledge", "charter"}:
+    # in the order the inject list names them: what is cut by `total_chars` is the end (T-075)
+    order = [p for p in dict.fromkeys(inject_parts(team, seat))
+             if p in ("memory", "knowledge") or p.startswith(FILE_PREFIX)]
+    if not order:
         return ""
     shipdir = Path(shipdir)
     parts = [f"# yamato: 役割の memory と艦の knowledge (席 {seat})"]
-    if "charter" in want:
-        parts.append(_charter(shipdir, team, lim["charter"]))
-    if "memory" in want:
-        memory.migrate(shipdir, team)   # a P0 ship's seats/<seat>/memory.md moves in on first read
-        role = team["seats"][seat]["role"]
-        parts.append(_memory_section(f"役割の memory (roles/{role}/memory.md)", memory.memory_path(shipdir, role),
-                                     team, "memory"))
-    if "knowledge" in want:
-        parts.append(_memory_section("チームの knowledge.md", memory.knowledge_path(shipdir), team, "knowledge"))
+    for p in order:
+        if p == "memory":
+            memory.migrate(shipdir, team)   # a P0 ship's seats/<seat>/memory.md moves in on first read
+            role = team["seats"][seat]["role"]
+            parts.append(_memory_section(f"役割の memory (roles/{role}/memory.md)", memory.memory_path(shipdir, role),
+                                         team, "memory"))
+        elif p == "knowledge":
+            parts.append(_memory_section("チームの knowledge.md", memory.knowledge_path(shipdir), team, "knowledge"))
+        else:
+            parts.append(_file_part(p[len(FILE_PREFIX):], team, lim))
     return cap_total(shipdir, seat, "knowledge", "\n\n".join(parts), lim["total_chars"])

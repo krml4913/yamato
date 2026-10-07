@@ -4,7 +4,6 @@
 name: {{name}}
 hub: editor                  # captain を務める役割
 workspace: .                 # 艦フォルダ自身 (repo なし。自動 worktree は作らない)
-charter: charter.md
 
 talk_default: editor         # yamato talk <ship> で席を省いたときに attach する席
 # up_seats: [researcher]     # yamato up で hub と一緒に起こす席 (既定は空 = hub だけ。up --seats との和)
@@ -20,7 +19,7 @@ roles:
     shift: persistent
     trust: clean
     remote_control: true     # この席だけ --remote-control を付けて起こす (スマホから話せる席を captain に絞る)
-    inject: [handoff, log_tail, mine, last_report, board, inbox, memory, knowledge, charter]   # board: 艦全体の進み具合 (kanban 風、T-030)
+    inject: [handoff, log_tail, mine, last_report, board, inbox, file:charter, memory, knowledge]   # board: 艦全体の進み具合 (kanban 風、T-030)
     description: captain。owner の問いを項目に分けて調査を割り振り、確認を経た成果を報告書にまとめる。Web は読まない
   researcher:
     model: sonnet
@@ -141,6 +140,8 @@ seat_stop:
   require_delivery: true
 
 inject:
+  files:
+    charter: charter.md      # 名前: パス (相対は艦フォルダ基点)。inject のリストでは file:charter で参照する (T-075)
   parts: [handoff, log_tail, mine, inbox, memory, knowledge]
   limits:
     handoff: [40, 2000]
@@ -150,8 +151,9 @@ inject:
     inbox_chars: 400
     total_chars: 9500
     last_report: [30, 1500]
-    charter: [60, 3000]        # 注入の部品 charter の [行数, 文字数] (T-072)
     board_items: 20            # 注入の部品 board (kanban 風) の項目数の上限 (T-030)
+    files:
+      default: [60, 3000]      # inject.files の各ファイルの [行数, 文字数] (名前ごとにも書ける。T-075)
 
 # owner 宛ての通知経路 (design-p1 §2.4)。書き方は dev のひな形と同じ
 notify:

@@ -3,7 +3,6 @@
 name: {{name}}
 hub: pm                      # captain を務める役割
 workspace: "{{workspace}}"   # 席の作業ディレクトリ (作業対象の repo)
-charter: charter.md
 
 talk_default: pm            # yamato talk <ship> で席を省いたときに attach する席 (省略時は hub)
 # up_seats: [impl]          # yamato up で captain と一緒に起こす席 (既定は空 = captain だけ。up --seats との和)
@@ -24,7 +23,7 @@ roles:
     trust: clean              # merge の権限を持つ席が近くにいる艦なので、割り振りの captain も外部の文章を読まない (§0 B2)
     description: captain。owner の依頼や planner の要件を board の task に分けて席に割り振り、成果を確認して回収する。**自分では実装もレビューも merge もしない**
     remote_control: true     # この席だけ --remote-control を付けて起こす (スマホから話せる席を captain に絞る。design-p1 §1.5)
-    inject: [handoff, log_tail, mine, orphans, last_report, board, inbox, memory, knowledge, charter]   # charter: team.yaml の charter のファイル (T-072) / last_report: 前回の日報の「一言」「owner の判断待ち」「明日」 / orphans: 担当が落ちて active のまま残った項目 / board: 艦全体の進み具合 (kanban 風、T-030)
+    inject: [handoff, log_tail, mine, orphans, last_report, board, inbox, file:charter, memory, knowledge]   # file:charter: inject.files.charter のファイル (T-075。順に載る。切られるのは末尾から) / last_report: 前回の日報の「一言」「owner の判断待ち」「明日」 / orphans: 担当が落ちて active のまま残った項目 / board: 艦全体の進み具合 (kanban 風、T-030)
     # persistent の席の入れ替え (design-p1 §5.3, §5.4)。どれも off にできる
     #   止まっている席への send: 下のどれかに当たれば resume せず新しいシフト (記録から起きる)
     #     入れ替えの印 (seat-stop --rotate) / context / idle / new_day
@@ -51,7 +50,7 @@ roles:
     model: opus
     shift: persistent
     remote_control: true     # owner がスマホから話せるように
-    inject: [handoff, log_tail, mine, inbox, memory, knowledge, charter]   # 既定の部品 + charter (T-072)
+    inject: [handoff, log_tail, mine, inbox, file:charter, memory, knowledge]   # 既定の部品 + file:charter (T-075)
     description: 要件担当。owner と要件・課題・方針を詰め、要件ファイルと board の goal / milestone / task (assignee なし) に落として captain に渡す。実装も割り振りもしない
   # headless の役割の例 (1 シフト = claude -p 1 回。design-p1 §4)。調査や 1 回で終わる確認に向く
   # researcher:
@@ -164,6 +163,8 @@ seat_stop:
 # 注入は hook 2 本 (記録: handoff・作業ログ・担当・日報・inbox など / 知見: 役割の memory と knowledge.md) に分かれ、
 # それぞれ total_chars まで。上限を超えた分は切って「全文は <パス> を Read せよ」と書く。memory と knowledge は下の memory.limits で切る
 inject:
+  files:                     # 注入に足す任意のファイル。名前: パス (相対は艦フォルダ基点。~ と絶対パスも可。repo の中は @<workspace の呼び名>/<パス>)
+    charter: charter.md      # inject のリストでは file:<名前> で参照する (例: design: "@myrepo/docs/design.md" を足して file:design)
   parts: [handoff, log_tail, mine, inbox, memory, knowledge]
   limits:
     handoff: [40, 2000]      # [行数, 文字数]
@@ -173,8 +174,9 @@ inject:
     inbox_chars: 400         # 1 通あたり
     total_chars: 9500        # hook 1 本の全体 (Claude Code は hook 1 本あたり 1 万文字まで。検証 C Q1)
     last_report: [30, 1500]  # 前回の日報の 3 節 (inject に last_report を入れた役割だけ)
-    charter: [60, 3000]      # 注入の部品 charter の [行数, 文字数] (inject に charter を入れた役割だけ。T-072)
     board_items: 20          # 注入の部品 board (kanban 風) の項目数の上限。超えた分は「…ほか N 件」(T-030)
+    files:                   # inject.files の各ファイルの [行数, 文字数]。名前ごと、無ければ default (T-075)
+      default: [60, 3000]
 
 # memory の棚卸し (design-p1 §3)。役割の memory は roles/<役割>/memory.md (同じ役割の席で共有)
 #   候補: 席が `yamato memo "<本文>"` で seats/<席>/memory-inbox.md に溜める (起動時には読まない)
