@@ -26,7 +26,7 @@ POLL = 0.5            # follow 中、新しい行が無いときに寝る秒数 
 # 種類ごとの色 (SGR の前景色。docs/events.md の kind の一覧に合わせる)。
 # 異常 (force_stop・shift_failed・launch_failed・permission_denied・spin/duplicate_suspected・
 # captain_gap・notify_failed・pr_open_failed・pr_merge_failed・pr_conflict・worktree_*_failed) は赤。
-_ABNORMAL_KINDS = {
+ABNORMAL_KINDS = {
     events_mod.FORCE_STOP, events_mod.SHIFT_FAILED, events_mod.LAUNCH_FAILED,
     events_mod.PERMISSION_DENIED, events_mod.SPIN_SUSPECTED, events_mod.DUPLICATE_SUSPECTED,
     events_mod.CAPTAIN_GAP,
@@ -45,7 +45,7 @@ _COLORS: dict[str, int] = {
     "report_sent": 34,
     events_mod.LAST_CALL: 33,
 }
-for _k in _ABNORMAL_KINDS:
+for _k in ABNORMAL_KINDS:
     _COLORS[_k] = 31               # red
 del _k
 

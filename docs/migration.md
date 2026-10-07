@@ -21,6 +21,11 @@ v1.0.0 以降の変更のうち、**既存の艦・利用者が何かをしな�
 
 ## 未リリース
 
+### 新コマンド `yamato dashboard`: 全艦の元帥待ちと席の状況をローカルのブラウザで見る (T-079, D-093)
+- 何が変わったか: `yamato dashboard [--port N] [--no-open]` を足した。`127.0.0.1` だけで待ち受け (既定 port 8765)、GET だけ・艦フォルダには何も書かない。あわせて内部で `feed._ABNORMAL_KINDS` を `feed.ABNORMAL_KINDS` に改名した (dashboard と共有するため。表示は変わらない)
+- 既存の艦がやること: なし。team.yaml・艦フォルダの形式・既存コマンドに影響しない。使うなら `~/dev/yamato` を pull して `yamato dashboard`
+- PR: T-079
+
 ### `status` が idle の `state: blocked` を赤くしなくなった (T-078)
 - 何が変わったか: 「人間の返事待ちの疑い」(idle で `state: blocked`) の `!!!` 行と、`ships` の「赤 N」への計上をやめた。`state` は Claude Code が最後の発言から付けるラベルで、誤検知があったため。表示が減るだけ。設定の変更なし
 - 既存の艦がやること: なし。待機中かは席の行の `status=idle` で分かる。`waiting`・`failed`・stale・per_task の赤は従来どおり

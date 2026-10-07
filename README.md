@@ -49,6 +49,7 @@ cd ~/dev/myapp && claude    # trust のダイアログで承認して終了
 | `status [<ship>]` | 席ごとの状態。赤い席は `!!! <席>: ...` と出る (権限の確認待ち・API エラー (`state: failed`)・生きているのに `watch.stale_after` (既定 20m) より長く動いていない・per_task の席が生きているのに active の担当が無い)。`stopping` のまま 5 分を超えた席は止め直す (T-012) |
 | `admiral [--stop [--force]]` | 常駐の admiral セッション (`_admiral/`、D-011) に `claude attach` する。止まっていれば talk と同じ規則 (send → 起こす) で起こしてから。`_admiral/` が無ければ `admiral` ひな形から初回に作る (登録はしない。`ships` には出ない)。`--stop` は引き継ぎを書いて `seat-stop` するよう admiral に伝えるだけで、それ自体はブロックしない。`--force` は自分で止まらなければ (最大 `ADMIRAL_STOP_WAIT` 秒待って) 強制停止する (`down --force` と同じ扱い) |
 | `ships` | (admiral) 全艦を 1 行ずつ: 稼働中か・残り時間・captain の最終・赤い席の数・owner の判断待ちの数・今日の使用量・最新の日報の日付 |
+| `dashboard [--port N] [--no-open]` | 全艦の「元帥待ち」(人間が decider の open な判断・owner 宛て inbox の未読・権限などで待っている席) と、艦ごとの席の状況 (生存・status・最終・担当・未読・赤・作業ログの最後・今日のトークン)・board の進み・PR・直近の異常を、ローカルのブラウザの 1 ページで見る (D-093)。標準ライブラリの http.server で `127.0.0.1` だけに待ち受け (bind 先を変えるオプションは無い)、GET だけ、艦フォルダには何も書かない (`status` と違い roster も席も触らない)。60 秒ごとに自動更新。既定 port は 8765 (使用中なら次の番号を試す。`--port` で指定すると使用中はエラー)。既定でブラウザを開く (`--no-open` で開かない)。Ctrl-C で止まる |
 | `extend <ship> <期間>` | (admiral) deadline を延ばす (データの書き換えだけ。過ぎていれば今から数える) |
 | `halt <ship>` | (admiral) 緊急停止。猶予なしで全席を強制停止し、日報の安全網を通す |
 | `talk <ship> [<seat>]` | (admiral) 席に `claude attach` する (既定は team.yaml の `talk_default`、省略時 hub)。止まっている席は send と同じ規則で起こしてから。headless の席は attach できないので断る (send で頼む)。使い方は [docs/admiral.md](docs/admiral.md) |
