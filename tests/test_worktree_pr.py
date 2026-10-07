@@ -251,13 +251,16 @@ class TwoRepoTest(GitShipTestCase):
     def test_merge_requires_is_checked_per_repo_and_conflicts_stay_in_the_repo(self):
         from yamato import pr, worktree
 
+        def commit(wt, name):                                    # empty commit: one git call instead of add + commit
+            run("git", "commit", "-q", "--allow-empty", "-m", name, cwd=wt)
+
         team = self.team()
         a, b, c = self.item(), self.item(), self.item()
         for t in (a, b):                                         # a, b: lib only
             worktree.add(self.shipdir, team, t, repo="lib")
-            self.commit(worktree.path_of(self.shipdir, team, t, "lib"), f"{t}.txt")
+            commit(worktree.path_of(self.shipdir, team, t, "lib"), t)
         worktree.add(self.shipdir, team, c)                      # c: the first repo (ws) only
-        self.commit(worktree.path_of(self.shipdir, team, c), "c.txt")
+        commit(worktree.path_of(self.shipdir, team, c), c)
         for t in (a, b, c):
             self.quiet(pr.open_pr, self.shipdir, team, t, by="impl")
         pa, pb, pc = (self.board().read(t)[0]["pr"] for t in (a, b, c))
