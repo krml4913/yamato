@@ -21,6 +21,11 @@ v1.0.0 以降の変更のうち、**既存の艦・利用者が何かをしな�
 
 ## 未リリース
 
+### `status` が idle の `state: blocked` を赤くしなくなった (T-078)
+- 何が変わったか: 「人間の返事待ちの疑い」(idle で `state: blocked`) の `!!!` 行と、`ships` の「赤 N」への計上をやめた。`state` は Claude Code が最後の発言から付けるラベルで、誤検知があったため。表示が減るだけ。設定の変更なし
+- 既存の艦がやること: なし。待機中かは席の行の `status=idle` で分かる。`waiting`・`failed`・stale・per_task の赤は従来どおり
+- PR: T-078
+
 ### `inject.limits` の形を検査で揃えた: `handoff`・`log_tail`・`last_report` は `[行数, 文字数]` だけ (T-073)
 - 何が変わったか: この 3 つに整数 1 個を書いても team.yaml の検査を通り、起動後の注入で `TypeError` で落ちていた。検査 (`team.py` と schema) で拒否するようにした。逆に `mine_items` など整数のキーに `[行, 文字]` の配列を書いても拒否する。`[行数, 文字数]` の値は正の整数 2 個
 - 既存の艦がやること: `inject.limits` を見て次の 3 つを直す。ひな形どおりの艦は何もしない。(a) この 3 つに整数 1 個を書いている → `[行数, 文字数]` に (例: `handoff: [40, 2000]`)。(b) この 3 つに 0 や負の値の配列 (例: `[0, 2000]`) を書いている → 正の整数に。前は検査を通っていた。(c) `mine_items`・`inbox_messages`・`inbox_chars`・`total_chars`・`board_items`・`fleet_items` に配列を書いている → 正の整数 1 個に (例: `mine_items: 15`)。前は検査を通っていた

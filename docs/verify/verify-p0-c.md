@@ -216,7 +216,7 @@ docs(agent view「The supervisor process」)の規則: 「Finished or waiting fo
 - 権限ダイアログ待ちの行は、deny hook を入れていない席(既定の permission モード)のもの。deny hook の行は、hook の JSON を返す小さなスクリプトで作り直した席のもの(最初の席は、`echo` の引用符が sh に剥がれて JSON が壊れ、deny が効かずにダイアログで止まった。これは私の設定ミス)
 
 **yamato への示唆**
-1. **生存の判定は `pid != null`**(A のとおり)。`state` は「人間に何か求めているか」の目安として使う。`state == blocked` の中身は `status` と `waitingFor` で分ける: `waiting` + `waitingFor`(`permission prompt` / `dialog open` など)=開いているダイアログ、`idle`=質問や「できなかった」の報告=人間の返事待ち、`busy`=Monitor 待ち(正常な常駐)。`team status` で赤くするのは前 2 つ
+1. **生存の判定は `pid != null`**(A のとおり)。`state` は「人間に何か求めているか」の目安として使う。`state == blocked` の中身は `status` と `waitingFor` で分ける: `waiting` + `waitingFor`(`permission prompt` / `dialog open` など)=開いているダイアログ、`idle`=質問や「できなかった」の報告=人間の返事待ち、`busy`=Monitor 待ち(正常な常駐)。`team status` で赤くするのは前 2 つ(**v1.2.0 で idle の blocked の赤は廃止**。state が発言の分類で誤検知するため。赤にするのは `waiting` だけ)
 2. `state` は言い回しに左右されるので、**完了の判定に使わない**(完了は記録=handoff や board の更新で判断する)。「待て」と書くと `working` に見える
 3. **`failed` は 2 種類ある**。(a) worker が起動前に落ちた(pid なし。`claude --bg` は exit 0 のまま)、(b) セッション内のエラー(モデル不正など。プロセスは生きている)。起動コマンドの終了コードを成功の根拠にせず、**起動後に `claude agents --json` で `state` と `pid` を確認する**ステップを `yamato up` に入れる
 4. `stopped` は「作業中や待ち中に止められた」。シフト終了(遅延 stop、A)で止めた席は、`done` を出していれば `done` のまま残る
@@ -229,7 +229,7 @@ A/B の起動レシピと settings.json ひな形に対する変更の候補:
 2. **`"remoteControlAtStartup": false` をひな形に足すかを決める**(Q3)。足さないと、ユーザーが `remoteControlAtStartup: true` の環境では全席が常駐し、「1 時間で自然に止まる」前提が崩れる
 3. **SessionStart の注入は hook 1 本あたり 10,000 文字以下**(Q1)。§8.2 の 6 種類は hook を分けるか、上限つきで切って「全文は `<path>` を Read せよ」にする。`yamato hook session-start` の側で文字数を検査する
 4. **`yamato up` は起動後に `claude agents --json` で `state` と `pid` を確認する**(Q5)。`claude --bg` は worker が起動前に落ちても exit 0 を返し、失敗は `state=failed, pid なし` で後から分かる
-5. **`team status`**: 生存は `pid != null`。「詰まり」は `status=waiting`(`waitingFor` を出す)と `state=blocked`(`status=idle` は質問や断念の報告=人間の返事待ち)。Monitor 席が `busy` でなくなったら「常駐が切れた」(Q4、Q5)
+5. **`team status`**: 生存は `pid != null`。「詰まり」は `status=waiting`(`waitingFor` を出す)(`state=blocked` の idle を返事待ちとする判定は v1.2.0 で廃止)。Monitor 席が `busy` でなくなったら「常駐が切れた」(Q4、Q5)
 6. **常駐の手段**は 3 つ: zellij の attach(ターンを消費せず、RC なしで実測 OK)、Monitor(30 分ごとにモデルを呼ぶ。利用上限に弱い)、Remote Control(意図せず常駐する)。常駐の根拠は `pid` の生存で見る(Q3、Q4)
 
 ## 注意点と未検証の事項
