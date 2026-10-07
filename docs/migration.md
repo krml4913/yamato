@@ -1,6 +1,6 @@
 # 移行手順 (migration)
 
-v1.0.0 以降の変更のうち、**既存の艦・利用者が何かをしないと動かなくなる (または挙動が変わる) もの**の手順をここに集める。tag を打つときに「未リリース」の見出しを版名 (`## v1.0.0 → v1.1.0` など) に改め、その上に空の「未リリース」を作り直す。
+v1.0.0 以降の変更のうち、**既存の艦・利用者が何かをしないと動かなくなる (または挙動が変わる) もの**の手順をここに集める。tag を打つときに「未リリース」の見出しを版名 (`## v1.1.0 → v1.2.0` など) に改め、その上に空の「未リリース」を作り直す。
 
 ## 移行手順が要る変更の種類
 - team.yaml の形・既定値 (キーの追加・改名・削除、既定値の変更)
@@ -20,6 +20,23 @@ v1.0.0 以降の変更のうち、**既存の艦・利用者が何かをしな�
 - 該当 PR
 
 ## 未リリース
+
+## v1.1.0 → v1.2.0
+
+### 全体の手順
+v1.2.0 の項目のうち、**互換が 1 版だけあるもの (次の版で消える古い書き方)** は下の 2 つ。ひな形どおりの艦は何もしなくても今のまま動くが、warnings に「書き換えろ」と出る。次の版より前に直す。残りの項目は opt-in か表示の変更だけで、やることはない。
+
+**互換を 1 版で消す古い書き方 (次の版で検査が拒否する)**
+- トップの `charter:`・`inject` のリストの `charter`・`inject.limits.charter` → `inject.files.charter` / `file:charter` / `inject.limits.files.charter` (T-075)
+- `memory.limits` の 4 キー (`memory_lines` / `memory_chars` / `knowledge_lines` / `knowledge_chars`) → `inject.limits.memory` / `inject.limits.knowledge` (T-076)
+
+**すぐ検査で止まるもの**: `inject.limits` の `handoff`・`log_tail`・`last_report` に整数 1 個や 0・負の値、整数のキーに配列を書いていると `yamato up` が止まる (T-073。ひな形どおりなら該当しない)。
+
+手順:
+1. 艦を止める: `yamato down <艦>`
+2. yamato を更新する: `git -C ~/dev/yamato pull` (tag を使うなら `git -C ~/dev/yamato checkout v1.2.0`)
+3. 下の各項目のうち要るものだけ、艦の写しに反映する。本命は `yamato ship upgrade <艦>` (v1.1.0 以降に作った艦は template の記録があるので `--from` は不要。無ければ `--from v1.1.0`)。手で写すなら `git -C ~/dev/yamato diff v1.1.0 v1.2.0 -- src/yamato/templates/dev/` で差分を見る
+4. 艦を起こす: `yamato up <艦>`。team.yaml を変えたときは、この `up` で `.runtime/team.json` に写って効く
 
 ### 新コマンド `yamato dashboard`: 全艦の元帥待ちと席の状況をローカルのブラウザで見る (T-079, D-093)
 - 何が変わったか: `yamato dashboard [--port N] [--no-open]` を足した。`127.0.0.1` だけで待ち受け (既定 port 8765)、GET だけ・艦フォルダには何も書かない。あわせて内部で `feed._ABNORMAL_KINDS` を `feed.ABNORMAL_KINDS` に改名した (dashboard と共有するため。表示は変わらない)
