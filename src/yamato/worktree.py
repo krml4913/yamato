@@ -162,12 +162,18 @@ def _has_remote(root: Path, name: str = "origin") -> bool:
     return name in git(["remote"], root).stdout.split()
 
 
-def _base_ref(root: Path, team: dict, base: str | None) -> str:
+def _refs_present(root: Path, refs: list[str]) -> set[str]:
+    """The subset of ``refs`` (full names) that exist, in one ``git for-each-ref``."""
+    out = git(["for-each-ref", "--format=%(refname)", *refs], root, check=False).stdout.split()
+    return set(out) & set(refs)
+
+
+def _base_ref(root: Path, team: dict, base: str | None, has_remote: bool | None = None) -> str:
     """``--base`` as given; otherwise ``origin/<git.base>`` (fetched, best effort), else ``<git.base>``."""
     if base:
         return base
     b = git_conf(team)["base"]
-    if _has_remote(root):
+    if _has_remote(root) if has_remote is None else has_remote:
         git(["fetch", "--quiet", "origin", b], root, check=False)
         if _ref_exists(root, f"refs/remotes/origin/{b}"):
             return f"origin/{b}"
@@ -223,12 +229,15 @@ def _add(shipdir: Path, team: dict, item_id: str, branch: str | None, base: str 
         if wt.exists() and any(wt.iterdir()):
             raise YamatoError(f"{wt} は既にあって空ではなく、worktree でもありません")
         wt.parent.mkdir(parents=True, exist_ok=True)
-        if _ref_exists(root, f"refs/heads/{branch}"):
+        has_remote = _has_remote(root)
+        local, remote = f"refs/heads/{branch}", f"refs/remotes/origin/{branch}"
+        present = _refs_present(root, [local, remote])
+        if local in present:
             git(["worktree", "add", str(wt), branch], root)
-        elif _has_remote(root) and _ref_exists(root, f"refs/remotes/origin/{branch}"):
+        elif has_remote and remote in present:
             git(["worktree", "add", "--track", "-b", branch, str(wt), f"origin/{branch}"], root)
         else:
-            ref = _base_ref(root, team, base)
+            ref = _base_ref(root, team, base, has_remote)
             git(["worktree", "add", "--no-track", "-b", branch, str(wt), ref], root)
         created = True
     if recorded != str(wt) or field_get(team, meta, "branch", r) != branch:
