@@ -13,7 +13,7 @@
 
 - **起動レシピの注記** (§4.1): 起動側の環境変数は bg の席に届かない (Q2。席の環境は daemon とユーザー設定の `env` から来る)。消す手段は settings の `env` に空で書くことで、e2e-p1 の D (#24) で対応済み。Remote Control に繋がった席は attach なしでも 1 時間で止まらない (Q3)。ひな形は captain 以外 `remoteControlAtStartup: false`
 - **起動の確かめ** (§4.1): `claude --bg` は worker が起動前に落ちても exit 0。起動のあとに `claude agents --json` で `state == failed`・pid なしを見て、失敗として扱う (Q5)
-- **注入の上限** (§8.2): Claude Code は SessionStart hook 1 本あたり 10,000 文字まで受け取る (Q1)。注入を記録と知見 (memory・knowledge・`file:<名前>`) の hook 2 本に分け、それぞれ 9,500 文字で切る。memory と knowledge は `memory.limits` (`memory apply` の上限と同じ)、艦が足したファイル (`inject.files`) は `inject.limits.files` で切る (D-089)
+- **注入の上限** (§8.2): Claude Code は SessionStart hook 1 本あたり 10,000 文字まで受け取る (Q1)。注入を記録と知見 (memory・knowledge・`file:<名前>`) の hook 2 本に分け、それぞれ 9,500 文字で切る。memory と knowledge は `inject.limits.memory` / `knowledge` (`memory apply` の上限と同じ。T-076)、艦が足したファイル (`inject.files`) は `inject.limits.files` で切る (D-089)
 - **`state` の意味** (§14): `state` は席の発言の意味づけで、生死は pid、詰まりは `status` / `waitingFor` で見る (Q5)
 
 ## 改訂の要約 (v2, 2026-09-26)
@@ -371,8 +371,8 @@ board に入れないもの: 「なぜそうしたか」は decisions (P1)、「
 ### 6.6 memory
 
 - **候補**: 席の `memory-inbox.md` に溜める (§0 I5)。起動時には読まない
-- **memory 本体**: 起動時に注入する。長さの上限は `memory.limits` (`memory_lines` / `memory_chars`)。置き場は、P0 の実装では `seats/<seat>/memory.md`。design-p1 は、役割の知見として `roles/<role>/memory.md` (同じ役割の席で共有) に置く形にしている。P1 の棚卸しの実装で揃える (§15)
-- **棚卸し** (P1、design-p1 §3): 案を書くのは各役割の headless シフト (`memory.proposed.md`)、反映は `yamato memory apply`。**反映する役は設定 `memory.applier` (既定は hub = captain) と役割プロンプトで表し、コードは呼び出し元を検査しない**。コードが強制するのは、上限を超える案の反映を拒否することだけ (安全網。数値は `memory.limits`)。棚卸しの頻度も設定 (`curate_every` / `curate_at`)
+- **memory 本体**: 起動時に注入する。長さの上限は `inject.limits.memory` (`[行数, 文字数]`、T-076)。置き場は、P0 の実装では `seats/<seat>/memory.md`。design-p1 は、役割の知見として `roles/<role>/memory.md` (同じ役割の席で共有) に置く形にしている。P1 の棚卸しの実装で揃える (§15)
+- **棚卸し** (P1、design-p1 §3): 案を書くのは各役割の headless シフト (`memory.proposed.md`)、反映は `yamato memory apply`。**反映する役は設定 `memory.applier` (既定は hub = captain) と役割プロンプトで表し、コードは呼び出し元を検査しない**。コードが強制するのは、上限を超える案の反映を拒否することだけ (安全網。数値は `inject.limits.memory` / `knowledge`)。棚卸しの頻度も設定 (`curate_every` / `curate_at`)
 - 自動で溜めて、次のプロンプトに自動で入れることはしない (腐るため)
 - **自前で置く (2026-09-25 合意)**。Claude Code ネイティブの `memory: project` は使わない。理由: 保存先が作業対象の repo 側になる / 同じ repo で複数チームを動かすと同名の役割で混ざる / エージェントがいつでも書けてしまい、棚卸しで書く方針とぶつかる。注入は handoff と同じ SessionStart hook に 1 ファイル足すだけで済む
 - チーム全体で共有する知見は `knowledge.md` に置く。全員が起動時に読む (`inject` の `knowledge`)。誰が手入れするかは役割プロンプトで決め、ひな形の既定は captain
@@ -436,7 +436,7 @@ SessionStart hook が、次を注入する。**何を読ませるかは設定** 
 
 - 役割のプロンプトは注入ではなく、`--agents` の JSON で渡す (§4.1)
 - 注入は **SessionStart hook 2 本**に分ける。記録の hook (ヘッダ・`handoff`・`log_tail`・`mine`・`inbox` と注記) と、知見の hook (`memory`・`knowledge`・`file:<名前>`。リストに書いた順)。Claude Code は hook 1 本の出力を 10,000 文字まで受け取り、超えると本文の代わりに約 2KB のプレビューを渡す (検証 C Q1。判定は hook ごとで、文字数で数える)
-- 上限は `inject.limits` で持つ。`handoff`・`log_tail`・`last_report` は `[行数, 文字数]` (正の整数 2 個。整数 1 個は検査で拒否)、それ以外は正の整数 (T-073)。`inject.files` の各ファイルの上限は一段下の `inject.limits.files.<名前>` (と `files.default`、T-075)。(ひな形の値: handoff 40 行 / 2000 文字、担当 15 件、未読 10 通、**hook 1 本の全体 9500 文字**)。memory と knowledge は `memory.limits` (ひな形: memory 80 行 / 4000 文字、knowledge 120 行 / 5000 文字。`memory apply` が反映を拒否する上限と同じ) で切る。切ったところには「全文は `<path>` を Read せよ」と付ける (hook の全体で切ったときは、全文を `.runtime/` に書いてそのパスを付ける)。全体の上限は安全網として残し、個々の中身は設定に置く
+- 上限は `inject.limits` で持つ。`handoff`・`log_tail`・`last_report`・`memory`・`knowledge` は `[行数, 文字数]` (正の整数 2 個。整数 1 個は検査で拒否)、それ以外は正の整数 (T-073)。`inject.files` の各ファイルの上限は一段下の `inject.limits.files.<名前>` (と `files.default`、T-075)。(ひな形の値: handoff 40 行 / 2000 文字、担当 15 件、未読 10 通、**hook 1 本の全体 9500 文字**)。memory と knowledge は `inject.limits.memory` / `knowledge` (ひな形: memory 80 行 / 4000 文字、knowledge 120 行 / 5000 文字。`memory apply` が反映を拒否する上限と同じ。前の `memory.limits` は 1 版だけ読み替えて警告する、T-076) で切る。切ったところには「全文は `<path>` を Read せよ」と付ける (hook の全体で切ったときは、全文を `.runtime/` に書いてそのパスを付ける)。全体の上限は安全網として残し、個々の中身は設定に置く
 - captain は、これに加えてカンバン風の `board` と日報を読む (P1、設定の `inject`。日報は前回の「一言」「判断待ち」「明日」の 3 節だけ。design-p1 §2.3、`board` は T-030・§6.2)。ほか P1 で、孤児になった項目の一覧や棚卸し案の有無も注入に載る (design-p1 §5.6、§3.4)
 
 ### 8.3 シフトの終わり

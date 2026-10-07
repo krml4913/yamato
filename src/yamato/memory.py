@@ -10,7 +10,7 @@
   §4) reads the current memory.md and the candidates and answers with a proposal;
   yamato writes it to ``roles/<role>/memory.proposed.md``. memory.md is untouched
 - ``memory apply``: writes the proposal into memory.md. A proposal over
-  ``memory.limits`` is refused (safety net). Who calls it is not checked, only
+  ``inject.limits.memory`` / ``knowledge`` is refused (safety net). Who calls it is not checked, only
   recorded (events, memory-archive.md). Processed candidates go to
   ``memory-inbox.done/<date>.md``; dropped and overflowing lines to
   ``roles/<role>/memory-archive.md`` (append only)
@@ -45,11 +45,12 @@ SCOPES = ("role", "ship")
 MEMORY_KEYS = {"applier", "curate_every", "curate_at", "max_duration", "limits"}
 LIMIT_KEYS = ("memory_lines", "memory_chars", "knowledge_lines", "knowledge_chars")
 RENAMED_LIMITS = {"memory_bytes": "memory_chars", "knowledge_bytes": "knowledge_chars"}   # before #26
-# only what a ship without a `memory:` section gets; the template spells them out. The limits
-# are also where the SessionStart injection cuts, in characters as Claude Code counts them:
-# both fit the 10,000 characters of the knowledge hook (verify-p0-c Q1)
-FALLBACK = {"applier": None, "curate_every": 7 * 86400, "curate_at": 30, "max_duration": 15 * 60,
-            "limits": {"memory_lines": 80, "memory_chars": 4000, "knowledge_lines": 120, "knowledge_chars": 5000}}
+# `inject.limits.memory` / `knowledge` ([lines, chars], T-076): what `memory apply` refuses over and
+# where the SessionStart injection cuts, in characters as Claude Code counts them: both fit the
+# 10,000 characters of the knowledge hook (verify-p0-c Q1). Only what a ship that names none gets
+LIMIT_DEFAULTS = {"memory": (80, 4000), "knowledge": (120, 5000)}
+# only what a ship without a `memory:` section gets; the template spells them out
+FALLBACK = {"applier": None, "curate_every": 7 * 86400, "curate_at": 30, "max_duration": 15 * 60}
 
 CURATOR = "memory-curator"                 # the agent name of a curate shift (not a seat)
 CURATOR_PROMPT = "_memory-curator.md"      # under roles/ in the ship; `_` keeps it off role names
@@ -91,6 +92,8 @@ def validate_conf(raw, roles: dict) -> dict:
     dur = parse_duration(raw["max_duration"]) if raw.get("max_duration") is not None else FALLBACK["max_duration"]
     if every <= 0 or dur <= 0:
         raise YamatoError("team.yaml: memory.curate_every と memory.max_duration は 0 より長くする")
+    # OLD spelling (T-076, for one version: remove with the next): ``memory.limits`` moved to
+    # ``inject.limits.memory`` / ``knowledge``. Validated here, mapped by team.validate
     limits = raw.get("limits") or {}
     renamed = [k for k in RENAMED_LIMITS if k in limits] if isinstance(limits, dict) else []
     if renamed:
@@ -100,13 +103,29 @@ def validate_conf(raw, roles: dict) -> dict:
             not all(isinstance(v, int) and not isinstance(v, bool) and v > 0 for v in limits.values()):
         raise YamatoError(f"team.yaml: memory.limits は {', '.join(LIMIT_KEYS)} を正の整数で")
     return {"applier": None if applier is None else str(applier), "curate_every": every, "curate_at": at,
-            "max_duration": dur, "limits": {**FALLBACK["limits"], **limits}}
+            "max_duration": dur, "legacy_limits": dict(limits)}
+
+
+def legacy_pairs(legacy: dict) -> dict:
+    """The old ``memory.limits`` (four flat keys) as ``{memory|knowledge: (lines, chars)}``; a kind
+    that names only one of the two keeps the default for the other."""
+    out = {}
+    for kind, (lines, chars) in LIMIT_DEFAULTS.items():
+        if f"{kind}_lines" in legacy or f"{kind}_chars" in legacy:
+            out[kind] = (legacy.get(f"{kind}_lines", lines), legacy.get(f"{kind}_chars", chars))
+    return out
+
+
+def limit(team: dict, kind: str) -> tuple[int, int]:
+    """``(lines, chars)`` for kind ``memory`` / ``knowledge``: ``inject.limits.<kind>`` of the validated
+    team (T-076), else the default (a ``.runtime/team.json`` from before has none)."""
+    got = ((team.get("inject") or {}).get("limits") or {}).get(kind)
+    return tuple(got) if got else LIMIT_DEFAULTS[kind]
 
 
 def conf(team: dict) -> dict:
     """The validated ``memory:`` (a ``.runtime/team.json`` from before P1-8 has none)."""
     c = {**FALLBACK, **(team.get("memory") or {})}
-    c["limits"] = {**FALLBACK["limits"], **(c.get("limits") or {})}
     c["applier"] = c.get("applier") or team["hub"]
     return c
 
@@ -320,7 +339,6 @@ def over_limit(text: str, max_lines: int, max_chars: int) -> str | None:
 def status(shipdir: Path, team: dict, now: float | None = None) -> list[dict]:
     now = time.time() if now is None else now
     c = conf(team)
-    lim = c["limits"]
     rows = []
     for role in team["roles"]:
         cands = candidates(shipdir, team, role)
@@ -338,14 +356,14 @@ def status(shipdir: Path, team: dict, now: float | None = None) -> list[dict]:
         rows.append({"role": role, "count": count, "seats": {s: len(v) for s, v in cands.items()},
                      "last": last, "days": days,
                      "oldest_days": None if last is not None or since is None else int((now - since) // 86400), "due": due, "proposal": proposal,
-                     "over": over_limit(_read(memory_path(shipdir, role)), lim["memory_lines"], lim["memory_chars"])})
+                     "over": over_limit(_read(memory_path(shipdir, role)), *limit(team, "memory"))})
     kcount = len(_entries(_read(knowledge_inbox_path(shipdir))))
     klast = last_applied(shipdir, None)
     rows.append({"role": None, "count": kcount, "last": klast,
                  "days": None if klast is None else int((now - klast) // 86400),
                  "due": False, "proposal": diff_counts(_read(knowledge_path(shipdir)), _read(knowledge_proposed_path(shipdir)))
                  if knowledge_proposed_path(shipdir).is_file() else None,
-                 "over": over_limit(_read(knowledge_path(shipdir)), lim["knowledge_lines"], lim["knowledge_chars"])})
+                 "over": over_limit(_read(knowledge_path(shipdir)), *limit(team, "knowledge"))})
     return rows
 
 
@@ -391,9 +409,8 @@ def applier_notice(shipdir: Path, team: dict, seat: str, now: float | None = Non
 # --- injection (the safety net for hand edits, design-p1 §3.5) ------------------------------
 
 def within_limits(text: str, team: dict, kind: str) -> tuple[str, str | None]:
-    """``text`` cut to ``memory.limits`` (kind: memory / knowledge), and the warning if it was."""
-    lim = conf(team)["limits"]
-    max_lines, max_chars = lim[f"{kind}_lines"], lim[f"{kind}_chars"]
+    """``text`` cut to ``inject.limits.<kind>`` (kind: memory / knowledge), and the warning if it was."""
+    max_lines, max_chars = limit(team, kind)
     over = over_limit(text, max_lines, max_chars)
     if not over:
         return text, None
@@ -444,19 +461,19 @@ def _mark(kind: str, arg: str | None = None) -> str:
 
 def proposal_text(shipdir: Path, team: dict, role: str, *, new: str, archive: str, knowledge: str,
                   cands: dict, sid: str, now: float) -> str:
-    lim = conf(team)["limits"]
+    lim = limit(team, "memory")
     old = _read(memory_path(shipdir, role))
     plus, minus = diff_counts(old, new)
     count = sum(len(v) for v in cands.values())
     per_seat = ", ".join(f"{s}: {len(v)}" for s, v in cands.items() if v) or "なし"
-    over = over_limit(new, lim["memory_lines"], lim["memory_chars"])
+    over = over_limit(new, *lim)
     head = [
         f"# memory の棚卸し案: {role}",
         "",
         f"- 作成: {_stamp(now)} / 棚卸しのシフト {sid}",
         f"- 候補: {count} 件 ({per_seat})",
         f"- memory.md: {len(old.rstrip().splitlines())} 行 → {len(new.rstrip().splitlines())} 行 "
-        f"(+{plus} / -{minus} 行)。上限 {lim['memory_lines']} 行 / {lim['memory_chars']} 文字"
+        f"(+{plus} / -{minus} 行)。上限 {lim[0]} 行 / {lim[1]} 文字"
         + (f"。**上限を超えている ({over})。このままでは反映できない**" if over else ""),
         f"- 反映: `{yamato_invocation()} memory apply {ship_arg(shipdir)} {role}`。反映の前にこのファイルを直してよい "
         "(`<!-- yamato: ... -->` の行は消さない)",
@@ -477,13 +494,13 @@ def proposal_text(shipdir: Path, team: dict, role: str, *, new: str, archive: st
 def curate_prompt(shipdir: Path, team: dict, role: str, current: str, cands: dict) -> str:
     """The first prompt of a curate shift: the material and the answer format. What to keep
     is the curator's prompt (the template's roles/_memory-curator.md)."""
-    lim = conf(team)["limits"]
+    lim = limit(team, "memory")
     spec = team["roles"][role]
     lines = [line for v in cands.values() for line in v]
     return "\n".join([
         f"[yamato] 役割 {role} の memory の棚卸し。この 1 回の応答で案を返してください (ファイルは書かない)。",
         f"- 役割 {role}: {spec['description']} (役割プロンプト: {Path(shipdir) / 'roles' / (role + '.md')})",
-        f"- 新しい memory.md の上限: {lim['memory_lines']} 行 / {lim['memory_chars']} 文字。超えた案は反映できない",
+        f"- 新しい memory.md の上限: {lim[0]} 行 / {lim[1]} 文字。超えた案は反映できない",
         "- 候補の (ship) は艦全体の knowledge の候補で、yamato が knowledge-inbox.md に自動で回す。"
         "knowledge 節には、それ以外で艦全体に効くものだけを書く",
         "",
@@ -638,7 +655,7 @@ def run_curate(shipdir: Path, team: dict, role: str, now: float | None = None) -
                 knowledge=sec.get("knowledge", ""), cands=cands, sid=sid, now=ended))
             plus, minus = diff_counts(current, sec.get("memory", ""))
             count = sum(len(v) for v in cands.values())
-            over = over_limit(sec.get("memory", ""), c["limits"]["memory_lines"], c["limits"]["memory_chars"])
+            over = over_limit(sec.get("memory", ""), *limit(team, "memory"))
             msg = f"案を作った: {proposed_path(shipdir, role)} (+{plus} / -{minus} 行、候補 {count} 件)" \
                   + (f"。上限を超えている ({over})" if over else "")
             events.emit(shipdir, MEMORY_CURATE, summary=f"{role} の棚卸し案 (+{plus} / -{minus} 行、候補 {count} 件)",
@@ -716,7 +733,7 @@ def apply(shipdir: Path, team: dict, role: str, by: str, now: float | None = Non
     shipdir = Path(shipdir)
     _check_role(team, role)
     now = time.time() if now is None else now
-    lim = conf(team)["limits"]
+    lim = limit(team, "memory")
     prop = proposed_path(shipdir, role)
     if not prop.is_file():
         raise YamatoError(f"棚卸し案がありません: {prop} (`memory curate` で作る)")
@@ -725,7 +742,7 @@ def apply(shipdir: Path, team: dict, role: str, by: str, now: float | None = Non
         raise YamatoError(f"案に {_mark('memory')} の節がありません: {prop}")
     new = sec["memory"].strip("\n")
     new = new + "\n" if new.strip() else ""
-    _refuse_over(new, lim["memory_lines"], lim["memory_chars"], "新しい memory.md", prop)
+    _refuse_over(new, *lim, "新しい memory.md", prop)
     date = time.strftime("%Y-%m-%d", time.localtime(now))
     moved, unknown, to_knowledge = 0, [], []
     with ship_lock(shipdir):
@@ -771,13 +788,13 @@ def apply_knowledge(shipdir: Path, team: dict, by: str, now: float | None = None
     not known; the prompts and README say so)."""
     shipdir = Path(shipdir)
     now = time.time() if now is None else now
-    lim = conf(team)["limits"]
+    lim = limit(team, "knowledge")
     prop = knowledge_proposed_path(shipdir)
     if not prop.is_file():
         raise YamatoError(f"knowledge の案がありません: {prop} (knowledge-inbox.md の候補と今の knowledge.md から書く)")
     new = _read(prop).strip("\n")
     new = new + "\n" if new.strip() else ""
-    _refuse_over(new, lim["knowledge_lines"], lim["knowledge_chars"], "新しい knowledge.md", prop)
+    _refuse_over(new, *lim, "新しい knowledge.md", prop)
     date = time.strftime("%Y-%m-%d", time.localtime(now))
     with ship_lock(shipdir):
         old = _read(knowledge_path(shipdir))

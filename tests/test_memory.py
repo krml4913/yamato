@@ -69,24 +69,46 @@ class ConfTest(_Base):
         self.assertEqual(c["applier"], "pm")
         self.assertEqual(c["curate_every"], 7 * 86400)
         self.assertEqual(c["curate_at"], 30)
-        self.assertEqual(c["limits"], {"memory_lines": 80, "memory_chars": 4000,
-                                       "knowledge_lines": 120, "knowledge_chars": 5000})
+        self.assertNotIn("limits", c)   # moved to inject.limits (T-076)
+        self.assertEqual(self.t["inject"]["limits"]["memory"], (80, 4000))
+        self.assertEqual(self.t["inject"]["limits"]["knowledge"], (120, 5000))
+        self.assertEqual(self.t["warnings"], [])   # the template spells the new way
         d = {"name": "dev", "hub": "pm", "workspace": "/tmp", "roles": {"pm": {}, "impl": {}}}
         c = memory.conf(validate(d, Path("/ship")))
         self.assertEqual(c["applier"], "pm")          # hub
         self.assertEqual(c["max_duration"], 900)
         c = memory.conf({"hub": "pm"})                 # a team.json from before P1-8
-        self.assertEqual(c["limits"]["memory_lines"], 80)
-        d["memory"] = {"curate_every": "36h", "limits": {"memory_lines": 10}}
+        self.assertEqual(memory.limit({"hub": "pm"}, "memory"), (80, 4000))
+        self.assertEqual(memory.limit({"hub": "pm"}, "knowledge"), (120, 5000))
+        d["memory"] = {"curate_every": "36h"}
         c = memory.conf(validate(d, Path("/ship")))
         self.assertEqual(c["curate_every"], 36 * 3600)
-        self.assertEqual(c["limits"]["memory_lines"], 10)
-        self.assertEqual(c["limits"]["memory_chars"], 4000)
+        self.assertEqual(memory.limit(validate(d, Path("/ship")), "memory"), (80, 4000))   # not named: default
         for bad in ({"applier": "nobody"}, {"curate_at": 0}, {"limits": {"memory_lines": 0}},
                     {"limits": {"lines": 3}}, {"curate_every": "x"}, {"unknown": 1}):
             d["memory"] = bad
             with self.assertRaises(YamatoError, msg=bad):
                 validate(d, Path("/ship"))
+
+    def test_old_memory_limits_are_read_with_a_warning(self):
+        """T-076: `memory.limits` (four flat keys) is read as inject.limits.memory / knowledge for one version."""
+        d = {"name": "dev", "hub": "pm", "workspace": "/tmp", "roles": {"pm": {}},
+             "memory": {"limits": {"memory_lines": 10, "knowledge_chars": 700}}}
+        t = validate(d, Path("/ship"))
+        self.assertEqual(memory.limit(t, "memory"), (10, 4000))      # the key left out keeps its default
+        self.assertEqual(memory.limit(t, "knowledge"), (120, 700))
+        self.assertTrue(any("memory.limits は inject.limits.memory / knowledge に書き換えろ" in w for w in t["warnings"]))
+        self.assertNotIn("legacy_limits", t["memory"])
+        # both written: inject.limits wins, and it is said
+        d["inject"] = {"limits": {"memory": [5, 300]}}
+        t = validate(d, Path("/ship"))
+        self.assertEqual(memory.limit(t, "memory"), (5, 300))
+        self.assertEqual(memory.limit(t, "knowledge"), (120, 700))    # only the one not in inject.limits is read over
+        self.assertTrue(any("両方がある。inject.limits.memory を使う" in w for w in t["warnings"]))
+        # the old shape is still checked
+        d["memory"] = {"limits": {"memory_lines": 0}}
+        with self.assertRaises(YamatoError):
+            validate(d, Path("/ship"))
 
     def test_the_old_byte_limits_name_their_new_keys(self):
         d = {"name": "dev", "hub": "pm", "workspace": "/tmp", "roles": {"pm": {}},
@@ -222,8 +244,8 @@ class StatusTest(_Base):
         self.mem().parent.mkdir(parents=True, exist_ok=True)
         self.mem().write_text("".join(f"- {i}\n" for i in range(12)), encoding="utf-8")
         (self.shipdir / "knowledge.md").write_text("k" * 50, encoding="utf-8")
-        lim = {"memory_lines": 10, "memory_chars": 4000, "knowledge_lines": 120, "knowledge_chars": 20}
-        with mock.patch.dict(self.t["memory"], limits=lim):
+        lim = {**self.t["inject"]["limits"], "memory": (10, 4000), "knowledge": (120, 20)}
+        with mock.patch.dict(self.t["inject"], limits=lim):
             text = inject.build_knowledge(self.shipdir, self.t, "impl-1")
         self.assertIn(f"- 9\n…(memory.md が上限を超えている (12 行 (上限 10 行))。上限で切った。棚卸しが必要。"
                       f"全文は `{self.mem()}` を Read せよ)", text)
@@ -410,8 +432,7 @@ class ApplyTest(_Curated):
         self.assertIn("unittest", (self.shipdir / "seats/impl-1/memory-inbox.md").read_text(encoding="utf-8"))
         self.assertIn("上限を超えている", inbox.entries(self.shipdir, "pm")[0]["text"])
         # characters too
-        with mock.patch.dict(self.t["memory"], limits={**memory.conf(self.t)["limits"], "memory_lines": 500,
-                                                       "memory_chars": 100}):
+        with mock.patch.dict(self.t["inject"], limits={**self.t["inject"]["limits"], "memory": (500, 100)}):
             with self.assertRaisesRegex(YamatoError, "文字"):
                 memory.apply(self.shipdir, self.t, "impl", "pm")
 

@@ -122,11 +122,7 @@ memory:
   curate_every: 7d           # 前回の反映からこの日数で棚卸しの目安 (memory status に出るだけ)
   curate_at: 30              # 候補がこの件数に達したら棚卸しの目安
   max_duration: 15m          # 棚卸しのシフト 1 回の上限
-  limits:                    # 超える案は memory apply が反映を拒否する。注入もこの上限で切る (手で編集して超えたら警告)
-    memory_lines: 80
-    memory_chars: 4000       # 文字数 (Claude Code の hook の上限と同じ数え方)。memory + knowledge が注入の hook 1 本 (1 万文字) に収まる数字
-    knowledge_lines: 120
-    knowledge_chars: 5000
+  # 上限 (memory_lines など) は inject.limits.memory / knowledge に移した (T-076)
 
 # 全席の settings.json に重ねる中身
 settings:
@@ -152,6 +148,8 @@ inject:
     total_chars: 9500
     last_report: [30, 1500]
     board_items: 20            # 注入の部品 board (kanban 風) の項目数の上限 (T-030)
+    memory: [80, 4000]       # [行数, 文字数]。役割の memory の上限。超える案は memory apply が拒否し、注入もここで切る (手で編集して超えたら警告)
+    knowledge: [120, 5000]   # knowledge.md の上限。文字数は Claude Code の hook の数え方で、memory + knowledge が hook 1 本 (1 万文字) に収まる数字
     files:
       default: [60, 3000]      # inject.files の各ファイルの [行数, 文字数] (名前ごとにも書ける。T-075)
 

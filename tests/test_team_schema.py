@@ -156,6 +156,13 @@ class TeamSchemaTest(ShipTestCase):
                             f"{path} に description がない")
         self.assertTrue(self.schema["description"])
 
+    def test_the_old_memory_limits_is_deprecated_but_still_valid(self):
+        """T-076: the four flat keys stay valid for one version (read over to inject.limits), marked deprecated."""
+        node = find(self.schema, "memory", "limits")
+        self.assertTrue(node["deprecated"])
+        self.assertIsNone(check({"memory_lines": 80, "knowledge_chars": 5000}, node))
+        self.assertIsNotNone(check({"memory_lines": 0}, node))
+
     def test_the_removed_git_key_is_deprecated(self):
         self.assertIn("deprecationMessage", self.schema["properties"]["git"]["properties"]["merge_decision"])
 
