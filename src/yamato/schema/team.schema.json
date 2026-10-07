@@ -18,19 +18,10 @@
     "template": {
       "description": "この艦の写し (roles/*.md・team.yaml) の元のひな形と yamato の版。ship create が書き、ship upgrade が新しい版に書き換える。実行時には読まない。",
       "type": "object",
-      "required": [
-        "name",
-        "version"
-      ],
+      "required": ["name", "version"],
       "properties": {
-        "name": {
-          "description": "ひな形の名前 (dev / research ...)。",
-          "type": "string"
-        },
-        "version": {
-          "description": "写しを作った (または上げた) yamato の版。例 1.1.0。",
-          "type": "string"
-        }
+        "name": {"description": "ひな形の名前 (dev / research ...)。", "type": "string"},
+        "version": {"description": "写しを作った (または上げた) yamato の版。例 1.1.0。", "type": "string"}
       },
       "additionalProperties": false
     },
@@ -212,6 +203,11 @@
                 {
                   "type": "string",
                   "pattern": "^file:.+$"
+                },
+                {
+                  "const": "charter",
+                  "deprecated": true,
+                  "description": "(古い書き方。次の版で消える) file:charter に書く。"
                 }
               ]
             }
@@ -505,18 +501,11 @@
       "description": "席に読ませる Claude Code の設定の出どころ (--setting-sources に渡す)。既定は [project, local]。user を足すと ~/.claude の CLAUDE.md だけでなく hooks・plugin・env・remoteControlAtStartup なども席に入る (design §4.1)。",
       "type": "array",
       "items": {
-        "enum": [
-          "user",
-          "project",
-          "local"
-        ]
+        "enum": ["user", "project", "local"]
       },
       "minItems": 1,
       "uniqueItems": true,
-      "default": [
-        "project",
-        "local"
-      ]
+      "default": ["project", "local"]
     },
     "settings": {
       "type": "object",
@@ -572,6 +561,11 @@
               {
                 "type": "string",
                 "pattern": "^file:.+$"
+              },
+              {
+                "const": "charter",
+                "deprecated": true,
+                "description": "(古い書き方。次の版で消える) file:charter に書く。"
               }
             ]
           }
@@ -665,6 +659,17 @@
                 },
                 "description": "このファイルの上限。[行数, 文字数] (正の整数 2 個)。名前は inject.files にあるもの。"
               }
+            },
+            "charter": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "deprecated": true,
+              "description": "(古い書き方。次の版で消える) inject.limits.files.charter に書く。[行数, 文字数]。"
             }
           },
           "additionalProperties": false

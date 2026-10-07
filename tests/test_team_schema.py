@@ -102,7 +102,7 @@ class TeamSchemaTest(ShipTestCase):
         self.assertEqual(self.keys("profiles", "*"), team.PROFILE_KEYS)
         self.assertEqual(self.keys("git"), team.GIT_KEYS | team.GIT_REMOVED_KEYS)
         self.assertEqual(self.keys("inject"), {"parts", "limits", "files"})
-        self.assertEqual(self.keys("inject", "limits"), {*team.INJECT_LIMIT_KEYS, "files"})
+        self.assertEqual(self.keys("inject", "limits"), {*team.INJECT_LIMIT_KEYS, "files", "charter"})   # charter: 古い書き方 (deprecated)
         self.assertEqual(self.keys("memory"), memory.MEMORY_KEYS)
         self.assertEqual(self.keys("memory", "limits"), set(memory.LIMIT_KEYS))
         self.assertEqual(self.keys("seat_stop"), set(team.SEAT_STOP_DEFAULTS))
@@ -132,7 +132,7 @@ class TeamSchemaTest(ShipTestCase):
         for node in (find(self.schema, "inject")["properties"]["parts"],
                      find(self.schema, "roles", "*")["properties"]["inject"]):
             self.assertIsNone(check(["handoff", "file:charter"], node))
-            self.assertIsNotNone(check(["charter"], node))
+            self.assertIsNone(check(["charter"], node))   # the old spelling stays valid for one version (deprecated)
             self.assertIsNotNone(check(["file:"], node))
         files = find(self.schema, "inject")["properties"]["files"]
         self.assertIsNone(check({"charter": "charter.md"}, files))
