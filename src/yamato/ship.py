@@ -76,7 +76,7 @@ def create(name: str, workspace: str | list[str] | None, path: str | None, templ
         text = src.read_text(encoding="utf-8")
         if wss:
             text = _fill_workspace(text, wss)
-        # the schema is addressed by the checkout's absolute path (the repo is private, so no URL);
+        # the schema is addressed by the checkout's absolute path (the repo is public, but switching the schema to a URL is not supported yet);
         # as_uri() also gives a Windows path the file:///C:/... form the YAML extension reads
         text = text.replace("{{schema}}", SCHEMA.as_uri())
         dst.write_text(text.replace("{{name}}", name), encoding="utf-8", newline="\n")
