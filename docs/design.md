@@ -505,6 +505,17 @@ zellij セッション
 - 席の作業ディレクトリは、事前に Claude Code の workspace trust を通しておく必要がある (`ship create` が警告し、`up` が止まる。`~/.claude.json` から確かめられないときは、起動して claude の出力で判定する。§4.1)
 - attach はペインのフォアグラウンドで動かす (macOS ではバックグラウンドで動かすと落ちる)
 
+### 10.1 dashboard (D-093, T-079)
+
+`yamato dashboard [--port N] [--no-open]` は、全艦 (`admiral.all_ships()` と同じ範囲) を 1 ページに並べてブラウザで見せる。元帥 (owner) が「自分待ち」と各席の様子を一目で見るためのもの。
+
+- **読むだけ**: GET だけ、艦フォルダに何も書かない。`seat.status` は呼ばない (reconcile・enforce・restop_stuck が roster を書き換え席を止めるため)。roster・board・inbox・events・usage・作業ログを読み、`claude agents --json` は 1 回の描画で 1 回
+- **ローカルだけ**: `127.0.0.1` に bind。bind 先を変えるオプションは作らない。認証なし。既定 port は 8765 (`--port` を書かなければ使用中なら 8766… と 10 個まで試す。書いたのに使用中ならエラー)
+- **載せるもの**: ページの一番上に元帥待ち (decider が人間の open な判断 + 急ぎ・経過・推し / owner 宛て inbox の未読 / `status=waiting` の席の waitingFor)。艦ごとに deadline・席の表 (生存 pid・status・最終・active の項目・未読数・赤 (`admiral.red_flags`)・今日のトークン・作業ログの最後の 1 行)・board の state 別の件数と active / blocked の項目・PR (board の `pr` 欄がある done 以外。workspace の origin が GitHub ならリンク)・直近 3 日の異常 (feed が赤くする種類と同じ集合 `feed.ABNORMAL_KINDS` を共有)
+- **壊れた艦**: 1 艦の読み取りで例外が出ても、その艦の枠にエラーを出して他の艦は描く
+- HTML はモジュール内で組み立てる (テンプレートエンジン・外部 CDN なし。値は必ず `html.escape` を通す)。60 秒ごとに meta refresh
+- 範囲外: 操作 (判断を閉じる・返事・席を止める)・ローカル以外からの閲覧・認証。2 段目の候補は GitHub issue #101
+
 ## 11. admiral (窓口)
 
 - 人間の窓口。仕事は**チームの作成・構成の変更、出撃と帰投、全チームの状況を一望し、owner の判断を代筆すること**
@@ -577,6 +588,7 @@ grace: 20m            # 終了時刻のあと、キリのいいところまで�
 | `status [<ship>]` | 席ごとの状態 (生存、最後に動いた時刻、権限の確認で止まっている「詰まり」)、deadline までの残り、未読 inbox |
 | `send <ship> <seat\|owner> "<msg>" [--from <seat>]` | メッセージを送る (§7) |
 | `inbox <ship> <seat\|owner> [--all]` | 未読を全文で表示して既読にする |
+| `dashboard [--port N] [--no-open]` | 全艦の元帥待ちと席の状況をローカルのブラウザで見る (§10.1) |
 | `board add / set / show / list / mine / archive` | board の操作と表示 (§6.2) |
 | `log <ship> <seat> "<text>"` | 席の作業ログに 1 行追記する |
 | `seat-stop <ship> <seat> [--delivered]` | 席が使う。終業処理 (引き継ぎの確認と遅延 stop。§8.3) |

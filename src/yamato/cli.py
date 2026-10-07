@@ -122,13 +122,14 @@ def _parser(hook_only: bool = False) -> argparse.ArgumentParser:
     ss.add_argument("--rotate", action="store_true",
                     help="入れ替えの印を立てて終業する (次の send で resume せず新しいシフトになる)")
 
-    from . import admiral, feed, pr, report, rotate, worktree  # design-p1 §8, §2, §6: the parsers live with the commands
+    from . import admiral, dashboard, feed, pr, report, rotate, worktree  # design-p1 §8, §2, §6: the parsers live with the commands
 
     admiral.register(sub)
     worktree.register(sub)
     pr.register(sub)
     report.register(sub)
     feed.register(sub)
+    dashboard.register(sub)
     rotate.register(sub)   # T-024: `yamato rotate <ship> <seat>...` (a stopped persistent seat's mark)
     from . import decide  # design-p1 §1
 
@@ -333,6 +334,10 @@ def main(argv: list[str] | None = None) -> int:
 
             return {"worktree": worktree, "pr": pr, "report": report, "feed": feed,
                     "rotate": rotate}[args.cmd].run(args)
+        if args.cmd == "dashboard":
+            from . import dashboard
+
+            return dashboard.run(args)
         if args.cmd in ("memo", "memory", "_memory-curate"):
             from . import memory
 
