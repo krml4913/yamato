@@ -144,7 +144,7 @@ P0 の実装の名前に寄せた (leader の決定、2026-09-26)。例外は me
 
 ## 8. 開発のやり方
 
-- 言語は Python 3.11+、pip install は不要 (PyYAML は `vendor/`)。docs は日本語。repo (krml4913/yamato) は private
+- 言語は Python 3.11+、pip install は不要 (PyYAML は `vendor/`)。docs は日本語。repo (krml4913/yamato) は public (元帥の確認 10-08)
 - テスト: `python3 -m unittest discover` が正 (約 450 件、目安 10 秒)。`--durations 10` で遅い上位を見る。`python3 -m tests.parallel` はモジュールごとに並列。**速く保つ**: 実時間で待たず、定数を `mock.patch.object` で縮める。偽の claude (`tests/fake_claude.py`) は `tests/helpers.py` の `patch_fast` で同じプロセスで動く。git のテストは一時 repo を setUpClass で 1 回作ってコピーする (README「テストの実行」)
 - E2E: 本物の claude で確かめることは unit test ではなく E2E でやる。手順は [e2e-p0](e2e/e2e-p0.md) の「手順」(使い捨ての repo を trust → `ship create --path` → `send` → `up --for 20m` → 見るだけ)。`YAMATO_HOME` を scratchpad に向ける、gh は `$YAMATO_GH` で偽物に差し替える ([e2e-p1](e2e/e2e-p1.md) の手順)。終わったら作ったセッションを stop + rm し、`claude agents --json --all` で 0 件を確かめる
 - PR の流れ (今): fleet の driver が worktree で作業して PR を出す → fleet の leader がレビューして merge。設計の根幹に触る変更は事前に相談する。CI は無い (`.github/` なし) ので、テストは手元で流す

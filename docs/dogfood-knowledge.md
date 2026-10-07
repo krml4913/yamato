@@ -7,7 +7,7 @@
 
 ## この repo (yamato) の決まり
 - 作業対象は yamato 自身 (Python 3.11+、pip install なし、PyYAML は `vendor/`)。入口は `./yamato`、本体は `src/yamato/`
-- docs・コメント・board の本文・報告は日本語。repo は private (中身を外に出さない)
+- docs・コメント・board の本文・報告は日本語。repo は public (秘密・艦の記録を repo に書かない)
 - 設計の正本は `docs/design.md` §0 (最新の決定)。P1 の詳細は `docs/design-p1.md`。食い違えば §0。全体の地図は `docs/handoff.md`
 - 設計の根幹 (§0 の決定・コマンドの名前・記録の形式) を変える task は、実装の前に design の判断を開く
 
