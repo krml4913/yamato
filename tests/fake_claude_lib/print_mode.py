@@ -38,6 +38,32 @@ def _arg(argv, flag):
     return argv[argv.index(flag) + 1] if flag in argv else None
 
 
+def _yamato_in_process(argv, env, stdin_text):
+    """The real ``yamato`` CLI inside this process (no python start-up per hook): returns
+    True when ``argv`` was one, False for anything else (the caller then spawns it)."""
+    if len(argv) < 3 or argv[0] != sys.executable or Path(argv[1]).name != "yamato":
+        return False
+    root = Path(argv[1]).resolve().parent
+    for d in (root / "vendor", root / "src"):
+        if str(d) not in sys.path:
+            sys.path.insert(0, str(d))
+    from yamato import cli
+    import io
+    old_env, old_io = dict(os.environ), (sys.stdin, sys.stdout, sys.stderr)
+    os.environ.clear()
+    os.environ.update(env)
+    sys.stdin, sys.stdout, sys.stderr = io.StringIO(stdin_text or ""), io.StringIO(), io.StringIO()
+    try:
+        cli.main(list(argv[2:]))
+    except SystemExit:
+        pass
+    finally:
+        sys.stdin, sys.stdout, sys.stderr = old_io
+        os.environ.clear()
+        os.environ.update(old_env)
+    return True
+
+
 def _run_session_start(settings, sid):
     try:
         cfg = json.load(open(settings))
@@ -48,8 +74,11 @@ def _run_session_start(settings, sid):
         for h in group.get("hooks", []):
             # exec form (`args` present): command + args, no shell; otherwise a shell string
             argv, shell = ([h["command"], *h["args"]], False) if "args" in h else (h["command"], True)
+            payload = json.dumps({"session_id": sid, "source": "startup"})
+            if not shell and _yamato_in_process(argv, env, payload):
+                continue
             subprocess.run(argv, shell=shell, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                           input=json.dumps({"session_id": sid, "source": "startup"}))
+                           input=payload)
 
 
 def _transcript(sid, cwd):
@@ -103,8 +132,10 @@ def run(argv, mode):
     if mode.get("p_seat_stop") and ship:
         (Path(ship) / "seats" / seat / "handoff.md").write_text("# 引き継ぎ\n- 次: なし\n", encoding="utf-8")
         yamato = Path(__file__).resolve().parents[2] / "yamato"
-        subprocess.run([sys.executable, str(yamato), "seat-stop", ship, seat],
-                       env=dict(os.environ, CLAUDE_CODE_SESSION_ID=sid), capture_output=True, text=True, encoding="utf-8", errors="replace")
+        stop = [sys.executable, str(yamato), "seat-stop", ship, seat]
+        stop_env = dict(os.environ, CLAUDE_CODE_SESSION_ID=sid)
+        if not _yamato_in_process(stop, stop_env, ""):
+            subprocess.run(stop, env=stop_env, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if mode.get("p_no_result"):
         return 1
     status = mode.get("p_api_error")
