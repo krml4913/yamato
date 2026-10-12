@@ -26,7 +26,7 @@ class DashboardTest(ShipTestCase):
 
     def test_empty_ship_renders_with_no_waiting(self):
         page = self.render()
-        self.assertIn("元帥待ちは無い", page)
+        self.assertIn("owner の判断待ちは無い", page)
         self.assertIn("yamato dashboard", page)
         self.assertIn('http-equiv="refresh" content="60"', page)
         self.assertIn("最終更新", page)
@@ -40,18 +40,21 @@ class DashboardTest(ShipTestCase):
         self.assertLess(page.index("D-2"), page.index("D-1"))
         self.assertIn("急ぎ", page)
         self.assertIn("推しは A", page)
-        self.assertNotIn("D-3", page)   # decider が席なら元帥待ちではない
+        self.assertNotIn("D-3", page)   # decider が席ならowner の判断待ちではない
 
-    def test_waiting_owner_unread_and_waiting_seat(self):
+    def test_owner_unread_is_count_only_and_waiting_seat_not_on_top(self):
         inbox.append(self.shipdir, "owner", "pm", "確認を頼む <b>")
-        rec = roster.seat(self.shipdir, "impl")
+        roster.seat(self.shipdir, "impl")
         roster.update(self.shipdir, "impl", sessionId="S1", pid=os.getpid())
         by = {"S1": {"sessionId": "S1", "pid": os.getpid(), "status": "waiting", "waitingFor": "permission prompt"}}
         page = self.render(by)
-        self.assertIn("owner 宛て未読", page)
-        self.assertIn("確認を頼む &lt;b&gt;", page)    # escape される
-        self.assertNotIn("<b> ", page.split("元帥待ち")[1].split("</section>")[0].replace("<b>t1</b>", ""))
-        self.assertIn("席 impl が待っている: permission prompt", page)
+        top = page.split("owner の判断待ち")[1].split("</section>")[0]
+        self.assertIn("owner の判断待ちは無い", page)
+        self.assertNotIn("確認を頼む", top)
+        self.assertNotIn("permission prompt", top)
+        self.assertNotIn("確認を頼む", page)
+        self.assertIn("owner 宛て未読 1 件", page)
+        self.assertIn("permission prompt", page)   # 席の表の status 列には出る
 
     def test_seat_table_shows_active_unread_and_log_line(self):
         board.Board(self.shipdir, self.team()).add("T-001", {"assignee": "impl", "state": "active"}, by="pm")
