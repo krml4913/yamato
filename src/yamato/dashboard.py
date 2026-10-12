@@ -1,4 +1,4 @@
-"""yamato dashboard (D-093, T-079): ローカルのブラウザで全艦の「元帥待ち」と席の状況を見る。
+"""yamato dashboard (D-093, T-079): ローカルのブラウザで全艦の「owner の判断待ち」と席の状況を見る。
 
 読むだけ: 艦フォルダに何も書かない。``seat.status`` は呼ばない (reconcile・enforce・
 restop_stuck で roster を書き換え、席を止めるため)。roster・board・inbox・events・usage・
@@ -127,10 +127,7 @@ def gather(name: str, shipdir: Path, by: dict, now: float) -> dict:
     anomalies = [ev for ev in events_read(shipdir, now) if ev.get("kind") in feed.ABNORMAL_KINDS][-ANOMALIES:]
     return {
         "name": name, "team": team["name"], "deadline": deadline.describe(dl, now), "seats": seats,
-        "waits": waits, "owner_unread": [{"n": x.get("n"), "from": x.get("from"), "text": x.get("text", "")}
-                                         for x in inbox.unread(shipdir, inbox.OWNER)],
-        "waiting_seats": [{"name": x["name"], "waitingFor": x["waitingFor"]} for x in seats
-                          if x["alive"] and (x["status"] == "waiting" or x["waitingFor"])],
+        "waits": waits, "owner_unread": len(inbox.unread(shipdir, inbox.OWNER)),
         "counts": counts,
         "board": [{"id": m["id"], "title": m.get("title"), "state": m.get("state"), "assignee": m.get("assignee"),
                    "blocked_on": m.get("blocked_on") or []}
@@ -178,14 +175,9 @@ def _waiting_section(data: list[tuple[str, dict | None, str | None]]) -> str:
             rows.append(f"{tag}<b>{e(name)}</b> 判断 {e(str(w['id']))}: {e(str(w['title']))}"
                         f" <span class='dim'>({e(w['age'] or '?')} 待ち)</span>"
                         + (f"<br><span class='dim'>推し: {e(w['rec'])}</span>" if w["rec"] else ""))
-        for m in g["owner_unread"]:
-            rows.append(f"<b>{e(name)}</b> owner 宛て未読 #{e(str(m['n']))} from {e(str(m['from']))}: "
-                        f"{e(m['text'][:200])}")
-        for s in g["waiting_seats"]:
-            rows.append(f"<b>{e(name)}</b> 席 {e(s['name'])} が待っている: {e(str(s['waitingFor'] or '何か'))}")
     cls = "top" if rows else "quiet"
-    body = _ul(rows) or '<p class="ok">元帥待ちは無い</p>'
-    return f'<section class="card {cls}"><h2>元帥待ち ({len(rows)})</h2>{body}</section>'
+    body = _ul(rows) or '<p class="ok">owner の判断待ちは無い</p>'
+    return f'<section class="card {cls}"><h2>owner の判断待ち ({len(rows)})</h2>{body}</section>'
 
 
 def _seat_table(g: dict, now: float) -> str:
@@ -209,8 +201,9 @@ def _ship_card(name: str, g: dict | None, err: str | None, now: float) -> str:
         return f'<section class="card"><h2>{e(name)}</h2><p class="red">読めない: {e(err or "?")}</p></section>'
     hub_last = f" / captain {e(g['hub'])} の最終 {e(fmt_time(g['hub_last']))}" if g["hub_last"] else ""
     counts = " ".join(f"<span class='tag'>{e(k)} {n}</span>" for k, n in sorted(g["counts"].items()))
+    unread = f" / owner 宛て未読 {g['owner_unread']} 件" if g["owner_unread"] else ""
     parts = [f'<section class="card"><h2>{e(name)}</h2><p class="dim">{e(g["deadline"])}{hub_last}'
-             f" / 今日 {e(report._tokens(g['tokens']))} tok</p>", _seat_table(g, now),
+             f" / 今日 {e(report._tokens(g['tokens']))} tok{unread}</p>", _seat_table(g, now),
              f"<h3>board</h3><p>{counts or '-'}</p>"]
     rows = [f"<b>{e(b['id'])}</b> [{e(str(b['state']))}] {e(str(b['title']))} <span class='dim'>"
             f"{e(str(b['assignee'] or '-'))}" + (f" / blocked_on {e(', '.join(map(str, b['blocked_on'])))}" if b["blocked_on"] else "")
@@ -315,7 +308,7 @@ def serve(port: int | None = None, open_browser: bool = True, out=print) -> int:
 
 
 def register(sub) -> None:
-    d = sub.add_parser("dashboard", help="全艦の元帥待ちと席の状況をローカルのブラウザで見る (127.0.0.1・読むだけ)")
+    d = sub.add_parser("dashboard", help="全艦の owner の判断待ちと席の状況をローカルのブラウザで見る (127.0.0.1・読むだけ)")
     d.add_argument("--port", type=int, help=f"待ち受ける port (既定 {DEFAULT_PORT}。使用中なら次の番号を試す)")
     d.add_argument("--no-open", action="store_true", help="ブラウザを開かない")
 
