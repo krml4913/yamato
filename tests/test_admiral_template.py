@@ -1,9 +1,9 @@
 """templates/admiral/: the admiral's role prompt and settings.
 
-Only the static template is under test here (completion 1-2; T-036 adds the
-``fleet`` inject part, T-023 completion 3). The ``yamato admiral`` command that builds
-``_admiral/`` from it (T-020 laid the ``register=False`` / ``time_limit: none``
-groundwork; the CLI verb landed later) is out of scope."""
+Only the static template is under test here (the ``fleet`` inject part was added
+separately). The ``yamato admiral`` command that builds ``_admiral/`` from it (the
+``register=False`` / ``time_limit: none`` groundwork came first; the CLI verb landed
+later) is out of scope."""
 import json
 import unittest
 from unittest import mock

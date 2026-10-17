@@ -1,7 +1,7 @@
 """The dev template's team (reviewer / planner / pm / impl) and the ``merger`` trust profile.
 
-Owner's decisions D-010 (pm only assigns; reviewer reviews and merges; planner talks requirements) and
-D-026 (case B: the seat that types ``yamato pr merge`` gets it in its allow list, because the auto-mode
+Owner's decision 2026-09-27 (pm only assigns; reviewer reviews and merges; planner talks requirements) and
+owner's decision 2026-09-28 (case B: the seat that types ``yamato pr merge`` gets it in its allow list, because the auto-mode
 classifier stops it as a "merge without review" now and then) are the template's defaults."""
 import re
 import unittest
