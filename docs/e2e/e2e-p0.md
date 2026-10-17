@@ -9,7 +9,7 @@
 
 | 完了条件 | 結果 | 根拠 |
 |---|---|---|
-| owner の依頼 1 件を `yamato up` から無人で通す | ✅ run 4 | pm が T-A を作って impl に割り振る → impl が実装・commit・報告 → pm がレビューで差し戻し → impl の新しいシフトが直して報告 → pm が確認して done → 全席が引き継ぎを書いて止まる |
+| owner の依頼 1 件を `yamato up` から無人で通す | ✅ run 4 | pm が T-001 を作って impl に割り振る → impl が実装・commit・報告 → pm がレビューで差し戻し → impl の新しいシフトが直して報告 → pm が確認して done → 全席が引き継ぎを書いて止まる |
 | 時間の上限による終業 | ✅ run 2・3・7 | idle の pm を deadline watcher (asyncRewake の Stop hook) が deadline の 0 秒後に起こし、pm は引き継ぎを書いて seat-stop した。作業中の impl には `send` の時間チェックが終業を指示した |
 | 猶予後の強制停止 | ✅ `down --force` (run 7) | 生きている pm と起動直後の impl を止め、roster に「引き継ぎなしで終了」を記録。猶予切れの自動停止 (watchdog) は同じ関数で、単体テストで確認 |
 | 使用量の記録 | ✅ | `usage.jsonl` にシフトごとに 1 行 (下の表) |
@@ -48,7 +48,7 @@ yamato: workspace が Claude Code に trust されていません: .../e2e/untru
 |---|---|---|---|
 | 1 | e2e | gcd を 1 件 | ❌ 不具合 1 (impl は起動したが roster に載らず、impl の seat-stop が拒否された)。それ以外 (board、SendMessage の配送、pm の確認 → done → seat-stop、使用量) は動いた |
 | 2 | e2e (作り直し) | 同上 | ❌ 不具合 2 (impl が SendMessage せずに終業し、pm が報告を受け取れずに idle のまま)。この pm を残して、上限での終業の確認に使った → ✅ 11:09:27 の deadline で起こされ、handoff を書いて seat-stop |
-| 3 | e3 | 同上 | ❌ 不具合 3 (pm の差し戻しが impl の遅延停止の 10 秒に届いて消えた)。これも残して上限の確認 → ✅ 11:11:43 に起こされて終業。引き継ぎに「T-A は差し戻し中 (impl 待ち)」と残した |
+| 3 | e3 | 同上 | ❌ 不具合 3 (pm の差し戻しが impl の遅延停止の 10 秒に届いて消えた)。これも残して上限の確認 → ✅ 11:11:43 に起こされて終業。引き継ぎに「T-001 は差し戻し中 (impl 待ち)」と残した |
 | **4** | e4 | 同上 | **✅ 無人で完了** (次の節) |
 | 5 | e4 (続き) | lcm / is_prime / factorial を 3 task、`--for 3m` | ✅ 止まっていた persistent の pm を `send` が resume (フル id、同じ transcript)。3 件とも done、上限の前に全席が終業 |
 | 6 | e6 | 5 task、`--for 90s` → `--for 4m` | pm は残り時間を見て割り当てずに終業した (妥当)。不具合 4 (`up` で resume した pm が前のシフトの判断のまま即終業) を見つけた |
@@ -59,14 +59,14 @@ yamato: workspace が Claude Code に trust されていません: .../e2e/untru
 | 時刻 | 席 | 出来事 |
 |---|---|---|
 | 10:57:41 | owner | `send e4 pm ...` → `up e4` (deadline 11:17:41) |
-| 10:57:45 | pm | SessionStart で未読 inbox (依頼) が注入された。T-A を作り、`send e4 impl` → impl の新しいシフトが起動 |
+| 10:57:45 | pm | SessionStart で未読 inbox (依頼) が注入された。T-001 を作り、`send e4 impl` → impl の新しいシフトが起動 |
 | 10:57:55 | impl | ブランチ `t-001` を切り、gcd とテストを実装、commit、board に note、`send e4 pm` → 「宛先は生きている」→ SendMessage (`success:true`) → handoff → `seat-stop --delivered` |
 | 10:58:15 | pm | cross-session message で起き、`git diff main...t-001` と unittest で確認。`__pycache__/*.pyc` が commit されているのを見つけて差し戻し (`send e4 impl`)。impl は止まっていたので新しいシフト #2 が起動 |
 | 10:58:33 | impl | .pyc を untrack して `.gitignore` を足し、追加 commit、報告、終業 |
-| 10:58:48 | pm | 確認 (`git archive t-001` を展開してテスト) → `board set T-A state=done` (archive へ) → handoff → seat-stop |
-| 10:59:10 | — | 全席 off。board: T-A done (archive)。repo: `t-001` に 2 commit、push なし、main は元のまま |
+| 10:58:48 | pm | 確認 (`git archive t-001` を展開してテスト) → `board set T-001 state=done` (archive へ) → handoff → seat-stop |
+| 10:59:10 | — | 全席 off。board: T-001 done (archive)。repo: `t-001` に 2 commit、push なし、main は元のまま |
 
-board の項目 (archive/T-A.md) の経緯欄:
+board の項目 (archive/T-001.md) の経緯欄:
 ```
 - 09-26 10:57 pm: 作成
 - 09-26 10:58 impl: 着手

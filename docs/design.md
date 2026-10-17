@@ -284,7 +284,7 @@ P1 で足す項目 (詳細は design-p1 §0.4。値を書かなければひな�
     deadline                ← 稼働時間の上限 (データ。§12.1)
     ...                     ← 席の起こし・配送・watcher の管理用の小さなファイル
   board/
-    items/T-A.md          ← 1 項目 = 1 ファイル
+    items/T-001.md          ← 1 項目 = 1 ファイル
     archive/                ← done の項目の移動先。普段のビューには出さない
   seats/<seat>/             ← 記録は役割ごとではなく席ごと (§0 I5)
     handoff.md              ← 引き継ぎ。1 本を上書きする (常に「今の状態」)
@@ -316,7 +316,7 @@ git で管理するかは利用者が決める。
 **項目ファイルの例**
 ```markdown
 ---
-id: T-B
+id: T-002
 kind: task
 title: ログイン画面の実装
 parent: null
@@ -334,7 +334,7 @@ branch: t-042
 ```
 
 **更新のルール**
-- frontmatter の項目は **board コマンド経由でのみ**変更する (`board set T-B state=done` など)。コマンドが検査するのは**固定の項目の整合性だけ**: `state` が 4 つのどれか、`assignee` / `reviewer` が席の名前か `owner` (`-` で消す)、`parent` / `blocked_on` が実在する項目、`id` は変えられない、`title` / `kind` は空にできない。チームの列・種類・追加の項目は検査しない (モデルが勝手に構造を壊すのを防ぐのが目的で、運用の型は縛らない)
+- frontmatter の項目は **board コマンド経由でのみ**変更する (`board set T-002 state=done` など)。コマンドが検査するのは**固定の項目の整合性だけ**: `state` が 4 つのどれか、`assignee` / `reviewer` が席の名前か `owner` (`-` で消す)、`parent` / `blocked_on` が実在する項目、`id` は変えられない、`title` / `kind` は空にできない。チームの列・種類・追加の項目は検査しない (モデルが勝手に構造を壊すのを防ぐのが目的で、運用の型は縛らない)
 - 本文 (経緯、メモ) は自由に書いてよい。`board set --note` で経緯に 1 行足せる
 - done になった項目は、設定 `board.archive_on_done` (既定 true) で `board/archive/` に移る。false の艦は `board archive` で手で移す
 
@@ -348,9 +348,9 @@ board に入れないもの: 「なぜそうしたか」は decisions (P1)、「
 
 ```markdown
 # impl-1 引き継ぎ (2026-09-25 18:00)
-- 担当状況: T-B は review 待ち (PR#12)。T-C は未着手
+- 担当状況: T-002 は review 待ち (PR#12)。T-003 は未着手
 - 途中の作業: なし
-- 次にやること: レビュー指摘が来たら対応。来なければ T-C
+- 次にやること: レビュー指摘が来たら対応。来なければ T-003
 - 詰まり: なし
 - memory 候補: テストのモックは 30 日で期限が切れる
 ```
@@ -451,18 +451,18 @@ SessionStart hook が、次を注入する。**何を読ませるかは設定** 
 
 P0 にはまだ無い (`yamato decide` は P1)。詳細は design-p1 §1。
 
-- 判断待ちは board の項目にする (`kind: decision`、id は `D-A`)。判断の種類 (`category`) は team.yaml の `decisions` の鍵で、`when` に「この場合は判断を開け」の説明を置く。何を decision にするかは、役割プロンプトと `decisions` の `when` で決める
+- 判断待ちは board の項目にする (`kind: decision`、id は `D-007`)。判断の種類 (`category`) は team.yaml の `decisions` の鍵で、`when` に「この場合は判断を開け」の説明を置く。何を decision にするかは、役割プロンプトと `decisions` の `when` で決める
 - decider は、項目を開いたときに `decisions` から決めて項目に書く。あとで表を変えても、開いている項目の decider は変わらない。止まっているタスクの側が `blocked_on` で持ち (v1 の例の decision 側の `blocks:` は持たない)、向きを 1 つにして食い違いを防ぐ
 
   ```markdown
   ---
-  id: D-A
+  id: D-007
   kind: decision
   title: 認証を JWT にするかセッション方式にするか
   category: design          # team.yaml の decisions の鍵
   decider: owner            # 開いた時点で category から解決して書き込む
   state: open               # open (待ち) → done (決定)
-  links: [T-B]
+  links: [T-002]
   ---
   ## 背景 / 選択肢と推し / 決定
   ```

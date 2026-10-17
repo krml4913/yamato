@@ -10,7 +10,7 @@
 ### 1.1 行の形式
 
 ```json
-{"ts": 1790000000.12, "kind": "board_set", "seat": "impl", "item": "T-A", "by": "impl", "summary": "state: open→active", "data": {"changes": {"state": ["open", "active"]}}}
+{"ts": 1790000000.12, "kind": "board_set", "seat": "impl", "item": "T-001", "by": "impl", "summary": "state: open→active", "data": {"changes": {"state": ["open", "active"]}}}
 ```
 
 | キー | 型 | 中身 |
@@ -18,7 +18,7 @@
 | `ts` | 数値 | epoch 秒 (usage.jsonl・inbox.jsonl と同じ)。数値でない行は `read` が飛ばす |
 | `kind` | 文字列 | 出来事の種類 (§1.2) |
 | `seat` | 文字列 / null | 出来事が関わる席 (下の表)。`owner` もありうる |
-| `item` | 文字列 / null | 関わる board の項目 (`T-A`) や判断 (`D-A`) |
+| `item` | 文字列 / null | 関わる board の項目 (`T-001`) や判断 (`D-001`) |
 | `by` | 文字列 / null | した人 (送り手、`--by`)。分からなければ null |
 | `summary` | 文字列 | 人が読む 1 行の要約。改行は空白に畳み、200 文字で切る |
 | `data` | object (省略可) | kind ごとの詳細。日報や監視が機械的に使う値はここ |
@@ -81,7 +81,7 @@ from yamato import events
 events.read(shipdir, since=t0, until=t1)                  # since <= ts < until
 events.read(shipdir, kinds=[events.FORCE_STOP, events.PERMISSION_DENIED])
 events.read(shipdir, kinds=events.SEND, seat="pm")         # kind は 1 つでも可
-events.read(shipdir, item="T-A")
+events.read(shipdir, item="T-001")
 ```
 
 ファイルの順 (= 書いた順) で返す。壊れた行 (書きかけ) は飛ばす。
