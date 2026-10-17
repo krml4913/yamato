@@ -10,7 +10,7 @@
 ### 1.1 行の形式
 
 ```json
-{"ts": 1790000000.12, "kind": "board_set", "seat": "impl", "item": "T-001", "by": "impl", "summary": "state: open→active", "data": {"changes": {"state": ["open", "active"]}}}
+{"ts": 1790000000.12, "kind": "board_set", "seat": "impl", "item": "T-A", "by": "impl", "summary": "state: open→active", "data": {"changes": {"state": ["open", "active"]}}}
 ```
 
 | キー | 型 | 中身 |
@@ -18,7 +18,7 @@
 | `ts` | 数値 | epoch 秒 (usage.jsonl・inbox.jsonl と同じ)。数値でない行は `read` が飛ばす |
 | `kind` | 文字列 | 出来事の種類 (§1.2) |
 | `seat` | 文字列 / null | 出来事が関わる席 (下の表)。`owner` もありうる |
-| `item` | 文字列 / null | 関わる board の項目 (`T-001`) や判断 (`D-001`) |
+| `item` | 文字列 / null | 関わる board の項目 (`T-A`) や判断 (`D-A`) |
 | `by` | 文字列 / null | した人 (送り手、`--by`)。分からなければ null |
 | `summary` | 文字列 | 人が読む 1 行の要約。改行は空白に畳み、200 文字で切る |
 | `data` | object (省略可) | kind ごとの詳細。日報や監視が機械的に使う値はここ |
@@ -39,8 +39,8 @@ yamato が書くのは次の kind。定数は `src/yamato/events.py` (`notify_fa
 | `shift_start` | roster のシフト開始 (new / resume / headless) | 席 | ― | ― | `shiftNo`、`how`、`sessionId` |
 | `shift_end` | roster のシフト終了 | 席 | ― | ― | `shiftNo`、`reason` (`seat-stop` / `exited` / `down-force` / `grace-exceeded`。headless はほかに `max-duration` / `failed` / `wrapper-signal` (ラッパーが SIGTERM・SIGINT を受けて `-p` に転送した) / `wrapper-lost` (ラッパーが居ないのに `-p` が残っていたのを reconcile が止めた))、`handoffWritten`、`note` (「引き継ぎなしで終了」など) |
 | `force_stop` | `down --force`・猶予超えの強制停止 (このあと `shift_end` も出る) | 席 | ― | ― | `reason`、`shiftNo`、`sessionId` |
-| `restop_failed` | `seat-stop` の遅延 stop (`sh -c 'sleep ...; claude stop ...'`) の**起動自体**が失敗した (T-012。稀。作業ログにも残す) | 席 | ― | ― | `sessionId`、`forced` |
-| `stopping_stuck` | `status` / watchdog が、`stopping` のまま `seat.STOPPING_STUCK_AFTER` (既定 5 分) を超えて生きている席を見つけ、遅延 stop を打ち直した (T-012。よくある原因: worktree を cwd にした遅延 stop が、その worktree の `worktree rm` で cwd ごと消えて動かなかった) | 席 | ― | ― | `stopRequestedAt`、`sessionId` |
+| `restop_failed` | `seat-stop` の遅延 stop (`sh -c 'sleep ...; claude stop ...'`) の**起動自体**が失敗した (稀。作業ログにも残す) | 席 | ― | ― | `sessionId`、`forced` |
+| `stopping_stuck` | `status` / watchdog が、`stopping` のまま `seat.STOPPING_STUCK_AFTER` (既定 5 分) を超えて生きている席を見つけ、遅延 stop を打ち直した (よくある原因: worktree を cwd にした遅延 stop が、その worktree の `worktree rm` で cwd ごと消えて動かなかった) | 席 | ― | ― | `stopRequestedAt`、`sessionId` |
 | `shift_failed` | headless のシフトの異常 (design-p1 §4.2 の 4、§4.4。このあと `shift_end` も出る) | 席 | ― | ― | `shiftNo`、`sessionId`、`exitCode`、`failures` (理由の文)、`is_error`、`api_error_status`、`terminal_reason` |
 | `launch_failed` | bg の席の起動・resume のあと、`claude agents --json` で起きていなかったとき (`state: failed`・pid なし。`claude --bg` は exit 0 のまま。検証 C Q5)。シフトは始めない (`shift_start` は出ない)。日報の「異常」に載る | 席 | ― | ― | `how` (`new` / `resume`)、`sessionId`、`reason` |
 | `permission_denied` | PermissionRequest の deny hook (`source: dialog`)、PermissionDenied hook (`source: auto`、classifier の拒否) | 席 | ― | ― | `source`、`tool`、`reason` (auto のみ) |
@@ -81,7 +81,7 @@ from yamato import events
 events.read(shipdir, since=t0, until=t1)                  # since <= ts < until
 events.read(shipdir, kinds=[events.FORCE_STOP, events.PERMISSION_DENIED])
 events.read(shipdir, kinds=events.SEND, seat="pm")         # kind は 1 つでも可
-events.read(shipdir, item="T-001")
+events.read(shipdir, item="T-A")
 ```
 
 ファイルの順 (= 書いた順) で返す。壊れた行 (書きかけ) は飛ばす。

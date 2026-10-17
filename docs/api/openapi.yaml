@@ -3,7 +3,7 @@ info:
   title: yamato web console API
   version: 1.0.0
   description: |
-    yamato web console (D-118) の JSON API。この YAML が正本で、フロントの TS の型はここから生成し、
+    yamato web console (決定 2026-10-17) の JSON API。この YAML が正本で、フロントの TS の型はここから生成し、
     Python 側の応答は tests/api_schema.py の検査器でこのスキーマに照らして確かめる。
     M1 は読むだけ (GET)。書き込みと操作 (POST /api/v1/edit/*・/api/v1/ops/*) は dashboard --edit で起動したときだけ受け、付けなければ 501。127.0.0.1 だけで待ち受ける。日時は epoch 秒 (number)、無い・取れない値は null。
     エラーは全 path 共通で components.schemas.Error の形 (HTTP status は 4xx / 5xx)。

@@ -8,7 +8,7 @@
 
 | 確かめたこと | 結果 |
 |---|---|
-| headless の席が `run-headless` から `claude -p` で 1 シフト働く | ✅ inbox の依頼と担当の項目を読み、T-001 の経緯に要約を書き、handoff.md を上書きして `seat-stop` し、自然に終わった (13 秒) |
+| headless の席が `run-headless` から `claude -p` で 1 シフト働く | ✅ inbox の依頼と担当の項目を読み、T-A の経緯に要約を書き、handoff.md を上書きして `seat-stop` し、自然に終わった (13 秒) |
 | 起動レシピ (design-p1 §4.2) | ✅ `--session-id` を先に roster に書き、stream-json の最初に `system/hook_response [SessionStart]` が流れた。`--bare` なし、`< /dev/null` |
 | 終了後の記録 | ✅ `usage.jsonl` (`source: result`、`total_cost_usd`、`num_turns`、最後の `rate_limit_event`)、roster (`outcome: 正常`、`endReason: seat-stop`)、events (`shift_start` / `shift_end`) |
 | 終了報告 | ✅ `report_to: owner` に yamato の定型文。席の出力は入っていない |
@@ -25,7 +25,7 @@ yamato ship create e2eh --path <dir>/ship --workspace <dir>/repo
 #   team.yaml: hub: researcher / roles.researcher: {model: sonnet, shift: headless, max_duration: 15m, report_to: owner}
 #   roles/researcher.md: board mine で担当を見る、結果は board set --note、終える前に handoff.md と seat-stop
 yamato board add <ship> "notes.md を 3 行で要約する" assignee=researcher state=active --by owner
-yamato send <ship> researcher "T-001 をお願いします。workspace の notes.md を読み、3 行の要約を T-001 の経緯に書いてください。"
+yamato send <ship> researcher "T-A をお願いします。workspace の notes.md を読み、3 行の要約を T-A の経緯に書いてください。"
 yamato up <ship> --for 30m     # hub (researcher) を起こす = run-headless を切り離して起動
 ```
 
@@ -49,14 +49,14 @@ yamato up <ship> --for 30m     # hub (researcher) を起こす = run-headless �
 
 stream-json の流れ (`seats/researcher/headless/shift-1.jsonl`): `system/hook_started [SessionStart]` → `system/hook_response [SessionStart]` → `system/init` → assistant → `rate_limit_event` (allowed) → assistant / user の往復 ×3 → `result` (`subtype: success`、`terminal_reason: completed`、`is_error: false`)。stderr は空。
 
-T-001 の経緯 (席が `board set --note` で書いた):
+T-A の経緯 (席が `board set --note` で書いた):
 ```
 - 09-26 12:02 researcher: 要約: 1) yamato は Claude Code の background session の上に乗る常設チーム。 2) headless の席は claude -p を 1 シフト 1 回走らせる。 3) 報告は yamato の定型文で hub に届く。
 ```
 
 owner の inbox (yamato の定型文):
 ```
-[#1 09-26 12:02 from yamato] [yamato] researcher の headless シフト #1 が終了 (T-001, 正常)。項目ファイル: <ship>/board/items/T-001.md。作業ログ: <ship>/seats/researcher/log
+[#1 09-26 12:02 from yamato] [yamato] researcher の headless シフト #1 が終了 (T-A, 正常)。項目ファイル: <ship>/board/items/T-A.md。作業ログ: <ship>/seats/researcher/log
 ```
 
 `usage.jsonl` の 1 行 (抜粋):

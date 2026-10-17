@@ -14,7 +14,7 @@
 |---|---|
 | ship (艦) | チーム。艦フォルダ (既定 `~/yamato/<name>/`) と `team.yaml` で定義する |
 | captain (艦長) | 艦の司令塔。`team.yaml` の `hub:` の役割 (開発艦は `pm`、調査艦は `editor`) |
-| admiral (提督) | 窓口。艦の出撃・帰投・構成の変更・全艦の一望・判断の代筆。どの艦にも属さない常駐の Claude のセッション (`_admiral/`、`yamato admiral`、D-011。docs/admiral.md) |
+| admiral (提督) | 窓口。艦の出撃・帰投・構成の変更・全艦の一望・判断の代筆。どの艦にも属さない常駐の Claude のセッション (`_admiral/`、`yamato admiral`、決定 2026-09-27。docs/admiral.md) |
 | owner | 人間 |
 | 席 (seat) | 役割を担う名前付きセッション `<ship>.<seat>`。`count: n` の役割は `<role>-1..n` |
 | シフト | 席のセッション 1 回分。起動 → 記録を読む → 働く → 引き継ぎを書く → 終わる。`shift:` は `per_task` / `persistent` / `headless` |
@@ -83,7 +83,7 @@ PR の一覧 (すべて merge 済み):
 | #13 | P1-4b 日報 | #27 | #26 のレビューの残り |
 | #14 | P1-3 headless | | |
 
-まだ無いもの: 会話ログを保存する SessionEnd hook (design.md §15)、使用量と監査ログの集計 (P3)。`git.merge_decision: auto` は D-021 (案 b) で設定ごと外した (README)。
+まだ無いもの: 会話ログを保存する SessionEnd hook (design.md §15)、使用量と監査ログの集計 (P3)。`git.merge_decision: auto` は 決定 2026-09-27 (案 b) で設定ごと外した (README)。
 
 ## 4. 設計の原則
 
@@ -114,7 +114,7 @@ Claude Code 2.1.283 での観測。research preview なので変わりうる (de
 | bg の席は daemon の環境で動き、起動側の `env -u` は効かない。席の Bash に効かせるのは settings の `env`。ただし席のプロセスの環境には daemon の値が残る | verify-p0-c Q2、[e2e-p1](e2e/e2e-p1.md) の D と追記 |
 | idle の席は最後のターンから約 60 分で止められる。attach 中と **Remote Control に繋がった席は止まらない** (4 時間 48 分生存) | verify-p0-c Q3 |
 | 席ごとの Remote Control は settings の `remoteControlAtStartup: false` で外し `--remote-control` で足せる | verify-p1-d V10 |
-| auto モードの分類器は `yamato pr merge` を「レビューなしの merge」として揺れて止める (同じ席で通る日と止まる日がある)。merge を打つ役の settings の allow に `Bash(<yamato> pr merge*)` を足すと通る (ひな形は `profiles.merger`、reviewer が使う) | D-026 (2026-09-27 に yamato-dev で観測) |
+| auto モードの分類器は `yamato pr merge` を「レビューなしの merge」として揺れて止める (同じ席で通る日と止まる日がある)。merge を打つ役の settings の allow に `Bash(<yamato> pr merge*)` を足すと通る (ひな形は `profiles.merger`、reviewer が使う) | 決定 2026-09-28 (2026-09-27 に yamato-dev で観測) |
 | `-p` は `--bare` を付けない (サブスクで未ログイン)、`< /dev/null` を付ける。SIGTERM では結果 JSON が出ない (使用量は transcript から)。SessionEnd hook の待ちは 1.5 秒 | verify-p1-d V1・V4 |
 | `-p` に呼び出し元のセッションの環境変数を渡すと transcript が保存されない (`claude.PRINT_CALLER_ENV` を外す) | [e2e-headless](e2e/e2e-headless.md) の見つかったこと 1 |
 | linked worktree の trust は main repo から引き継がれる。trust は git root ごとで、bg の席は対話で trust できない | verify-p1-d V6、verify-p0-b |
@@ -157,9 +157,9 @@ yamato の開発を yamato の開発艦にやらせる (design.md §16)。以下
 2. 艦フォルダを整える: `team.yaml` (model・`time_limit`・`notify.via`)、`charter.md`。`knowledge.md` には [dogfood-knowledge.md](dogfood-knowledge.md) を写す (yamato の repo には CLAUDE.md が無い。席は `~/.claude/CLAUDE.md` も読む (外せない) が、そこは owner 個人のグローバルな設定なので、艦の約束の置き場は knowledge.md にする)
 3. trust: `~/dev/yamato` (git root) が trust されていなければ、owner が `cd ~/dev/yamato && claude` で承認する。`ship create` が警告し、`up` は止まる
 4. 最初の依頼を送ってから起こす: `./yamato send <name> pm "<依頼。完了条件つき>"` → `./yamato up <name> --for 3h`。依頼は board の task 1 件に収まる小さいものから (例: e2e-p1 の「観測したこと」の 1 つ)
-5. merge: ひな形の既定は `merge: reviewer` (D-010)。reviewer が承認して merge の判断を閉じ、自分で `pr merge` を打つ (`roles/reviewer.md`。`profiles.merger` の allow で分類器を通す、D-026)。設計の根幹に触る PR だけ owner に上げる (`scope_change`)。pm は割り振りだけでレビューも merge もしない。owner と話して要件を詰めるのは planner (`yamato talk <name> planner`)。艦ごとに変えられる (owner が決める艦の流れは design-p1 §8.3)
+5. merge: ひな形の既定は `merge: reviewer` (決定 2026-09-27)。reviewer が承認して merge の判断を閉じ、自分で `pr merge` を打つ (`roles/reviewer.md`。`profiles.merger` の allow で分類器を通す、決定 2026-09-28)。設計の根幹に触る PR だけ owner に上げる (`scope_change`)。pm は割り振りだけでレビューも merge もしない。owner と話して要件を詰めるのは planner (`yamato talk <name> planner`)。艦ごとに変えられる (owner が決める艦の流れは design-p1 §8.3)
 
-admiral (docs/admiral.md): `yamato admiral` で attach する常駐の Claude のセッション (`_admiral/`、D-011)。`up` / `ships` / `status` / `extend` / `down` / `halt` と、赤い席・判断待ちを owner に伝えるだけ。艦の中身 (方針・順番・レビューの指摘) は中継しない。owner が captain と話すときは owner の端末で `yamato talk <name>`。
+admiral (docs/admiral.md): `yamato admiral` で attach する常駐の Claude のセッション (`_admiral/`、決定 2026-09-27)。`up` / `ships` / `status` / `extend` / `down` / `halt` と、赤い席・判断待ちを owner に伝えるだけ。艦の中身 (方針・順番・レビューの指摘) は中継しない。owner が captain と話すときは owner の端末で `yamato talk <name>`。
 
 気をつけること:
 - **worktree の衝突**: fleet の worktree (`agent-fleet/fleet-state/projects/yamato/worktrees/`) も艦の worktree (`~/yamato/<name>/worktrees/`) も、同じ `~/dev/yamato` の worktree になる。同じブランチは 1 か所でしか checkout できない。fleet の task と艦の task に同じファイルを触らせない (後から merge した方が衝突する)

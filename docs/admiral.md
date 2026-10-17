@@ -1,6 +1,6 @@
 # admiral (窓口) の使い方
 
-- 対象: admiral を務める常駐の Claude のセッション (owner の決定 D-011。design-p1 §6、design.md §11)
+- 対象: admiral を務める常駐の Claude のセッション (owner の決定 2026-09-27。design-p1 §6、design.md §11)
 - 位置づけ: admiral は**どの艦にも属さない、常駐のセッション**。`yamato admiral` で attach する。記録は `~/yamato/_admiral/` (`$YAMATO_HOME/_admiral/`)。役割プロンプトは `roles/admiral.md` (`templates/admiral/`)
 
 ## 約束 (コードでは縛らない)
@@ -20,7 +20,7 @@
 
 **スマホからは Remote Control** (`roles.admiral.remote_control: true` / 起動時から `remoteControlAtStartup: true`) で話せる。owner の端末で `claude attach` するのと同じセッションに、別経路でつながる。
 
-**時間の上限は掛けない** (`time_limit: none`。design.md §0 B4 の例外、D-013)。`--for` を付けない `up` は deadline を書かず、watchdog も立てない。`up`/`down`/`extend`/`halt` は admiral 自身にも効く (`up _admiral --for 3h` なら一時的に上限も掛けられ、そのあと `--for` なしの `up` で戻れば古い deadline は消える。`admiral --stop --force` は `down --force` に落ちる) が、admiral 自身には使わない約束で、`--for` を明示しない限り deadline は書かれない。長く続いたら「入れ替え」(下) で新しいシフトに切り替える。
+**時間の上限は掛けない** (`time_limit: none`。design.md §0 B4 の例外、決定 2026-09-27)。`--for` を付けない `up` は deadline を書かず、watchdog も立てない。`up`/`down`/`extend`/`halt` は admiral 自身にも効く (`up _admiral --for 3h` なら一時的に上限も掛けられ、そのあと `--for` なしの `up` で戻れば古い deadline は消える。`admiral --stop --force` は `down --force` に落ちる) が、admiral 自身には使わない約束で、`--for` を明示しない限り deadline は書かれない。長く続いたら「入れ替え」(下) で新しいシフトに切り替える。
 
 ## 各艦へのコマンド
 
@@ -30,7 +30,7 @@
 |---|---|
 | 艦を作る | `yamato ship create <name> --workspace <repo> [--template dev]`。trust は main repo (git root) で確かめる。通っていなければ owner に `cd <repo> && claude` で承認してもらう |
 | 構成を変える | 艦フォルダの `team.yaml` / `roles/<役割>.md` / `charter.md` を Edit で直す。**変更は次の `yamato up` から効く** (今動いている席には効かない)。役割の `count` を変えると席の名前が変わる (`impl` ⇄ `impl-1, impl-2, ...`、design-drift E)。persistent の席は resume だと古いプロンプトのままなので、新しいプロンプトを効かせるには新しいシフトで起こす (`yamato rotate <ship> <seat>` で入れ替えの印を立ててから `up` / `send`) |
-| 出撃 | `yamato up <name> [--for 3h] [--seats impl,review]`。既定は captain だけが起きる (他の席は captain が send で起こす)。`--seats` と、艦の team.yaml の `up_seats` に書いた席が一緒に起きる (和)。艦がすでに稼働中で `--for` を付けなければ、deadline は縮めない (`max(now + time_limit, 今の deadline)`。D-015)。`--for` を明示すればその値で上書きする |
+| 出撃 | `yamato up <name> [--for 3h] [--seats impl,review]`。既定は captain だけが起きる (他の席は captain が send で起こす)。`--seats` と、艦の team.yaml の `up_seats` に書いた席が一緒に起きる (和)。艦がすでに稼働中で `--for` を付けなければ、deadline は縮めない (`max(now + time_limit, 今の deadline)`。決定 2026-09-27)。`--for` を明示すればその値で上書きする |
 | 全艦を一望 | `yamato ships`。1 艦 1 行: 稼働中か・残り時間・captain の最終・赤い席の数・owner の判断待ち・今日の使用量・最新の日報。`_admiral/` は登録しないのでここには出ない |
 | 1 艦を詳しく | `yamato status <name>`。手が要る席は `!!!` の行 (赤: 権限・入力待ち、API エラー)、様子見は `(!)` の行 (黄: 生きているのに `watch.stale_after` (既定 20m) より長く動いていない、per_task の席が生きているのに active の担当が無い) で出る。`ships` は「赤 N (席) 黄 M (席)」 |
 | 出来事を流し見 | `yamato feed <name>` |
@@ -43,14 +43,14 @@
 | 判断の代筆 | owner の言葉を受けて `yamato decide close <ship> <判断の id> --choice "<決定>" --reason "<owner の言葉をそのまま>" --by owner`。設計の根幹に触る判断は owner にはっきり確かめてから閉じる |
 | 表示 | `yamato view [admiral] [<艦名>...]` (zellij のタブで並べて見る。艦名を省くと admiral が先頭で全艦。`view open` と同じ) |
 
-## 権限について (D-013)
+## 権限について (決定 2026-09-27)
 
 - model は `opus`。話し相手になり、判断を代筆し、艦の構成も変えるので、判断の質を優先する
 - `auto` モード。`~/yamato/**` (艦フォルダ全部・`ships.json`) は編集してよい (team 構成・roles・charter の変更をやらせる仕事のため)。ただし各艦の記録本体 (`.runtime/`・`roster.json`・`usage.jsonl`・inbox・`memory.md`/`knowledge.md` など、各艦の yamato のコマンドだけが書く場所) は deny で守り、admiral 自身も直接は書き換えない
 - WebFetch / WebSearch は使ってよい (owner の判断。外を読む役割と権限のある役割を分ける B2 の分離は admiral には掛けない)
 - `~/dev/yamato` (yamato 自身の repo) は**読むだけ** (Edit / Write を deny)。実装・レビュー・merge は艦の中の仕事なので、必要なら各艦の captain / impl に頼む。pull は Bash で打つが、**その checkout を使う艦が全部止まっているときだけ** (稼働中に pull すると席の挙動が途中で変わる。コードでは縛らず役割プロンプトの約束)
 
-## 作り方 (D-013)
+## 作り方 (決定 2026-09-27)
 
 `_admiral/` は「席 1 つ・deadline なしの特別な艦」として、既存の seat / inject / rotate / talk / inbox の仕組みをそのまま使い回す。`ships.json` には登録せず (`register=False`)、名前が `_` 始まりなので通常の艦の名前としても拒む。`yamato admiral` の初回に `admiral` ひな形 (`templates/admiral/`) から作り、以後は既にある `team.yaml` / `roles/admiral.md` / `charter.md` を壊さない (owner の手直しを上書きしない)。
 
