@@ -182,6 +182,12 @@ npm run gen-api     # docs/api/openapi.yaml (API の正本) から src/api/schem
 npm run build       # src/yamato/web/dist/ に出力。画面を変えたら dist も commit する
 ```
 
+## CI
+
+`.github/workflows/ci.yml` (GitHub Actions)。push と PR (対象は main・develop) で走り、secrets は使わない。
+- frontend: `frontend/.nvmrc` の Node で `npm ci` → lint → typecheck → test → build → gen-api を流し、そのあと `git diff --exit-code` で `src/yamato/web/dist/` と `frontend/src/api/` の生成物が commit と一致するかを見る。画面や `docs/api/openapi.yaml` を変えたのに dist・型を commit し忘れると落ちる
+- python: `python -m unittest discover` を 3.11 と 3.13 で流す。zellij・本物の claude には頼らない (偽の claude を使う)
+
 ## docs
 初めての人はまず [docs/handoff.md](docs/handoff.md) (読む順番はそこの §2)。
 
