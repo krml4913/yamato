@@ -42,7 +42,11 @@ jobs:
       matrix:
         python-version: ["3.11", "3.13"]
     steps:
+      # upgrade のテストが git の tag (v1.0.0 など) を引くので、履歴と tag を全部取る
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
