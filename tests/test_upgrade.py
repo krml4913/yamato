@@ -121,6 +121,28 @@ class UpgradeCommandTest(ShipTestCase):
         # the roles were not touched
         self.assertEqual((self.shipdir / "roles" / "impl.md").read_text(encoding="utf-8"), "手直し済み\n")
 
+    def test_user_env_is_copied_but_not_hooks(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "settings.json").write_text(json.dumps({
+                "env": {"CLAUDE_CODE_USE_BEDROCK": "1", "AWS_REGION": "us-east-1"},
+                "hooks": {"Stop": [{"hooks": [{"type": "command", "command": "x"}]}]}}), encoding="utf-8")
+            with mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": d}):
+                self.assertEqual(self.run_upgrade(), 0)
+        (backup,) = list((self.shipdir / ".upgrade").iterdir())
+        data = json.loads((backup / "settings.json").read_text(encoding="utf-8"))
+        self.assertEqual(data["env"], {"CLAUDE_CODE_USE_BEDROCK": "1", "AWS_REGION": "us-east-1"})
+        self.assertNotIn("hooks", data)
+        (prog, argv), = self.calls
+        self.assertEqual(argv[argv.index("--setting-sources") + 1], "local")
+
+    def test_no_user_env_means_no_env_key(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d, mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": d}):
+            self.assertEqual(self.run_upgrade(), 0)
+        (backup,) = list((self.shipdir / ".upgrade").iterdir())
+        self.assertNotIn("env", json.loads((backup / "settings.json").read_text(encoding="utf-8")))
+
     def test_template_name_comes_from_the_record(self):
         upgrade.set_template(self.shipdir, "dev", "1.0.0")
         self.assertEqual(self.run_upgrade(None), 0)

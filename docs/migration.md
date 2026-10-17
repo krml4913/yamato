@@ -21,6 +21,11 @@ v1.0.0 以降の変更のうち、**既存の艦・利用者が何かをしな�
 
 ## 未リリース
 
+### `ship upgrade` の claude に ~/.claude/settings.json の `env` を渡す (T-088)
+- 何が変わったか: upgrade の claude は `--setting-sources local` なので user settings が丸ごと落ち、Bedrock 用の `env` (`CLAUDE_CODE_USE_BEDROCK`・`AWS_REGION`・`AWS_PROFILE` など) も届かなかった。upgrade 専用の settings.json に、user の settings.json (`CLAUDE_CONFIG_DIR` があればそこ) の `env` だけを写すようにした。hooks・CLAUDE.md は今までどおり入らない
+- 既存の艦がやること: なし。Bedrock を使う利用者は `~/.claude/settings.json` の `env` に書いてあれば upgrade がそのまま通る
+- やらないと: 動作は変わらない (env を書いていない利用者には影響なし)
+
 ## v1.1.0 → v1.2.0
 
 ### 全体の手順

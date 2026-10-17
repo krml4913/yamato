@@ -129,9 +129,22 @@ def prepare(shipdir: Path, team: dict, old: str, template: str, *, now: float | 
     return backup, bool(patch.strip())
 
 
+def _user_env() -> dict:
+    """``env`` of the user's ``settings.json`` (Bedrock etc.). ``--setting-sources local`` drops the whole
+    user file, so upgrade copies only this key (never hooks / CLAUDE.md)."""
+    base = os.environ.get("CLAUDE_CONFIG_DIR")
+    path = (Path(base) if base else Path.home() / ".claude") / "settings.json"
+    try:
+        env = json.loads(path.read_text(encoding="utf-8")).get("env")
+    except (OSError, ValueError, AttributeError):
+        return {}
+    return {str(k): str(v) for k, v in env.items()} if isinstance(env, dict) else {}
+
+
 def _settings(shipdir: Path) -> dict:
     ship = rule_path(shipdir)
-    return {"permissions": {
+    env = _user_env()
+    return {**({"env": env} if env else {}), "permissions": {
         "defaultMode": "default",
         "allow": [f"Edit(/{ship}/roles/*.md)", f"Edit(/{ship}/team.yaml)",
                   f"Bash({yamato_invocation()} ship upgrade-done *)"],
