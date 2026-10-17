@@ -21,6 +21,12 @@ v1.0.0 以降の変更のうち、**既存の艦・利用者が何かをしな�
 
 ## 未リリース
 
+### board の項目に `reviewer` 欄を足す (T-093)
+- 何が変わったか: board の項目の frontmatter に任意の `reviewer` 欄 (assignee の直後)。`board set <id> reviewer=<席>` で書き、`reviewer=-` で消す。state=active の項目の assignee か reviewer がいる席は「担当あり」と数える (per_task の reviewer がレビュー中に「担当の無い席が生きている」と警告されなくなる)。dashboard の担当の欄に「T-xxx (レビュー)」、`board mine <席>` と注入の「自分の担当」にもレビュー中の項目を「(レビュー)」の印で出す。欄の無い既存の項目はそのまま読める
+- 既存の艦がやること: 艦の `roles/pm.md` の「報告 (「PR を開いた」の知らせ) が来たら」の手順に、レビューを頼む前の `board set <ship> <id> reviewer=<reviewer の席> --by pm` を足す (ひな形 `src/yamato/templates/dev/roles/pm.md` の手順 4 を写す)。`yamato up` のやり直しは要らない
+- やらないと: reviewer 欄が書かれず、レビュー中の reviewer が今までどおり警告 (黄) に出て、dashboard にもレビュー中と出ない。動作は壊れない
+- PR: #115
+
 ### Windows で claude の起動がコマンド長超過で失敗するのを直す (T-090)
 - 何が変わったか: 席の起動 (`--bg`・`-p`) の `--agents` に、その席の role だけを載せるようにした (今までは全 role の全文で、yamato-dev で 28.6K 文字)。Windows では、コマンドラインが上限 (`claude.exe` は 32767 文字、`claude.cmd` の shim は `cmd /c` 経由で 8191 文字) を超えるなら、起動前に大きい引数を示してエラーにする。npm の shim は `node cli.js` を直に叩く (見つかれば)
 - 既存の艦がやること: なし。Windows で role プロンプトが長く shim の上限に当たる艦は、`claude.exe` の入れ方にするか roles/*.md を縮める

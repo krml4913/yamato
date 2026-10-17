@@ -97,6 +97,30 @@ class BoardTest(unittest.TestCase):
         self.b.add("c", {"assignee": "impl-1", "state": "active"})
         self.assertEqual([m["id"] for m in self.b.mine("impl-1")], ["T-001", "T-003"])
 
+    def test_reviewer_field(self):
+        self.b.add("a", {"assignee": "impl-1", "state": "active"})
+        self.b.add("b", {"assignee": "impl-2"})
+        self.b.set("T-001", {"reviewer": "impl-2"})
+        text = (self.ship / "board/items/T-001.md").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(text[text.index("assignee: impl-1") + 1], "reviewer: impl-2")   # assignee の直後
+        self.assertEqual([m["id"] for m in self.b.mine("impl-2")], ["T-001", "T-002"])
+        from yamato.board import active_seats, format_item
+        self.assertEqual(active_seats(self.b.items()), {"impl-1", "impl-2"})
+        mine = {m["id"]: m for m in self.b.mine("impl-2")}
+        self.assertIn("(レビュー", format_item(mine["T-001"], "impl-2"))
+        self.assertNotIn("レビュー", format_item(mine["T-002"], "impl-2"))
+        with self.assertRaises(YamatoError):
+            self.b.set("T-001", {"reviewer": "nobody"})
+        self.b.set("T-001", {"reviewer": "-"})
+        self.assertIsNone(self.b.read("T-001")[0]["reviewer"])
+        self.assertEqual([m["id"] for m in self.b.mine("impl-2")], ["T-002"])
+
+    def test_reviewer_stays_in_archive(self):
+        self.b.add("a", {"assignee": "impl-1", "reviewer": "impl-2"})
+        self.b.set("T-001", {"state": "done"})
+        self.assertEqual(self.b.read("T-001")[0]["reviewer"], "impl-2")
+        self.assertTrue((self.ship / "board/archive/T-001.md").is_file())
+
     def test_note_appends_and_body_survives_set(self):
         self.b.add("one", body="## 完了条件\n- add()", by="pm")
         self.b.set("T-001", {}, note="着手", by="impl-1")

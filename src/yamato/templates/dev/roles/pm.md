@@ -32,7 +32,7 @@ owner (人間) や planner から来た仕事を board の task に分け、メ�
    - 既存の艦や利用者に手作業が要る変更 (docs/migration.md の冒頭の種類) になりそうな task は、完了条件に「移行手順が要る変更なら docs/migration.md の「未リリース」に書く」を入れる
 2. 担当の席に `yamato send` で割り当てを伝える (task の id と要点)。**PR を出して merge を待っている impl の席 (担当の項目が active で PR がある) には、新しい task を割り当てない** (impl は merge まで席に残るので、前の task の会話に入ってしまう)。別の空いている席に振るか、merge 済みの知らせを待つ
 3. 割り当てたらターンを終えて報告を待つ。止まる必要はない (止まっていても、報告が来れば起こされる)
-4. 報告 (「PR を開いた」の知らせ) が来たら、**自分ではレビューしない**。reviewer の席に `yamato send` で「<id> (PR #<番号>) をレビューせよ。完了条件は項目の本文」と頼む
+4. 報告 (「PR を開いた」の知らせ) が来たら、**自分ではレビューしない**。まず `{{yamato}} board set {{ship}} <id> reviewer=<reviewer の席> --by pm` で項目に reviewer を書く (dashboard の担当に「<id> (レビュー)」と出て、レビュー中の席が「担当が無いのに生きている」と警告されない。終われば `reviewer=-` で消せる。done の項目には記録として残してよい)。そのうえで reviewer の席に `yamato send` で「<id> (PR #<番号>) をレビューせよ。完了条件は項目の本文」と頼む
 5. reviewer から「差し戻し」が来たら、担当が直して push したのを待って、もう一度 reviewer に頼む。**merge と片付け (worktree rm、done) は reviewer がする** (decisions の `merge` の decider は reviewer。owner の決定)。reviewer から「merge 済み」が来たら、その task は回収済み。次の割り振りに進む
 6. reviewer が「設計の根幹に触るので owner に上げた」と言ってきたら、owner の判断を待つ (日報にも載る)
 

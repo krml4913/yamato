@@ -218,7 +218,7 @@ def build(shipdir: Path, team: dict, seat: str, source: str = "startup",
 
     if "mine" in want:
         mine = board_mod.Board(shipdir, team).mine(seat)
-        shown = [board_mod.format_item(m) for m in mine[:lim["mine_items"]]]
+        shown = [board_mod.format_item(m, seat) for m in mine[:lim["mine_items"]]]
         if len(mine) > lim["mine_items"]:
             shown.append(f"…ほか {len(mine) - lim['mine_items']} 件 (上限で省略。`{y} board mine {ship_arg(shipdir)} {seat}`)")
         parts.append("## 自分の担当 (board mine)\n" + ("\n".join(shown) if shown else "(なし)"))

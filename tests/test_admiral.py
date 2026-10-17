@@ -384,6 +384,16 @@ class AdmiralTest(ShipTestCase):
         rc, out = self.cli("status", str(self.shipdir))
         self.assertNotIn("!!!", out)
 
+    def test_a_per_task_seat_reviewing_an_active_item_is_not_flagged(self):
+        # T-093: reviewer 欄の席も「担当あり」
+        self.cli("up", str(self.shipdir), "--for", "1h")
+        self.cli("send", str(self.shipdir), "impl", "T-001")
+        board.Board(self.shipdir, self.team()).add("T-001", {"assignee": "pm", "reviewer": "impl", "state": "active"}, by="pm")
+        rc, out = self.cli("status", str(self.shipdir))
+        self.assertNotIn("(!) impl", out)
+        rc, out = self.cli("ships")
+        self.assertNotIn("黄", out)
+
     def test_ships_counts_a_live_per_task_orphan_as_yellow(self):
         self.cli("up", str(self.shipdir), "--for", "1h")
         self.cli("send", str(self.shipdir), "impl", "T-001")

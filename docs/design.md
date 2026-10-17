@@ -306,7 +306,7 @@ git で管理するかは利用者が決める。
 ### 6.2 board
 
 **2 層に分ける**
-- **仕組みが読む固定の項目** (全チーム共通): `id` / `title` / `kind` / `parent` / `assignee` / `state` (open・active・blocked・done の 4 つ) / `blocked_on` / `links`
+- **仕組みが読む固定の項目** (全チーム共通): `id` / `title` / `kind` / `parent` / `assignee` / `reviewer` (任意。レビュー中の席。T-093) / `state` (open・active・blocked・done の 4 つ) / `blocked_on` / `links`
 - **チーム定義の中身**: 列、種類、追加の項目、完了の条件。`column` は任意で、チームが列を定義したときは固定の `state` に対応させる
 
 仕組みが読むのは固定の項目だけ。チーム独自の部分を読むのはエージェントと人間。`branch` / `pr` / `worktree` のような git の項目は、固定にせず任意の項目にする。
@@ -334,7 +334,7 @@ branch: t-042
 ```
 
 **更新のルール**
-- frontmatter の項目は **board コマンド経由でのみ**変更する (`board set T-042 state=done` など)。コマンドが検査するのは**固定の項目の整合性だけ**: `state` が 4 つのどれか、`assignee` が席の名前か `owner`、`parent` / `blocked_on` が実在する項目、`id` は変えられない、`title` / `kind` は空にできない。チームの列・種類・追加の項目は検査しない (モデルが勝手に構造を壊すのを防ぐのが目的で、運用の型は縛らない)
+- frontmatter の項目は **board コマンド経由でのみ**変更する (`board set T-042 state=done` など)。コマンドが検査するのは**固定の項目の整合性だけ**: `state` が 4 つのどれか、`assignee` / `reviewer` が席の名前か `owner` (`-` で消す)、`parent` / `blocked_on` が実在する項目、`id` は変えられない、`title` / `kind` は空にできない。チームの列・種類・追加の項目は検査しない (モデルが勝手に構造を壊すのを防ぐのが目的で、運用の型は縛らない)
 - 本文 (経緯、メモ) は自由に書いてよい。`board set --note` で経緯に 1 行足せる
 - done になった項目は、設定 `board.archive_on_done` (既定 true) で `board/archive/` に移る。false の艦は `board archive` で手で移す
 

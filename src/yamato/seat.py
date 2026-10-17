@@ -553,7 +553,7 @@ def _warn_if_per_task_orphan(shipdir: Path, team: dict, seat: str) -> None:
     from . import board as board_mod
 
     mine = [m["id"] for m in board_mod.Board(shipdir, team).items()
-           if m.get("assignee") == seat and m.get("state") == "active"]
+            if seat in (m.get("assignee"), m.get("reviewer")) and m.get("state") == "active"]
     if mine:
         out(f"注意: 宛先 {seat} は per_task の席で、前の task ({', '.join(mine)}) の会話のまま生きている。"
             "同じ task の続きでなければ確かめること。")
@@ -890,8 +890,7 @@ def status(shipdir: Path) -> int:
     by = claude.by_session(listing)
     dl = deadline.read(shipdir)
     now = time.time()
-    active_assignees = {m.get("assignee") for m in board_mod.Board(shipdir, team).items()
-                        if m.get("state") == "active"}
+    active_assignees = board_mod.active_seats(board_mod.Board(shipdir, team).items())
     out(f"艦 {team['name']} ({shipdir})")
     out(f"  {deadline.describe(dl, now)}")
     if stopped:

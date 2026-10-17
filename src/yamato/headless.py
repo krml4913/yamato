@@ -457,7 +457,7 @@ def _close(shipdir: Path, team: dict, seat: str, *, sid: str, no: int, started: 
     append_log(shipdir, seat, _summary(line))
 
     brd = board_mod.Board(shipdir, team)
-    items = [m for m in brd.mine(seat) if m.get("state") == "active"]
+    items = [m for m in brd.mine(seat) if m.get("state") == "active" and m.get("assignee") == seat]
     last = " ".join(str((stream.result or {}).get("result") or "").split())
     if not by_seat and last:
         for m in items:
