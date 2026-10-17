@@ -103,7 +103,7 @@ Claude Code 2.1.283 での観測。research preview なので変わりうる (de
 | 事実 | 出典 |
 |---|---|
 | 起動レシピ: `claude --bg --name <ship>.<seat> --agent <role> --agents '<json>' --model … --setting-sources project,local --settings <席の settings> --add-dir <ship> -- "<prompt>"`。`--add-dir` は後ろを食うので `--` が要る。settings は 1 本にまとめる | [verify-p0-b](verify/verify-p0-b.md) の起動レシピ、design.md §4.1 |
-| `--setting-sources project,local` でユーザー設定 (plugin hooks・env など) を席に持ち込まない。作業 repo の設定は効く。**`~/.claude/CLAUDE.md` は外しても席に入る** (10-17 実機)。`--settings` の `remoteControlAtStartup: false` は user の `true` に勝つ (10-17 実機)。未検証: resume の席に `--setting-sources` が引き継がれるか (目印の CLAUDE.md が使えないので別の目印が要る) | verify-p0-b Q3 |
+| `--setting-sources project,local` でユーザー設定 (plugin hooks・env など) を席に持ち込まない。作業 repo の設定は効く。**`~/.claude/CLAUDE.md` は外しても席に入る** (2026-10-17 実機)。`--settings` の `remoteControlAtStartup: false` は user の `true` に勝つ (2026-10-17 実機)。未検証: resume の席に `--setting-sources` が引き継がれるか (目印の CLAUDE.md が使えないので別の目印が要る) | verify-p0-b Q3 |
 | resume は **pid が消えるのを待ってから、フルの sessionId で** `--resume <id> --bg`。短い id や stop 直後だとフラグ抜きのコピーになる (`started a copy`) | verify-p0-a Q2、verify-p0-b Q2 |
 | 生死は pid で見る。`state` は席の発言の意味づけのラベルで、詰まりは `status: waiting` + `waitingFor` と idle の `blocked` | [verify-p0-c](verify/verify-p0-c.md) Q5 |
 | `claude --bg` は worker が起動前に落ちても exit 0。起動のあと `claude agents --json` で確かめる | verify-p0-c Q5 |
@@ -154,7 +154,7 @@ P0 の実装の名前に寄せた (leader の決定、2026-09-26)。例外は me
 yamato の開発を yamato の開発艦にやらせる (design.md §16)。以下は手順の案で、まだ一度も通していない。
 
 1. 艦を作る: `./yamato ship create <name> --template dev --workspace ~/dev/yamato` (艦フォルダは既定の `~/yamato/<name>/`。repo の外に置く)。艦の名前は `task` を避ける (fleet のブランチ `yamato/task/<task>` と、艦のブランチ `yamato/<ship>/<item>` が重なる)
-2. 艦フォルダを整える: `team.yaml` (model・`time_limit`・`notify.via`)、`charter.md`。`knowledge.md` には [dogfood-knowledge.md](dogfood-knowledge.md) を写す (yamato の repo には CLAUDE.md が無く、席は `~/.claude/CLAUDE.md` も読む (外せない) が、艦の約束は knowledge.md が約束の置き場になる)
+2. 艦フォルダを整える: `team.yaml` (model・`time_limit`・`notify.via`)、`charter.md`。`knowledge.md` には [dogfood-knowledge.md](dogfood-knowledge.md) を写す (yamato の repo には CLAUDE.md が無い。席は `~/.claude/CLAUDE.md` も読む (外せない) が、そこは owner 個人のグローバルな設定なので、艦の約束の置き場は knowledge.md にする)
 3. trust: `~/dev/yamato` (git root) が trust されていなければ、owner が `cd ~/dev/yamato && claude` で承認する。`ship create` が警告し、`up` は止まる
 4. 最初の依頼を送ってから起こす: `./yamato send <name> pm "<依頼。完了条件つき>"` → `./yamato up <name> --for 3h`。依頼は board の task 1 件に収まる小さいものから (例: e2e-p1 の「観測したこと」の 1 つ)
 5. merge: ひな形の既定は `merge: reviewer` (D-010)。reviewer が承認して merge の判断を閉じ、自分で `pr merge` を打つ (`roles/reviewer.md`。`profiles.merger` の allow で分類器を通す、D-026)。設計の根幹に触る PR だけ owner に上げる (`scope_change`)。pm は割り振りだけでレビューも merge もしない。owner と話して要件を詰めるのは planner (`yamato talk <name> planner`)。艦ごとに変えられる (owner が決める艦の流れは design-p1 §8.3)
