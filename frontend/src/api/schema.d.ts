@@ -142,13 +142,14 @@ export interface paths {
          * 操作 (yamato の CLI を 1 回呼んで、出力と exit code を返す)
          * @description --edit のときだけ。preview と同じ検査ヘッダ (X-Yamato-Token・Host・Origin・Content-Type) が要る。
          *     操作は yamato の CLI を別プロセスで呼ぶだけで、操作のロジックは持たない (引数は list・shell なし・
-         *     タイムアウト 30 秒・stdout と stderr をまとめて返す)。CLI が失敗しても (exit_code が 0 でなくても)
+         *     30 秒待ったら返す・stdout と stderr をまとめて返す)。CLI が失敗しても (exit_code が 0 でなくても)
          *     応答は 200 で、画面は出力と exit code をそのまま見せる。op は OpName の値。知らない op は 404。
          *     確認が要る操作は、画面の確認を経た印 confirmed=true が無ければ実行せず 400 (bad_request)。
          *     今ある操作は rotate (止まっている persistent の席に入れ替えの印を立てる。生きている席は CLI が断る)・
          *     艦の up (params: for・seats は省ける)・down・down-force (down --force)・extend (params.span)・halt。
          *     艦の操作は yamato up / down / extend / halt をそのまま呼ぶ (席や admiral の名前は借りない)。CLI が断れば exit_code と output にそのまま出る。
-         *     up は 30 秒を超えると打ち切られ timed_out になる。
+         *     CLI は画面と別のセッションで起こし、30 秒待っても終わらなければ殺さずに timed_out で返す (裏で最後まで走る。
+         *     up や halt を途中で殺すと半端な状態が残るため)。出力は艦の .runtime/web-ops/ のファイルに書かれる。
          */
         post: operations["runOp"];
         delete?: never;
@@ -240,11 +241,14 @@ export interface components {
             argv: string[];
             /** @description CLI の exit code。タイムアウトで打ち切ったときは null。 */
             exit_code: number | null;
+            /** @description 30 秒待っても終わらなかった。CLI は殺さず裏で最後まで走る (結果は log のファイルか status で見る)。 */
             timed_out: boolean;
             /** @description stdout と stderr をまとめた出力。端末の制御文字は落としてある。 */
             output: string;
             /** @description 長すぎて後ろを切ったか。 */
             truncated: boolean;
+            /** @description 出力を書いているファイル (艦の .runtime/web-ops/ の下)。timed_out のときは CLI が終わるまで伸びる。 */
+            log: string;
         };
         Overview: {
             /** @description 組み立てた時刻 (epoch 秒)。 */

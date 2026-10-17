@@ -44,10 +44,11 @@ export function OpPanel({ spec, onClose, onDone }: { spec: OpSpec; onClose: () =
       {result && (
         <>
           <p className={result.exit_code === 0 ? styles.ok : styles.error} role="status">
-            {result.timed_out ? "時間切れ (打ち切った)" : `exit code ${result.exit_code}`}
+            {result.timed_out ? "30 秒待ったが終わらない (止めてはいない。裏で続いている)" : `exit code ${result.exit_code}`}
           </p>
           <p className={styles.cmd}>{result.argv.join(" ")}</p>
           <pre className={styles.output} aria-label="出力">{result.output || "(出力なし)"}</pre>
+          {result.timed_out && <p className={styles.cmd}>結果は艦の status で確かめる。出力はこのファイルに続く: {result.log}</p>}
           {result.truncated && <p className={styles.cmd}>(長いので後ろを切った)</p>}
         </>
       )}
