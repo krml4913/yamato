@@ -40,7 +40,7 @@ paths:
     get:
       operationId: getShipConfig
       summary: 艦の team.yaml を項目ごとに
-      description: team.yaml の値・team.schema.json の description・生の yaml・この艦で読める md の一覧・「次の up で効く変更あり」。
+      description: 艦は fleet の ships のうち exists=true のもの (ships.json の艦と $YAMATO_HOME 直下の艦。files・edit と同じ引き方)。無ければ 404。team.yaml の値・team.schema.json の description・生の yaml・この艦で読める md の一覧・「次の up で効く変更あり」。
       parameters:
         - {$ref: "#/components/parameters/ShipName"}
       responses:
@@ -54,7 +54,7 @@ paths:
     get:
       operationId: getShipFile
       summary: roles/*.md・charter.md・knowledge.md の中身
-      description: file は艦フォルダからの相対 path を URL エンコードした 1 語 (roles%2Fimpl.md・charter.md・knowledge.md)。ShipConfig.files に出たものだけ読める。それ以外は 404。
+      description: 艦は fleet の ships のうち exists=true のもの (config・edit と同じ引き方)。無ければ 404。file は艦フォルダからの相対 path を URL エンコードした 1 語 (roles%2Fimpl.md・charter.md・knowledge.md)。ShipConfig.files に出たものだけ読める。それ以外は 404。
       parameters:
         - {$ref: "#/components/parameters/ShipName"}
         - name: file

@@ -25,7 +25,7 @@ from .util import (YamatoError, fmt_span, fmt_time, load_registry, parse_duratio
 TALK_NOTE = "[yamato talk] owner がこれから `claude attach` でこの席に来て直接話します。起きたら待っていてください。"
 
 # --- yamato admiral (D-011, T-021) ---------------------------------------------------
-# _admiral/ (T-020) is a ship folder like any other -- unregistered (all_ships() leaves it
+# _admiral/ is a ship folder like any other -- unregistered (known_ships() leaves it
 # out) and with no deadline (time_limit: none, D-013) -- built once from the `admiral`
 # template (T-023) the first time `yamato admiral` is used, then driven by the existing
 # seat / talk / send / seat-stop / rotate machinery (Q5 of work/requirements/admiral.md).
@@ -45,19 +45,31 @@ def out(msg: str = "") -> None:
 
 # --- the ship list ------------------------------------------------------------
 
-def all_ships() -> dict[str, Path]:
-    """Every ship: ``$YAMATO_HOME/ships.json``, then the folders under ``$YAMATO_HOME``.
+def known_ships() -> dict[str, tuple[Path, bool]]:
+    """Every ship name -> (folder, registered): ``$YAMATO_HOME/ships.json`` first, then the folders
+    under ``$YAMATO_HOME`` that hold a team.yaml. A registered ship whose folder is gone stays in
+    (``fleet`` shows it as missing); ``all_ships``/``find_ship`` drop it.
 
-    A name starting with ``_`` (``_admiral``, T-020) is never a normal ship's own name
-    (``check_name`` forbids it) and is left out here: it is the admiral's special, unlisted
-    folder. ``resolve_ship``/``status`` still find it directly by that name/path."""
-    ships = {name: Path(p) for name, p in load_registry().items() if not name.startswith("_")}
+    A name starting with ``_`` (``_admiral``) is never a normal ship's own name (``check_name``
+    forbids it) and is left out here: it is the admiral's special, unlisted folder.
+    ``resolve_ship``/``status`` still find it directly by that name/path."""
+    ships = {name: (Path(p), True) for name, p in load_registry().items() if not name.startswith("_")}
     home = yamato_home()
     if home.is_dir():
         for d in sorted(home.iterdir()):
             if not d.name.startswith("_") and (d / "team.yaml").is_file():
-                ships.setdefault(d.name, d)
-    return {n: p for n, p in sorted(ships.items()) if (p / "team.yaml").is_file()}
+                ships.setdefault(d.name, (d, False))
+    return dict(sorted(ships.items()))
+
+
+def all_ships() -> dict[str, Path]:
+    """Every ship whose folder holds a team.yaml: name -> folder."""
+    return {n: p for n, (p, _reg) in known_ships().items() if (p / "team.yaml").is_file()}
+
+
+def find_ship(name: str) -> Path | None:
+    """The one way to look a ship up by name (CLI, dashboard, config / files / edit APIs)."""
+    return all_ships().get(name)
 
 
 # --- red seats (design-p1 §5.2) ---------------------------------------------------

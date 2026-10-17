@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .. import shipconfig, team as team_mod, yamlpatch
+from .. import admiral, shipconfig, team as team_mod, yamlpatch
 from ..util import YamatoError
 from . import edit
 
@@ -70,7 +70,7 @@ def apply_ops(text: str, ops: list) -> str:
 def resolve(ship: str, file: str) -> edit.Target | None:
     if file != FILE:
         return None
-    shipdir = shipconfig.registered(ship)
+    shipdir = admiral.find_ship(ship)
     if shipdir is None:
         return None
     return edit.Target(shipdir / FILE, shipdir, FILE, lambda text: validate(shipdir, text), apply_ops)
