@@ -489,6 +489,8 @@ zellij セッション
 - レイアウトは zellij の KDL layout ファイルで宣言する。席を後から足すときは `zellij action new-pane` を使う
 - zellij を閉じても、チームは動き続ける (表示と実行を分ける)
 - **実装**: P2 の先行として、`bin/yamato-seat-attach` と `src/yamato/view/` (PR #2) が入っている。`bin/yamato-seat-attach --layout dev research -o ~/yamato/view.kdl` で layout を作り、`zellij --session yamato-view --new-session-with-layout ~/yamato/view.kdl` で開く。`yamato view [名前...]` (= `view open`。名前は艦か `admiral`、省くと admiral が先頭で全艦。セッションは yamato-view 1 つで、足りないタブを足して attach する、T-040) に組み込まれている。艦の登録簿 (`ships.json`) はまだ引かない
+- **孤児の attach と固まり (T-089)**: ペインの `view attach` は子に `claude attach` を持つ。zellij がペインを閉じる (タブの作り直し・`delete-session`・サーバの終了) と親に SIGHUP / SIGTERM が届き、以前はこれで `view attach` が即死して子の `claude attach` が親なし (ppid 1) のまま席に繋がって残った。次の `view` で同じ席に別の attach が付くと取り合いになり、追い出された側が 1 秒後に付け直すのを繰り返す (原因は実機未再現の推測を含む)。対策: `view attach` は SIGHUP / SIGTERM で子を止めて抜ける / zellij への非対話の呼び出しは 15 秒で打ち切る / attach が 10 秒未満で 3 回続けて終わったら 30 秒待って取り合いの疑いを表示する / 同じ席に別の `view attach` があれば起動時に警告する。
+- **`yamato view stale [--kill]`**: ペインを失って残った孤児 (親が init の `view attach` / `claude attach`) を一覧する。**`--kill` なしでは止めない** (`yamato view` も黙って止めず、警告だけ出す)。`--kill` で SIGTERM を送る。親のいる attach と、利用者が自分の端末で動かした `claude attach` には触らない。固まった zellij セッションは `zellij delete-session --force yamato-view` で消す (席は止まらない)。手順の詳細は `src/yamato/view/README.md`
 
 **spike `spike-zellij-attach` で確認済み (2026-09-25, zellij 0.45.1 / Claude Code 2.1.282)**
 - `claude attach` は zellij のペインで正しく表示され、キー入力で返信もできる
