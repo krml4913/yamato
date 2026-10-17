@@ -21,6 +21,12 @@ v1.0.0 以降の変更のうち、**既存の艦・利用者が何かをしな�
 
 ## 未リリース
 
+### Windows で claude の起動がコマンド長超過で失敗するのを直す (T-090)
+- 何が変わったか: 席の起動 (`--bg`・`-p`) の `--agents` に、その席の role だけを載せるようにした (今までは全 role の全文で、yamato-dev で 28.6K 文字)。Windows では、コマンドラインが上限 (`claude.exe` は 32767 文字、`claude.cmd` の shim は `cmd /c` 経由で 8191 文字) を超えるなら、起動前に大きい引数を示してエラーにする。npm の shim は `node cli.js` を直に叩く (見つかれば)
+- 既存の艦がやること: なし。Windows で role プロンプトが長く shim の上限に当たる艦は、`claude.exe` の入れ方にするか roles/*.md を縮める
+- やらないと: 動作は変わらない (macOS/Linux には影響なし)
+- PR: (T-090)
+
 ### `ship upgrade` の claude に ~/.claude/settings.json の `env` を渡す (T-088)
 - 何が変わったか: upgrade の claude は `--setting-sources local` なので user settings が丸ごと落ち、Bedrock 用の `env` (`CLAUDE_CODE_USE_BEDROCK`・`AWS_REGION`・`AWS_PROFILE` など) も届かなかった。user の settings.json (`CLAUDE_CONFIG_DIR` があればそこ) の `env` だけを、upgrade の claude の環境に渡すようにした (秘密が入りうるので控えの settings.json には書かない)。hooks・CLAUDE.md は今までどおり入らない
 - 既存の艦がやること: なし。Bedrock を使う利用者は `~/.claude/settings.json` の `env` に書いてあれば upgrade がそのまま通る

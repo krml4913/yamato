@@ -50,14 +50,68 @@ def claude_cmd() -> list[str]:
     return env_command("YAMATO_CLAUDE", "claude")
 
 
+# Windows command-line limits, in characters: CreateProcess takes 32767; ``cmd /c`` (the
+# ``claude.cmd`` shim) only 8191. T-090: a 4-role ship's whole ``--agents`` JSON was 28.6K.
+WIN_CMDLINE_MAX = 32767
+WIN_CMD_SHELL_MAX = 8191
+
+
+def _npm_shim_target(shim: str) -> list[str] | None:
+    """``[node, cli.js]`` for npm's ``claude.cmd`` shim (``cli.js`` sits at
+    ``node_modules/@anthropic-ai/claude-code/cli.js`` next to it), so ``cmd /c`` (8191 chars)
+    is not needed. None when the layout is not that (a native install, a moved shim): the
+    caller keeps the shim. Not verified on a real Windows box."""
+    import shutil
+    cli = Path(shim).parent / "node_modules" / "@anthropic-ai" / "claude-code" / "cli.js"
+    if not cli.is_file():
+        return None
+    node = shutil.which("node")
+    return [node, str(cli)] if node else None
+
+
+def _check_length(argv: list[str]) -> None:
+    """Windows only: refuse a command line the OS would cut off, naming what is big, instead
+    of letting claude fail with an opaque error."""
+    if sys.platform != "win32":
+        return
+    limit = WIN_CMD_SHELL_MAX if argv[:2] == ["cmd", "/c"] else WIN_CMDLINE_MAX
+    size = len(subprocess.list2cmdline(argv))
+    if size <= limit:
+        return
+    big = sorted(((len(a), a) for a in argv), reverse=True)[:3]
+    parts = ", ".join(f"{n} 文字 ({a[:24]!r}...)" for n, a in big)
+    hint = (" (claude.cmd の shim は cmd.exe 経由で 8191 文字まで。claude.exe の入れ方にするか、役割プロンプトを短くする)"
+            if limit == WIN_CMD_SHELL_MAX else " (役割プロンプトを短くする)")
+    raise YamatoError(f"claude のコマンドラインが長すぎる: {size} 文字 > 上限 {limit}。大きい引数: {parts}{hint}")
+
+
 def _claude_argv(args: list[str]) -> list[str]:
     """``[*claude_cmd(), *args]``, routed through ``cmd /c`` when the resolved binary is a
     ``.cmd`` / ``.bat`` shim (Windows only): those need a shell to run at all, so this is
-    the one place that shell is introduced, never for the rest of the command line."""
+    the one place that shell is introduced, never for the rest of the command line. An npm
+    shim is replaced by ``node cli.js`` when that is found (no 8191-char shell limit). A
+    command line over the Windows limit raises (``_check_length``)."""
     cmd = claude_cmd()
     if sys.platform == "win32" and cmd[0].lower().endswith((".cmd", ".bat")):
-        return ["cmd", "/c", *cmd, *args]
-    return [*cmd, *args]
+        direct = _npm_shim_target(cmd[0]) if cmd[0].lower().endswith(".cmd") else None
+        argv = [*direct, *cmd[1:], *args] if direct else ["cmd", "/c", *cmd, *args]
+    else:
+        argv = [*cmd, *args]
+    _check_length(argv)
+    return argv
+
+
+def only_role(agents_json: str, role: str) -> str:
+    """``--agents`` JSON cut down to the one role the seat runs as (``--agent <role>``): the other
+    roles' prompts are never used by it and were most of the argv (T-090). Unparsable input or
+    an unknown role is passed on unchanged."""
+    try:
+        agents = json.loads(agents_json)
+    except ValueError:
+        return agents_json
+    if not isinstance(agents, dict) or role not in agents:
+        return agents_json
+    return json.dumps({role: agents[role]}, ensure_ascii=False)
 
 
 def _run(args: list[str], *, cwd: str | None = None, env: dict | None = None, timeout: int = 120):
@@ -299,7 +353,7 @@ def launch(*, cwd: str, name: str, role: str, agents_json: str, model: str,
     ``remoteControlAtStartup: false`` (verify-p1-d V10)."""
     args = [
         "--bg", "--name", name,
-        "--agent", role, "--agents", agents_json,
+        "--agent", role, "--agents", only_role(agents_json, role),
         "--model", model,
         "--setting-sources", setting_sources,
         "--settings", settings,
@@ -356,7 +410,7 @@ def headless_argv(*, session_id: str, name: str, role: str, agents_json: str, mo
     args = [
         "-p", "--session-id", session_id, "--name", name,
         "--output-format", "stream-json", "--verbose",
-        "--agent", role, "--agents", agents_json,
+        "--agent", role, "--agents", only_role(agents_json, role),
         "--model", model,
         "--setting-sources", setting_sources,
         "--settings", settings,
