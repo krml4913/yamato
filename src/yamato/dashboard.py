@@ -1,4 +1,4 @@
-"""yamato dashboard (D-093, T-079): ローカルのブラウザで全艦の「owner の判断待ち」と席の状況を見る。
+"""yamato dashboard: ローカルのブラウザで全艦の「owner の判断待ち」と席の状況を見る。
 
 サーバーは ``/api/v1/*`` の JSON (応答の形の正本は docs/api/openapi.yaml) と ``web/dist/`` の配信だけ
 (HTML は組まない。画面は web/ のフロントが API を読んで描く)。
