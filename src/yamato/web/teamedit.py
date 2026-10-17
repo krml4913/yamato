@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from .. import shipconfig, team as team_mod, yamlpatch
@@ -16,18 +17,52 @@ FILE = "team.yaml"
 OPS = {"set_value", "add_key", "remove_key", "insert_item", "remove_item"}
 
 
+_PATH = re.compile(r"team\.yaml: ([A-Za-z_][\w-]*(?:\.[\w-]+)*)")
+_NAMES = re.compile(r"(?:知らない項目があります|知らない項目): ([\w, .-]+)")
+
+
+def _line_of(text: str, message: str) -> int | None:
+    """検証のエラーが指す項目の行 (1 始まり)。メッセージの ``roles.dev.trust`` のような道筋を辿れた所までの行。"""
+    import yaml
+    m = _PATH.search(message)
+    names = _NAMES.search(message)
+    path = m.group(1).split(".") if m else []
+    if names:
+        path += [names.group(1).split(",")[0].strip()]
+    try:
+        node = yaml.compose(text)
+    except yaml.YAMLError:
+        return None
+    line = None
+    for part in path:
+        if not isinstance(node, yaml.MappingNode):
+            break
+        for k, v in node.value:
+            if k.value == part:
+                node, line = v, k.start_mark.line + 1
+                break
+        else:
+            break
+    return line
+
+
 def validate(shipdir: Path, content: str) -> list[str]:
+    """問題の一覧。yaml の構文エラーと、項目を指せるエラーには ``行 N:`` を付ける。"""
     import yaml   # vendored; 使うときまで import しない
     try:
         data = yaml.safe_load(content)
     except yaml.YAMLError as ex:
-        return [f"yaml を読めない: {ex}"]
+        mark = getattr(ex, "problem_mark", None) or getattr(ex, "context_mark", None)
+        what = getattr(ex, "problem", None) or str(ex)
+        where = f"行 {mark.line + 1}: " if mark is not None else ""
+        return [f"{where}yaml を読めない: {what}"]
     if not isinstance(data, dict):
         return ["team.yaml の中身が mapping ではない"]
     try:
         team_mod.validate(data, shipdir)
     except YamatoError as ex:
-        return [str(ex)]
+        line = _line_of(content, str(ex))
+        return [f"行 {line}: {ex}" if line else str(ex)]
     except Exception as ex:   # noqa: BLE001 — 検証の想定外の落ち方でサーバーを落とさない
         return [f"検証に失敗した: {type(ex).__name__}"]
     return []
