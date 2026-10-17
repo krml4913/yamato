@@ -301,3 +301,103 @@ class ServerTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ShipConfigTest(ShipTestCase):
+    def get(self, name="t1"):
+        status, body = dashboard.api_get(f"/api/v1/ships/{name}/config")
+        return status, json.loads(json.dumps(body))
+
+    def ok(self):
+        status, body = self.get()
+        self.assertEqual(status, 200)
+        api_schema.assert_valid(self, body, "/api/v1/ships/{name}/config")
+        return body
+
+    def field(self, body, key):
+        return next(f for f in body["fields"] if f["key"] == key)
+
+    def test_fields_follow_the_schema_order_with_descriptions(self):
+        body = self.ok()
+        schema = json.loads(shipconfig_schema_path().read_text(encoding="utf-8"))
+        self.assertEqual([f["key"] for f in body["fields"]][:len(schema["properties"])], list(schema["properties"]))
+        hub = self.field(body, "hub")
+        self.assertTrue(hub["set"] and hub["required"])
+        self.assertEqual(hub["description"], schema["properties"]["hub"]["description"])
+        self.assertEqual(body["raw"], (self.shipdir / "team.yaml").read_text(encoding="utf-8"))
+        self.assertEqual(body["path"], str(self.shipdir / "team.yaml"))
+
+    def test_unset_and_unknown_keys(self):
+        path = self.shipdir / "team.yaml"
+        path.write_text(path.read_text(encoding="utf-8") + "\nmystery: 1\n", encoding="utf-8")
+        body = self.ok()
+        schema = json.loads(shipconfig_schema_path().read_text(encoding="utf-8"))
+        unset = [k for k in schema["properties"] if k not in yaml_keys(path)]
+        self.assertTrue(unset)
+        for k in unset:
+            f = self.field(body, k)
+            self.assertEqual((f["set"], f["value"]), (False, None))
+        mystery = self.field(body, "mystery")
+        self.assertEqual((mystery["set"], mystery["value"], mystery["description"]), (True, 1, None))
+
+    def test_roles_are_a_table_value(self):
+        roles = self.field(self.ok(), "roles")
+        self.assertIn("impl", roles["value"])
+        self.assertIsInstance(roles["value"]["impl"], dict)
+
+    def test_files_listed(self):
+        files = {f["file"]: f["kind"] for f in self.ok()["files"]}
+        self.assertEqual(files["charter.md"], "charter")
+        self.assertEqual(files["roles/impl.md"], "role")
+
+    def test_pending_follows_the_mtimes(self):
+        self.assertEqual(self.ok()["pending"], {"changed": False, "keys": []})   # up の前
+        cache = self.shipdir / ".runtime" / "team.json"
+        cache.parent.mkdir(exist_ok=True)
+        yml = self.shipdir / "team.yaml"
+        from yamato import team
+        cache.write_text(json.dumps(team.load_team(self.shipdir), default=str), encoding="utf-8")
+        os.utime(cache, (time.time() + 10, time.time() + 10))
+        self.assertFalse(self.ok()["pending"]["changed"])
+        yml.write_text(yml.read_text(encoding="utf-8").replace("hub: pm", "hub: impl"), encoding="utf-8")
+        os.utime(cache, (time.time() - 10, time.time() - 10))
+        self.assertEqual(self.ok()["pending"], {"changed": True, "keys": ["hub"]})
+
+    def test_unregistered_ship_is_not_found(self):
+        status, body = self.get("nope")
+        self.assertEqual(status, 404)
+        self.assertEqual(body["error"]["code"], "not_found")
+        # ships.json に無い (YAMATO_HOME 直下の folder だけ) 艦は受け付けない
+        reg = Path(os.environ["YAMATO_HOME"]) / "ships.json"
+        reg.write_text("{}", encoding="utf-8")
+        self.assertEqual(self.get()[0], 404)
+
+    def test_path_is_not_a_ship_name(self):
+        for n in ("..", "%2e%2e", "t1%2F..", "_admiral"):
+            self.assertEqual(self.get(n)[0], 404, n)
+
+    def test_broken_yaml_is_an_error_json_not_a_crash(self):
+        (self.shipdir / "team.yaml").write_text("name: [unclosed\n", encoding="utf-8")
+        status, body = self.get()
+        self.assertEqual(status, 500)
+        self.assertEqual(body["error"]["code"], "unreadable")
+        self.assertEqual(api_schema.check(api_schema.load(), {"$ref": "#/components/schemas/Error"}, body), [])
+        (self.shipdir / "team.yaml").unlink()
+        self.assertEqual(self.get()[1]["error"]["code"], "unreadable")
+
+    def test_read_does_not_touch_the_ship_folder(self):
+        before = _tree_state(self.shipdir)
+        self.ok()
+        self.assertEqual(_tree_state(self.shipdir), before)
+
+
+def shipconfig_schema_path() -> Path:
+    from yamato import shipconfig
+
+    return shipconfig.SCHEMA
+
+
+def yaml_keys(path: Path) -> set:
+    import yaml
+
+    return set(yaml.safe_load(path.read_text(encoding="utf-8")))
