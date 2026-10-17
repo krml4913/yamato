@@ -1,4 +1,5 @@
 import { NavLink, Route, Routes } from "react-router-dom";
+import styles from "./App.module.css";
 import { ConfigPage } from "./pages/ConfigPage";
 import { FleetPage } from "./pages/FleetPage";
 import { OverviewPage } from "./pages/OverviewPage";
@@ -10,13 +11,13 @@ import { ShipPage } from "./pages/ShipPage";
 export function App() {
   return (
     <>
-      <nav className="nav">
+      <nav className={styles.nav}>
         <strong>yamato</strong>
         <NavLink to="/" end>一覧</NavLink>
         <NavLink to="/fleet">艦隊</NavLink>
         <NavLink to="/ship">艦ごと</NavLink>
       </nav>
-      <main>
+      <main className={styles.main}>
         <Routes>
           <Route path="/" element={<OverviewPage />} />
           <Route path="/fleet" element={<FleetPage />} />

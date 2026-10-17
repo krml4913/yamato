@@ -171,6 +171,8 @@ unit test は速く保つ (遅いと開発の速さにそのまま響く)。全�
 
 利用者は node 不要。画面は `src/yamato/web/dist/` にビルド済みで commit してあり、`yamato` はそれを配信するだけ。フロントを直すときだけ Node 24 (`frontend/.nvmrc`) と npm が要る。
 
+dist は **版を出すときだけ** build して commit する。develop 向けの PR では dist を変えない (build の生成物は PR ごとに衝突するため。CI が落とす)。手元で `npm run build` して dist が変わったら、commit の前に `git checkout -- src/yamato/web/dist` で戻す。画面ごとの CSS は CSS Modules (`*.module.css`) に置き、共通の `frontend/src/style.css` は変数とリセットだけにする。
+
 ```sh
 cd frontend
 npm ci              # 依存を入れる (lockfile どおり)
@@ -179,13 +181,13 @@ npm run lint        # eslint + typescript-eslint
 npm run typecheck   # tsc --noEmit
 npm test            # vitest
 npm run gen-api     # docs/api/openapi.yaml (API の正本) から src/api/schema.d.ts を生成。生成物は commit する
-npm run build       # src/yamato/web/dist/ に出力。画面を変えたら dist も commit する
+npm run build       # src/yamato/web/dist/ に出力。develop 向けの PR には含めない (版を出すときに commit する)
 ```
 
 ## CI
 
 `.github/workflows/ci.yml` (GitHub Actions)。push と PR (対象は main・develop) で走り、secrets は使わない。
-- frontend: `frontend/.nvmrc` の Node で `npm ci` → lint → typecheck → test → build → gen-api を流し、そのあと `git diff --exit-code` で `src/yamato/web/dist/` と `frontend/src/api/` の生成物が commit と一致するかを見る。画面や `docs/api/openapi.yaml` を変えたのに dist・型を commit し忘れると落ちる
+- frontend: `frontend/.nvmrc` の Node で `npm ci` → lint → typecheck → test → build → gen-api を流す。そのうえで、`frontend/src/api/` の生成した型が commit と一致するかを全 PR で見る (`docs/api/openapi.yaml` を変えて型を commit し忘れると落ちる)。dist は、develop 向けの PR では build の前に PR の差分に dist が含まれていないかを見て (含まれると落ちる)、main 向けの PR と main への push では build した結果が commit と一致するかを見る (古い dist だと落ちる)
 - python: `python -m unittest discover` を 3.11 と 3.13 で流す。zellij・本物の claude には頼らない (偽の claude を使う)
 
 ## docs

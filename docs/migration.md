@@ -21,6 +21,8 @@ v1.0.0 以降の変更のうち、**既存の艦・利用者が何かをしな�
 
 ## 未リリース
 
+版を出す手順: tag を打つ前に `cd frontend && npm ci && npm run build` で `src/yamato/web/dist/` を作り直して commit する (develop 向けの PR は dist を変えず、main 向けの CI がこの鮮度を見る)。
+
 ## v1.2.0 → v1.3.0
 
 ### 全体の手順
