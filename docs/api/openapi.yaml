@@ -1,0 +1,24 @@
+# yamato web console の API (正本)。frontend/src/api/schema.d.ts はここから生成する (npm run gen-api)。
+# これは T-107 の最小の雛形。実際の API は T-106 が書き、この雛形を置き換える。
+openapi: 3.1.0
+info:
+  title: yamato web console API
+  version: 0.0.0
+paths:
+  /api/v1/ships:
+    get:
+      summary: 登録されている艦の一覧
+      operationId: listShips
+      responses:
+        "200":
+          description: 艦の名前の一覧
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ships]
+                properties:
+                  ships:
+                    type: array
+                    items:
+                      type: string

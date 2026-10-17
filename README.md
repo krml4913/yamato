@@ -167,6 +167,21 @@ unit test は速く保つ (遅いと開発の速さにそのまま響く)。全�
 - git を使うテストは `tests/test_worktree_pr.py` の `GitShipTestCase` のように、一時 repo を setUpClass で 1 回作ってテストごとにコピーする。git の起動 1 回がおよそ 10 ms、push は 40 ms かかる
 - 本物のプロセス・本物の claude で確かめることは unit test ではなく E2E ([docs/e2e/e2e-p0.md](docs/e2e/e2e-p0.md)、[docs/e2e/e2e-p1.md](docs/e2e/e2e-p1.md)) でやる
 
+## 開発者向け: web console のフロント
+
+利用者は node 不要。画面は `src/yamato/web/dist/` にビルド済みで commit してあり、`yamato` はそれを配信するだけ。フロントを直すときだけ Node 24 (`frontend/.nvmrc`) と npm が要る。
+
+```sh
+cd frontend
+npm ci              # 依存を入れる (lockfile どおり)
+npm run dev         # vite の dev server。/api は 127.0.0.1:8765 (yamato dashboard) に proxy。別 port は YAMATO_API=http://127.0.0.1:<port>
+npm run lint        # eslint + typescript-eslint
+npm run typecheck   # tsc --noEmit
+npm test            # vitest
+npm run gen-api     # docs/api/openapi.yaml (API の正本) から src/api/schema.d.ts を生成。生成物は commit する
+npm run build       # src/yamato/web/dist/ に出力。画面を変えたら dist も commit する
+```
+
 ## docs
 初めての人はまず [docs/handoff.md](docs/handoff.md) (読む順番はそこの §2)。
 
