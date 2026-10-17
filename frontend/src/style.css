@@ -4,3 +4,11 @@ body { margin: 0; }
 .nav a { text-decoration: none; }
 .nav a.active { font-weight: bold; }
 main { padding: 0 1rem; }
+.muted { opacity: 0.7; }
+.config-field { border-top: 1px solid #8884; }
+.config-field h2 small { font-size: 0.7em; font-weight: normal; opacity: 0.7; }
+.config-table { border-collapse: collapse; }
+.config-table th, .config-table td { border: 1px solid #8884; padding: 0.2rem 0.5rem; text-align: left; vertical-align: top; }
+.config-pending { padding: 0.5rem; border: 1px solid #c80; }
+.config-error { color: #c33; }
+pre { overflow-x: auto; }

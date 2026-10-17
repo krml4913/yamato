@@ -16,9 +16,9 @@ import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
-from . import admiral, claude, deadline, feed, inbox, memory, monitor, procs, report, roster, rotate, seat
+from . import admiral, claude, deadline, feed, inbox, memory, monitor, procs, report, roster, rotate, seat, shipconfig
 from . import board as board_mod
 from .decide import _epoch
 from .web import static
@@ -244,7 +244,23 @@ def api_get(path: str) -> tuple[int, dict]:
             return 200, overview_now()
         except Exception as ex:  # noqa: BLE001
             return 500, _error("internal", "全艦の読み取りに失敗した", type(ex).__name__)
+    m = re.fullmatch(r"/api/v1/ships/([^/]+)/config", path)
+    if m:
+        return ship_config_get(unquote(m.group(1)))
     return 404, _error("not_found", "その API は無い")
+
+
+def ship_config_get(name: str) -> tuple[int, dict]:
+    """``GET /api/v1/ships/{name}/config``。艦は ships.json にあるものだけ。読めない艦はエラーの JSON にする。"""
+    shipdir = shipconfig.registered(name)
+    if shipdir is None:
+        return 404, _error("not_found", f"艦がありません: {name}")
+    try:
+        return 200, shipconfig.ship_config(name, shipdir)
+    except YamatoError as ex:
+        return 500, _error("unreadable", str(ex), "YamatoError")
+    except Exception as ex:  # noqa: BLE001 — 壊れた艦 1 つでサーバーを落とさない
+        return 500, _error("internal", "艦の設定の読み取りに失敗した", type(ex).__name__)
 
 
 # --- server -------------------------------------------------------------------
