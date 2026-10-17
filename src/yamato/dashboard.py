@@ -21,6 +21,7 @@ from urllib.parse import unquote, urlsplit
 from . import admiral, claude, deadline, feed, inbox, memory, monitor, procs, report, roster, rotate, seat, shipconfig
 from . import board as board_mod
 from .decide import _epoch
+from .web import files as web_files
 from .web import static
 from .util import YamatoError, fmt_span, fmt_time, today
 from .worktree import field_map
@@ -205,6 +206,7 @@ def events_read(shipdir: Path, now: float) -> list[dict]:
 # --- API ----------------------------------------------------------------------
 
 API_OVERVIEW = "/api/v1/overview"
+SHIP_FILE = re.compile(r"^/api/v1/ships/([^/]+)/files/([^/]+)$")
 
 
 def overview(ships: dict[str, Path], by: dict, now: float, agents_error: str | None = None) -> dict:
@@ -237,6 +239,20 @@ def _error(code: str, message: str, detail: str | None = None) -> dict:
     return {"error": {"code": code, "message": message, "detail": detail}}
 
 
+def ship_file(name: str, file: str) -> tuple[int, dict]:
+    """``files/{file}``: 艦は ``all_ships`` の dict から、ファイルは列挙の dict から引く。"""
+    shipdir = admiral.all_ships().get(name)
+    if shipdir is None:
+        return 404, _error("not_found", "その艦は無い", name)
+    try:
+        body = web_files.read(shipdir, name, file)
+    except OSError as ex:
+        return 500, _error("unreadable", "ファイルを読めなかった", type(ex).__name__)
+    if body is None:
+        return 404, _error("not_found", "その md は読めない (roles/*.md・charter.md・knowledge.md だけ)", file)
+    return 200, body
+
+
 def api_get(path: str) -> tuple[int, dict]:
     """``/api/v1/`` 以下の GET を (status, JSON にする値) にする。HTTP なし。"""
     if path == API_OVERVIEW:
@@ -244,6 +260,9 @@ def api_get(path: str) -> tuple[int, dict]:
             return 200, overview_now()
         except Exception as ex:  # noqa: BLE001
             return 500, _error("internal", "全艦の読み取りに失敗した", type(ex).__name__)
+    m = SHIP_FILE.match(path)
+    if m:
+        return ship_file(unquote(m.group(1)), unquote(m.group(2)))
     m = re.fullmatch(r"/api/v1/ships/([^/]+)/config", path)
     if m:
         return ship_config_get(unquote(m.group(1)))
