@@ -82,6 +82,25 @@ describe("艦ページの操作", () => {
     expect(JSON.parse(fetchMock.mock.calls[1][1].body).params).toEqual({ span: "1h" });
   });
 
+  it("send は席と本文をそのまま params で送り、出力は text で描く", async () => {
+    setToken(true);
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      argv: ["yamato", "send"], exit_code: 0, timed_out: false, truncated: false, output: "<i>送った</i>",
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    page();
+    fireEvent.change(screen.getByLabelText(/^席/), { target: { value: "pm" } });
+    fireEvent.change(screen.getByLabelText(/本文/), { target: { value: "--from x\n二行目" } });
+    fireEvent.click(screen.getByRole("button", { name: "send" }));
+    expect(fetchMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "送る" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(String(fetchMock.mock.calls[0][0])).toBe("/api/v1/ops/send");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      ship: "dev", params: { seat: "pm", message: "--from x\n二行目" }, confirmed: true });
+    expect((await screen.findByLabelText("出力")).textContent).toBe("<i>送った</i>");
+  });
+
   it("やめるを押せば呼ばない", () => {
     setToken(true);
     const fetchMock = vi.fn();
