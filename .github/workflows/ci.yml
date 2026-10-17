@@ -58,10 +58,10 @@ jobs:
       # tests/ と frontend のテスト (*.test.*) は、テストデータの id と出典の番号を機械で見分けられないので除く
       - name: 艦の番号が無いこと
         run: |
-          if git grep -nIE '[TD]-[0-9]{3}' -- src docs README.md frontend \
-              ':(exclude)src/yamato/web/dist' ':(exclude)frontend/src/api' \
+          if git grep -noIE '(^|[^A-Za-z0-9])[TD]-[0-9]{3,}' -- src docs README.md frontend \
+              ':(exclude)src/yamato/web/dist' ':(exclude)frontend/src/api/schema.d.ts' \
               ':(exclude)frontend/package-lock.json' ':(exclude)*.test.*' \
-            | grep -vE '[TD]-00[0-9]'; then
+            | grep -vE '[TD]-00[0-9]$'; then
             echo '艦の番号 (T-数字・D-数字) が残っている。理由を中身で書くか消す (例の id は 001〜009)' >&2
             exit 1
           fi

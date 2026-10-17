@@ -188,7 +188,7 @@ npm run build       # src/yamato/web/dist/ に出力。develop 向けの PR に�
 
 `.github/workflows/ci.yml` (GitHub Actions)。push と PR (対象は main・develop) で走り、secrets は使わない。
 - frontend: `frontend/.nvmrc` の Node で `npm ci` → lint → typecheck → test → build → gen-api を流す。そのうえで、`frontend/src/api/` の生成した型が commit と一致するかを全 PR で見る (`docs/api/openapi.yaml` を変えて型を commit し忘れると落ちる)。dist は、develop 向けの PR では build の前に PR の差分に dist が含まれていないかを見て (含まれると落ちる)、main 向けの PR と main への push では build した結果が commit と一致するかを見る (古い dist だと落ちる)
-- ids: src・docs・README.md・frontend に艦の番号 (`T-数字`・`D-数字`) が無いことを `git grep` で見る (例に使える `T-001`〜`T-009`・`D-001`〜`D-009` だけ許す。tests/・`*.test.*`・dist・生成した型は除く)
+- ids: src・docs・README.md・frontend に艦の番号 (`T-数字`・`D-数字`) が無いことを `git grep` で見る (例に使える `T-001`〜`T-009`・`D-001`〜`D-009` だけ許す。番号ごとに見る。tests/・`*.test.*`・dist・生成した型 `frontend/src/api/schema.d.ts`・package-lock は除く)
 - python: `python -m unittest discover` を 3.11 と 3.13 で流す。zellij・本物の claude には頼らない (偽の claude を使う)
 
 ## 開発者向けの決まり
