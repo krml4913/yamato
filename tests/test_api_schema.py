@@ -87,7 +87,8 @@ class ValidatorTest(unittest.TestCase):
 
 
 class OpenApiDocTest(unittest.TestCase):
-    PATHS = ["/api/v1/overview", "/api/v1/fleet", "/api/v1/ships/{name}/config", "/api/v1/ships/{name}/files/{file}"]
+    PATHS = ["/api/v1/overview", "/api/v1/fleet", "/api/v1/ships/{name}/config", "/api/v1/ships/{name}/files/{file}",
+             "/api/v1/edit/preview", "/api/v1/edit/commit"]
 
     def test_version_and_paths(self):
         self.assertTrue(DOC["openapi"].startswith("3.1"))
@@ -95,8 +96,9 @@ class OpenApiDocTest(unittest.TestCase):
 
     def test_every_operation_has_200_json_and_shared_error(self):
         for p, item in DOC["paths"].items():
-            self.assertEqual(list(k for k in item if k != "parameters"), ["get"], p)   # M1 は読むだけ
-            op = item["get"]
+            method = "post" if p.startswith("/api/v1/edit/") else "get"   # 書くのは edit だけ。ほかは読むだけ
+            self.assertEqual(list(k for k in item if k != "parameters"), [method], p)
+            op = item[method]
             self.assertIn("operationId", op)
             self.assertIn("schema", op["responses"]["200"]["content"]["application/json"], p)
             self.assertEqual(op["responses"]["default"], {"$ref": "#/components/responses/Error"}, p)
