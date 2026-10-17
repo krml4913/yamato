@@ -129,22 +129,9 @@ def prepare(shipdir: Path, team: dict, old: str, template: str, *, now: float | 
     return backup, bool(patch.strip())
 
 
-def _user_env() -> dict:
-    """``env`` of the user's ``settings.json`` (Bedrock etc.). ``--setting-sources local`` drops the whole
-    user file, so upgrade copies only this key (never hooks / CLAUDE.md)."""
-    base = os.environ.get("CLAUDE_CONFIG_DIR")
-    path = (Path(base) if base else Path.home() / ".claude") / "settings.json"
-    try:
-        env = json.loads(path.read_text(encoding="utf-8")).get("env")
-    except (OSError, ValueError, AttributeError):
-        return {}
-    return {str(k): str(v) for k, v in env.items()} if isinstance(env, dict) else {}
-
-
 def _settings(shipdir: Path) -> dict:
     ship = rule_path(shipdir)
-    env = _user_env()
-    return {**({"env": env} if env else {}), "permissions": {
+    return {"permissions": {
         "defaultMode": "default",
         "allow": [f"Edit(/{ship}/roles/*.md)", f"Edit(/{ship}/team.yaml)",
                   f"Bash({yamato_invocation()} ship upgrade-done *)"],
@@ -153,7 +140,7 @@ def _settings(shipdir: Path) -> dict:
     }}
 
 
-def upgrade(shipdir: Path, from_version: str | None, template: str | None, *, execvp=os.execvp,
+def upgrade(shipdir: Path, from_version: str | None, template: str | None, *, execvp=os.execvp, execvpe=os.execvpe,
             out=print, now: float | None = None) -> int:
     from .team import load_team
 
@@ -180,4 +167,6 @@ def upgrade(shipdir: Path, from_version: str | None, template: str | None, *, ex
         prompt=f"艦 {team['name']} の写しを v{old} から v{__version__} に上げる。材料を読んで、変更を 1 件ずつ出してくれ。")
     out(f"claude を起動する (cwd {shipdir})")
     os.chdir(shipdir)
-    return procs.run_foreground(argv, execvp=execvp)
+    # user settings' env goes to claude's environment, never into the (kept) settings.json: it holds secrets
+    env = {**os.environ, **claude.user_settings_env()} if claude.user_settings_env() else None
+    return procs.run_foreground(argv, execvp=execvp, env=env, execvpe=execvpe)
