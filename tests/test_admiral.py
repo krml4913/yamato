@@ -2,6 +2,7 @@
 import contextlib
 import io
 import json
+import os
 import subprocess
 import threading
 import time
@@ -331,8 +332,8 @@ class AdmiralTest(ShipTestCase):
         self.run_cmd(seat.up, self.shipdir, "1h")
         with mock.patch.object(seat, "_last_active", return_value=time.time() - 25 * 60):
             out = self.run_cmd(seat.status, self.shipdir)
-        self.assertIn("!!! pm: 25m", out)
-        self.assertIn("動いていない", out)
+        self.assertIn("(!) pm: 25m00s 動いていない → 様子を見る", out)
+        self.assertNotIn("!!!", out)   # 動いていないは黄
 
     def test_stale_after_is_set_in_team_yaml(self):
         ty = self.shipdir / "team.yaml"
@@ -346,7 +347,8 @@ class AdmiralTest(ShipTestCase):
         self.run_cmd(seat.up, self.shipdir, "1h")
         self.set_session("pm", state="failed")
         out = self.run_cmd(seat.status, self.shipdir)
-        self.assertIn("!!! pm: API エラー", out)
+        self.assertIn("!!! pm: API エラーで止まった → attach", out)
+        self.assertNotIn("state: failed", out)
 
     def test_status_flags_what_the_seat_waits_on(self):
         """verify-p0-c Q5: status waiting names its waitingFor; blocked alone is not red
@@ -354,7 +356,7 @@ class AdmiralTest(ShipTestCase):
         self.run_cmd(seat.up, self.shipdir, "1h")
         self.set_session("pm", status="waiting", waitingFor="dialog open", state="blocked")
         out = self.run_cmd(seat.status, self.shipdir)
-        self.assertIn("!!! pm: 詰まり: dialog open で止まっている", out)
+        self.assertIn("!!! pm: dialog open 待ちで止まっている → attach して答える", out)
         self.assertIn("state=blocked", out)
         self.assertNotIn("返事待ち", out)
         self.set_session("pm", status="idle", waitingFor=None, state="blocked")
@@ -372,7 +374,8 @@ class AdmiralTest(ShipTestCase):
         self.cli("up", str(self.shipdir), "--for", "1h")
         self.cli("send", str(self.shipdir), "impl", "T-001")   # impl comes up and stays alive
         rc, out = self.cli("status", str(self.shipdir))
-        self.assertIn("!!! impl: per_task の席が生きているのに担当", out)
+        self.assertIn("(!) impl: 担当の無い席が生きている → 終わっていれば seat-stop", out)
+        self.assertNotIn("!!!", out)
 
     def test_status_does_not_flag_a_per_task_seat_with_an_active_item(self):
         self.cli("up", str(self.shipdir), "--for", "1h")
@@ -381,11 +384,21 @@ class AdmiralTest(ShipTestCase):
         rc, out = self.cli("status", str(self.shipdir))
         self.assertNotIn("!!!", out)
 
-    def test_ships_counts_a_live_per_task_orphan_as_red(self):
+    def test_ships_counts_a_live_per_task_orphan_as_yellow(self):
         self.cli("up", str(self.shipdir), "--for", "1h")
         self.cli("send", str(self.shipdir), "impl", "T-001")
         rc, out = self.cli("ships")
-        self.assertIn("赤 1 (impl)", out)
+        self.assertIn("赤 0", out)
+        self.assertIn("黄 1 (impl)", out)
+
+    def test_red_flags_levels(self):
+        team = self.team()
+        live = {"pid": os.getpid(), "status": "waiting", "waitingFor": "permission prompt", "state": "failed"}
+        flags = admiral.red_flags(team, "pm", {"lastActive": 1}, live, time.time())
+        by = {f.level: [x for x in flags if x.level == f.level] for f in flags}
+        self.assertEqual(len(by["red"]), 2)
+        self.assertEqual(len(by["warn"]), 1)   # 動いていない
+        self.assertIn("state: failed", [f.detail for f in by["red"]])
 
     def test_a_stopped_seat_is_not_red(self):
         team = self.team()

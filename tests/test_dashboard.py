@@ -42,6 +42,20 @@ class DashboardTest(ShipTestCase):
         self.assertIn("推しは A", page)
         self.assertNotIn("D-3", page)   # decider が席ならowner の判断待ちではない
 
+    def test_seat_table_splits_red_and_yellow_with_legend(self):
+        roster.seat(self.shipdir, "impl")
+        roster.update(self.shipdir, "impl", sessionId="S1", pid=os.getpid())
+        by = {"S1": {"sessionId": "S1", "pid": os.getpid(), "status": "waiting", "waitingFor": "permission prompt"}}
+        page = self.render(by)
+        self.assertIn("<th", page)
+        self.assertIn(">要対応</th>", page)
+        self.assertIn("赤</span> = すぐ手が要る", page)
+        self.assertIn("<span class='red' title='status: waiting, waitingFor: permission prompt'>"
+                      "permission prompt 待ちで止まっている → attach して答える</span>", page)
+        # active の無い per_task の席は黄 (hover に内部の言葉)
+        self.assertIn("<span class='warn' title='per_task の席が生きているのに active の項目が無い (#11)'>", page)
+        self.assertNotIn("<th>赤</th>", page)
+
     def test_owner_unread_is_count_only_and_waiting_seat_not_on_top(self):
         inbox.append(self.shipdir, "owner", "pm", "確認を頼む <b>")
         roster.seat(self.shipdir, "impl")

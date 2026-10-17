@@ -927,7 +927,8 @@ def status(shipdir: Path) -> int:
         out("  " + "  ".join(cols))
         for flag in admiral.red_flags(team, seat, rec, live, now,   # design-p1 §5.2, #11
                                       has_active=seat in active_assignees):
-            out(f"  !!! {seat}: {flag} (claude attach {rec.get('shortId')} で確認)")
+            mark = "!!!" if flag.level == admiral.RED else "(!)"   # 赤 / 黄
+            out(f"  {mark} {seat}: {flag.text} (claude attach {rec.get('shortId')})")
     unread = {s: len(inbox.unread(shipdir, s)) for s in team["seats"]}
     if any(unread.values()):
         out("  未読 inbox: " + ", ".join(f"{s}={n}" for s, n in unread.items() if n))

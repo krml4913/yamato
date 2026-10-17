@@ -181,17 +181,20 @@ def _waiting_section(data: list[tuple[str, dict | None, str | None]]) -> str:
 
 
 def _seat_table(g: dict, now: float) -> str:
-    out = ["<table><tr><th>席</th><th>生存</th><th>status</th><th>最終</th><th>担当 (active)</th>"
-           "<th>未読</th><th>赤</th><th>今日 tok</th><th>作業ログの最後</th></tr>"]
+    out = ["<p class='dim'>要対応の列: <span class='red'>赤</span> = すぐ手が要る (詰まり・API エラー) / "
+           "<span class='warn'>黄</span> = 様子見 (動いていない・担当が無い)。内部の言葉は文に重ねたとき (hover) に出る</p>"
+           "<table><tr><th>席</th><th>生存</th><th>status</th><th>最終</th><th>担当 (active)</th>"
+           "<th>未読</th><th title='赤 = すぐ手が要る (詰まり・API エラー) / 黄 = 様子見 (動いていない・担当が無い)'>要対応</th><th>今日 tok</th><th>作業ログの最後</th></tr>"]
     for s in g["seats"]:
         alive = f"<span class='ok'>pid {e(str(s['pid']))}</span>" if s["alive"] else "<span class='dim'>止</span>"
         last = f"{e(fmt_time(s['last']))} <span class='dim'>({e(fmt_span(now - s['last']))}前)</span>" if s["last"] else "-"
-        red = "<br>".join(e(f) for f in s["red"])
+        red = "<br>".join(f"<span class='{'red' if f.level == admiral.RED else 'warn'}' title='{e(f.detail)}'>"
+                          f"{e(f.text)}</span>" for f in s["red"])
         status = e(str(s["status"] or "-")) + (f" <span class='warn'>{e(str(s['waitingFor']))}</span>" if s["waitingFor"] else "")
         budget = f" <span class='dim'>/ 上限 ${e(str(s['budget']))}</span>" if s["budget"] else ""
         out.append(f"<tr><td><b>{e(s['name'])}</b> <span class='dim'>{e(str(s['shift']))}</span></td><td>{alive}</td>"
                    f"<td>{status}</td><td>{last}</td><td>{e(', '.join(s['active']) or '-')}</td>"
-                   f"<td>{s['unread'] or '-'}</td><td class='red'>{red}</td>"
+                   f"<td>{s['unread'] or '-'}</td><td>{red}</td>"
                    f"<td>{e(report._tokens(s['tokens']))}{budget}</td><td class='dim'>{e(s['log'][:160])}</td></tr>")
     return "".join(out) + "</table>"
 
