@@ -22,7 +22,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
-from . import admiral, claude, deadline, feed, inbox, memory, monitor, procs, report, roster, rotate, seat, shipconfig
+from . import admiral, claude, deadline, feed, fleet, inbox, memory, monitor, procs, report, roster, rotate, seat, shipconfig
 from . import board as board_mod
 from .decide import _epoch
 from .web import edit
@@ -269,6 +269,11 @@ def api_get(path: str) -> tuple[int, dict]:
             return 200, overview_now()
         except Exception as ex:  # noqa: BLE001
             return 500, _error("internal", "全艦の読み取りに失敗した", type(ex).__name__)
+    if path == "/api/v1/fleet":
+        try:
+            return 200, fleet.fleet()
+        except Exception as ex:  # noqa: BLE001
+            return 500, _error("internal", "艦の一覧の読み取りに失敗した", type(ex).__name__)
     m = SHIP_FILE.match(path)
     if m:
         return ship_file(unquote(m.group(1)), unquote(m.group(2)))

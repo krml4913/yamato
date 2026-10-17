@@ -28,7 +28,7 @@ paths:
     get:
       operationId: getFleet
       summary: 艦の一覧 (ships.json と _admiral)
-      description: ships.json と $YAMATO_HOME 直下の艦。_admiral は別枠 (admiral) に出す (一覧の ships には入れない)。読むだけ。
+      description: ships.json の艦 (フォルダが消えていても exists=false で出す) と $YAMATO_HOME 直下の艦。_admiral は別枠 (admiral) に出す (一覧の ships には入れない)。読むだけ。
       responses:
         "200":
           description: 艦の一覧
@@ -351,18 +351,24 @@ components:
           items: {$ref: "#/components/schemas/FleetShip"}
         admiral:
           type: [object, "null"]
-          description: _admiral。無ければ null。
-          required: [path, team]
+          description: _admiral。フォルダが無ければ null。
+          required: [path, team, roles, error]
           properties:
             path: {type: string}
             team: {type: [string, "null"], description: "team.yaml の name。読めなければ null。"}
+            roles:
+              type: array
+              description: team.yaml の roles の名前 (読めなければ空)。
+              items: {type: string}
+            error: {type: [string, "null"], description: "team.yaml を読めなかった理由。"}
     FleetShip:
       type: object
-      required: [name, path, registered, team, error]
+      required: [name, path, registered, exists, team, error]
       properties:
         name: {type: string}
         path: {type: string}
         registered: {type: boolean, description: "ships.json にあるか (false は $YAMATO_HOME 直下の拾い上げ)。"}
+        exists: {type: boolean, description: "path に team.yaml があるか (ships.json にあってフォルダが消えた艦は false)。"}
         team: {type: [string, "null"]}
         error: {type: [string, "null"], description: "team.yaml を読めなかった理由。"}
     ShipConfig:
