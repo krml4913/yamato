@@ -129,6 +129,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ops/{op}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 操作 (yamato の CLI を 1 回呼んで、出力と exit code を返す)
+         * @description --edit のときだけ。preview と同じ検査ヘッダ (X-Yamato-Token・Host・Origin・Content-Type) が要る。
+         *     操作は yamato の CLI を別プロセスで呼ぶだけで、操作のロジックは持たない (引数は list・shell なし・
+         *     タイムアウト 30 秒・stdout と stderr をまとめて返す)。CLI が失敗しても (exit_code が 0 でなくても)
+         *     応答は 200 で、画面は出力と exit code をそのまま見せる。op は OpName の値。知らない op は 404。
+         *     確認が要る操作は、画面の確認を経た印 confirmed=true が無ければ実行せず 400 (bad_request)。
+         *     今ある操作は rotate (止まっている persistent の席に入れ替えの印を立てる。生きている席は CLI が断る)。
+         */
+        post: operations["runOp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -196,6 +221,27 @@ export interface components {
             written: boolean;
             /** @description 書いたあとのファイルの sha256 (16 進)。 */
             hash: string;
+        };
+        OpRequest: {
+            /** @description 艦の名前 (fleet の ships[].name)。 */
+            ship: string;
+            /** @description 操作ごとの引数 (rotate は seat に席の名前)。値は文字列だけ。 */
+            params: {
+                [key: string]: string;
+            };
+            /** @description 画面で確認を経たか。確認が要る操作は true でなければ実行しない。 */
+            confirmed: boolean;
+        };
+        OpResult: {
+            /** @description 呼んだ CLI (先頭は yamato)。表示用で、実行は python で本体を直接呼ぶ。 */
+            argv: string[];
+            /** @description CLI の exit code。タイムアウトで打ち切ったときは null。 */
+            exit_code: number | null;
+            timed_out: boolean;
+            /** @description stdout と stderr をまとめた出力。端末の制御文字は落としてある。 */
+            output: string;
+            /** @description 長すぎて後ろを切ったか。 */
+            truncated: boolean;
         };
         Overview: {
             /** @description 組み立てた時刻 (epoch 秒)。 */
@@ -566,6 +612,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EditCommit"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    runOp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 操作の名前 (今は rotate)。 */
+                op: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpRequest"];
+            };
+        };
+        responses: {
+            /** @description CLI を呼んだ結果。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpResult"];
                 };
             };
             default: components["responses"]["Error"];

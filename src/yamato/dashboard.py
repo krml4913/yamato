@@ -7,7 +7,7 @@
 restop_stuck で roster を書き換え、席を止めるため)。roster・board・inbox・events・usage・
 作業ログを読み、``claude agents --json`` は 1 回の描画で 1 回だけ呼ぶ。
 サーバーは 127.0.0.1 だけ。bind 先を変えるオプションは作らない。標準ライブラリだけ (http.server)。
-既定は GET だけ。``--edit`` で起動したときだけ POST (``/api/v1/edit/*``) を受ける。受けるのは、起動ごとの乱数トークン
+既定は GET だけ。``--edit`` で起動したときだけ POST (``/api/v1/edit/*``・``/api/v1/ops/*``) を受ける。受けるのは、起動ごとの乱数トークン
 (index.html の meta に埋める)・Host・Origin が全部合う要求だけ。
 """
 from __future__ import annotations
@@ -25,7 +25,7 @@ from urllib.parse import unquote, urlsplit
 from . import admiral, claude, deadline, feed, fleet, inbox, memory, monitor, procs, report, roster, rotate, seat, shipconfig
 from . import board as board_mod
 from .decide import _epoch
-from .web import edit, md_edit, teamedit  # noqa: F401  (md_edit は import で RESOLVERS に足される)
+from .web import edit, md_edit, ops, seat_ops, teamedit  # noqa: F401  (md_edit・seat_ops・teamedit は import で RESOLVERS・OPERATIONS に足される)
 from .web import files as web_files
 from .web import static
 from .util import YamatoError, fmt_span, fmt_time, today
@@ -212,6 +212,7 @@ def events_read(shipdir: Path, now: float) -> list[dict]:
 
 API_OVERVIEW = "/api/v1/overview"
 API_EDIT = "/api/v1/edit/"          # + preview | commit
+API_OPS = "/api/v1/ops/"            # + 操作名 (web/ops.OPERATIONS)
 TOKEN_HEADER = "X-Yamato-Token"
 TOKEN_META = "yamato-token"
 MAX_BODY = 1024 * 1024
@@ -307,6 +308,13 @@ def api_post(path: str, body: dict) -> tuple[int, dict]:
             return ex.status, _error(ex.code, ex.message, ex.detail)
         except Exception as ex:  # noqa: BLE001
             return 500, _error("internal", "書き込みの処理に失敗した", type(ex).__name__)
+    if path.startswith(API_OPS):
+        try:
+            return 200, ops.handle(path[len(API_OPS):], body)
+        except edit.EditError as ex:
+            return ex.status, _error(ex.code, ex.message, ex.detail)
+        except Exception as ex:  # noqa: BLE001
+            return 500, _error("internal", "操作の処理に失敗した", type(ex).__name__)
     return 404, _error("not_found", "その API は無い")
 
 

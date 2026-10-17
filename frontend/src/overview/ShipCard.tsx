@@ -25,7 +25,7 @@ export function ShipCard({ ship, now }: { ship: Ship; now: number }) {
         {` / 今日 ${fmtTokens(g.tokens)} tok`}
         {g.owner_unread ? ` / owner 宛て未読 ${g.owner_unread} 件` : ""}
       </p>
-      <SeatTable seats={g.seats} now={now} />
+      <SeatTable ship={ship.name} seats={g.seats} now={now} />
       <h3>board</h3>
       <p>
         {counts.length ? counts.map(([k, n]) => <span className={styles.tag} key={k}>{k} {n}</span>) : "-"}

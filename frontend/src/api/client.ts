@@ -66,10 +66,10 @@ export class EditApiError extends Error {
   }
 }
 
-async function postEdit<T>(op: "preview" | "commit", body: object): Promise<T> {
+async function postJson<T>(url: string, body: object): Promise<T> {
   const token = editToken();
   if (!token) throw new EditApiError(0, "forbidden", "読むだけで起動している (--edit が無い)");
-  const res = await fetch(`/api/v1/edit/${op}`, {
+  const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Yamato-Token": token },
     body: JSON.stringify(body),
@@ -77,10 +77,19 @@ async function postEdit<T>(op: "preview" | "commit", body: object): Promise<T> {
   const data = await res.json().catch(() => null);
   if (!res.ok) {
     const e = data?.error;
-    throw new EditApiError(res.status, e?.code ?? "internal", e?.message ?? `POST ${op}: ${res.status}`, e?.detail ?? null);
+    throw new EditApiError(res.status, e?.code ?? "internal", e?.message ?? `POST ${url}: ${res.status}`, e?.detail ?? null);
   }
   return data as T;
 }
 
+const postEdit = <T>(op: "preview" | "commit", body: object) => postJson<T>(`/api/v1/edit/${op}`, body);
+
 export const previewEdit = (req: EditRequest) => postEdit<EditPreview>("preview", req);
 export const commitEdit = (req: EditCommitRequest) => postEdit<EditCommit>("commit", req);
+
+export type OpRequest = paths["/api/v1/ops/{op}"]["post"]["requestBody"]["content"]["application/json"];
+export type OpResult = paths["/api/v1/ops/{op}"]["post"]["responses"]["200"]["content"]["application/json"];
+
+/** 操作 (yamato の CLI を 1 回呼ぶ)。CLI が失敗しても resolve し、exit_code と output を見せる。 */
+export const runOp = (op: string, req: OpRequest) =>
+  postJson<OpResult>(`/api/v1/ops/${encodeURIComponent(op)}`, req);
