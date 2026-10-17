@@ -146,8 +146,9 @@ export interface paths {
          *     応答は 200 で、画面は出力と exit code をそのまま見せる。op は OpName の値。知らない op は 404。
          *     確認が要る操作は、画面の確認を経た印 confirmed=true が無ければ実行せず 400 (bad_request)。
          *     今ある操作は rotate (止まっている persistent の席に入れ替えの印を立てる。生きている席は CLI が断る)・
-         *     艦の up (params: for・seats は省ける)・down・down-force (down --force)・extend (params.span)・halt。
-         *     艦の操作は yamato up / down / extend / halt をそのまま呼ぶ (席や admiral の名前は借りない)。CLI が断れば exit_code と output にそのまま出る。
+         *     艦の up (params: for・seats は省ける)・down・down-force (down --force)・extend (params.span)・halt、
+         *     席への send (params: seat・message。送り手は owner)・判断を閉じる decide-close (params: id・choice・reason。決めた人は owner)。
+         *     艦の操作は yamato up / down / extend / halt / send / decide close をそのまま呼ぶ (席や admiral の名前は借りない)。CLI が断れば exit_code と output にそのまま出る。
          *     CLI は画面と別のセッションで起こし、30 秒待っても終わらなければ殺さずに timed_out で返す (裏で最後まで走る。
          *     up や halt を途中で殺すと半端な状態が残るため)。出力は艦の .runtime/web-ops/ のファイルに書かれる。
          */
@@ -229,7 +230,7 @@ export interface components {
         OpRequest: {
             /** @description 艦の名前 (fleet の ships[].name)。 */
             ship: string;
-            /** @description 操作ごとの引数 (rotate は seat に席の名前、up は for・seats、extend は span)。値は文字列だけ。 */
+            /** @description 操作ごとの引数 (rotate は seat に席の名前、up は for・seats、extend は span、send は seat・message、decide-close は id・choice・reason)。値は文字列だけ。 */
             params: {
                 [key: string]: string;
             };
@@ -629,7 +630,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description 操作の名前 (rotate・up・down・down-force・extend・halt)。 */
+                /** @description 操作の名前 (rotate・up・down・down-force・extend・halt・send・decide-close)。 */
                 op: string;
             };
             cookie?: never;

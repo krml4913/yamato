@@ -11,6 +11,8 @@ function ShipOps({ ship }: { ship: string }) {
   const [forSpan, setForSpan] = useState("");
   const [seats, setSeats] = useState("");
   const [span, setSpan] = useState("");
+  const [seat, setSeat] = useState("");
+  const [message, setMessage] = useState("");
 
   const ask = (spec: Omit<OpSpec, "ship">) => setPending({ ship, ...spec });
   return (
@@ -44,6 +46,15 @@ function ShipOps({ ship }: { ship: string }) {
           op: "halt", params: {}, title: `艦 ${ship} を緊急停止する (halt)`, confirmLabel: "緊急停止する",
           detail: "猶予なしで全席を強制停止する緊急停止 (yamato halt)。席は引き継ぎを書けず、作業の途中で切れる。",
         })}>halt</button>
+      </div>
+      <h2>席に送る</h2>
+      <div className={styles.row}>
+        <label>席 <input value={seat} onChange={(e) => setSeat(e.target.value)} placeholder="例 pm" /></label>
+        <label>本文 <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={3} cols={48} /></label>
+        <button onClick={() => ask({
+          op: "send", params: { seat, message }, title: `席 ${seat || "(未入力)"} に送る`, confirmLabel: "送る",
+          detail: `owner として席にメッセージを送る (yamato send --from owner)。止まっている席は起きる。本文: ${message}`,
+        })}>send</button>
       </div>
       {pending && <OpPanel key={pending.op + pending.title} spec={pending} onClose={() => setPending(null)} />}
     </div>

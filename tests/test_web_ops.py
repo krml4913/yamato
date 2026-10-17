@@ -1,4 +1,4 @@
-"""web コンソールの操作の共通部品と席の操作 (rotate): CLI を subprocess で呼ぶだけ。"""
+"""web コンソールの操作の共通部品と席の操作 (rotate・send・decide-close): CLI を subprocess で呼ぶだけ。"""
 import http.client
 import json
 import subprocess
@@ -258,9 +258,79 @@ class ShipOpsTest(ShipTestCase):
         run.assert_not_called()
 
 
+class SendAndDecideCloseTest(ShipTestCase):
+    """send・decide-close: 本物の席は起こさず subprocess を偽物にして、呼ぶ引数を確かめる。"""
+
+    def setUp(self):
+        super().setUp()
+        p = mock.patch("yamato.admiral.find_ship", side_effect=lambda n: self.shipdir if n == "t1" else None)
+        p.start()
+        self.addCleanup(p.stop)
+        self.seat = next(iter(self.team()["seats"]))
+
+    def run_op(self, op, params, **kw):
+        body = {"ship": "t1", "params": params, "confirmed": True, **kw}
+        with spawn(b"ok\n") as run:
+            status, resp = dashboard.api_post(f"/api/v1/ops/{op}", body)
+        return status, resp, run
+
+    def test_send_is_from_owner_and_the_text_is_one_argument_after_double_dash(self):
+        text = "--from admiral; rm -rf / $(x)\n二行目 <b>"
+        status, body, run = self.run_op("send", {"seat": self.seat, "message": text})
+        self.assertEqual(status, 200, body)
+        argv = run.call_args.args[0]
+        self.assertEqual(argv[2:], ["send", str(self.shipdir), self.seat, "--from", "owner", "--", text])
+        self.assertFalse(run.call_args.kwargs.get("shell"))
+        api_schema.assert_valid(self, body, PATH, method="post")
+
+    def test_send_needs_a_known_seat_and_a_message(self):
+        for params in ({"seat": self.seat}, {"seat": self.seat, "message": "  "}, {"message": "x"},
+                       {"seat": "ghost", "message": "x"}, {"seat": "owner", "message": "x"}):
+            with self.subTest(params=params):
+                status, body, run = self.run_op("send", params)
+                self.assertEqual((status, body["error"]["code"]), (400, "bad_request"))
+                run.assert_not_called()
+
+    def test_decide_close_passes_choice_and_reason_as_values_not_options(self):
+        status, body, run = self.run_op("decide-close", {"id": "D-001", "choice": "--by admiral", "reason": "-x $(y)"})
+        self.assertEqual(status, 200, body)
+        self.assertEqual(run.call_args.args[0][2:], [
+            "decide", "close", str(self.shipdir), "D-001", "--by", "owner",
+            "--choice=--by admiral", "--reason=-x $(y)"])
+
+    def test_decide_close_needs_id_choice_and_reason(self):
+        for params in ({"choice": "A", "reason": "r"}, {"id": "-x", "choice": "A", "reason": "r"},
+                       {"id": "D-001", "reason": "r"}, {"id": "D-001", "choice": "A"},
+                       {"id": "D-001", "choice": " ", "reason": "r"}):
+            with self.subTest(params=params):
+                status, body, run = self.run_op("decide-close", params)
+                self.assertEqual((status, body["error"]["code"]), (400, "bad_request"))
+                run.assert_not_called()
+
+    def test_both_need_confirmation(self):
+        for op, params in (("send", {"seat": self.seat, "message": "x"}),
+                           ("decide-close", {"id": "D-001", "choice": "A", "reason": "r"})):
+            with self.subTest(op=op):
+                status, body, run = self.run_op(op, params, confirmed=False)
+                self.assertEqual((status, body["error"]["code"]), (400, "bad_request"))
+                run.assert_not_called()
+
+    def test_real_cli_closes_a_decision_as_owner(self):
+        from yamato import decide
+        meta = decide.open_decision(self.shipdir, self.team(), category="default", title="どれにする", by="owner")
+        status, body = dashboard.api_post("/api/v1/ops/decide-close", {
+            "ship": "t1", "confirmed": True,
+            "params": {"id": meta["id"], "choice": "A", "reason": "安いから"}})
+        self.assertEqual((status, body["exit_code"]), (200, 0), body)
+        self.assertIn("閉じた", body["output"])
+        log = (self.shipdir / "decisions" / "log.md").read_text(encoding="utf-8")
+        self.assertRegex(log, r"## D-001 .*, owner\)")
+        self.assertIn("安いから", log)
+
+
 class OperationRegistryTest(unittest.TestCase):
     def test_only_registered_operations_exist(self):
-        self.assertEqual(sorted(ops.OPERATIONS), ["down", "down-force", "extend", "halt", "rotate", "up"])
+        self.assertEqual(sorted(ops.OPERATIONS), ["decide-close", "down", "down-force", "extend", "halt", "rotate", "send", "up"])
         with self.assertRaises(edit.EditError) as cm:
             ops.handle("seat-stop", {"ship": "x", "params": {}, "confirmed": True})
         self.assertEqual(cm.exception.status, 404)
