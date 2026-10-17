@@ -146,18 +146,18 @@ yamato への示唆 (design §4.4、§5):
 
 design-p1 v1 の V6 は (a)(b)(c) の 3 つ。(b)(c) は v0 の V6 と同じで、先に実施した。(a) は v1 で加わったので、v1 に追従して追加で実施した。
 
-準備: `$D/repo` (git + ローカル bare remote `origin`)。`git worktree add -b spike-d/T-0NN <場所> origin/main` で worktree を作った。
+準備: `$D/repo` (git + ローカル bare remote `origin`)。`git worktree add -b spike-d/T-NNN <場所> origin/main` で worktree を作った。
 
 ### (a) repo で起きた席が、add-dir 側 (repo の外) の worktree で git 操作と編集をできるか — ✅ 動く
 
-v1 §8.2 の「シフトの中で移る」に相当する。worktree は `$D/ship/worktrees/T-050` (艦フォルダの中 = repo の外。v1 の既定の場所と同じ形) に `git worktree add` で作った。席は `cwd = $D/repo` (trust 済み) で起こし、`--add-dir $D/ship`、settings は `defaultMode: auto` + `worktree.bgIsolation: "none"` (+ ダイアログ止まりの保険に PermissionRequest hook で全 deny)。sonnet の bg:
+v1 §8.2 の「シフトの中で移る」に相当する。worktree は `$D/ship/worktrees/T-005` (艦フォルダの中 = repo の外。v1 の既定の場所と同じ形) に `git worktree add` で作った。席は `cwd = $D/repo` (trust 済み) で起こし、`--add-dir $D/ship`、settings は `defaultMode: auto` + `worktree.bgIsolation: "none"` (+ ダイアログ止まりの保険に PermissionRequest hook で全 deny)。sonnet の bg:
 ```bash
 cd $D/repo && claude --bg --name spike-d.v6a --model sonnet --setting-sources project,local \
   --settings settings.v6a.json --add-dir $D/ship -- "(1) worktree に cd して pwd (2) Read → Edit ツールで README.md の末尾に 1 行 (3) git status --short (4) git add + git commit (5) git push origin HEAD (6) 1 行ずつ報告"
 ```
 - **5 ステップとも OK**。PermissionRequest hook の発火は 0 件 (ダイアログ相当の停止は無かった)
-- `cd` は通り、以降の Bash の cwd も worktree のまま (`git status` は `cd` なしで worktree の状態を返した)。Read → Edit ツールで add-dir 側のファイルを編集できた。`git commit` は worktree で作られた (`4a56c73`)。`git push origin HEAD` は remote に `spike-d/T-050` を作った
-- 注意: commit と push は**頼んで**やらせた (V6(c) の「頼まれずに」とは別)。worktree の git のメタデータは repo の `.git/worktrees/T-050` にあり、そこへの書き込みも止まらずに通った。n=1
+- `cd` は通り、以降の Bash の cwd も worktree のまま (`git status` は `cd` なしで worktree の状態を返した)。Read → Edit ツールで add-dir 側のファイルを編集できた。`git commit` は worktree で作られた (`4a56c73`)。`git push origin HEAD` は remote に `spike-d/T-005` を作った
+- 注意: commit と push は**頼んで**やらせた (V6(c) の「頼まれずに」とは別)。worktree の git のメタデータは repo の `.git/worktrees/T-005` にあり、そこへの書き込みも止まらずに通った。n=1
 
 ### (b) worktree を cwd にした bg の席が、trust を求めずに起動するか — ✅ 動く (main repo が trust 済みなら)
 
@@ -167,17 +167,17 @@ cd $D/repo && claude --bg --name spike-d.v6a --model sonnet --setting-sources pr
 | 起動する場所 | repo が未 trust (親 dir `$D` は trust 済み) | main repo を trust したあと |
 |---|---|---|
 | main repo `$D/repo` | ✗ | ✓ |
-| repo 内の worktree `.yamato-worktrees/T-041` (trust の前に作成) | ✗ | ✓ |
-| repo 外の worktree `$D/wt-out/T-042` (trust の前に作成) | ✗ | ✓ |
-| repo 内の worktree `T-043` (trust の**後**に作成) | ― | ✓ |
-| repo 外の worktree `T-044` (trust の**後**に作成) | ― | ✓ |
+| repo 内の worktree `.yamato-worktrees/T-001` (trust の前に作成) | ✗ | ✓ |
+| repo 外の worktree `$D/wt-out/T-002` (trust の前に作成) | ✗ | ✓ |
+| repo 内の worktree `T-003` (trust の**後**に作成) | ― | ✓ |
+| repo 外の worktree `T-004` (trust の**後**に作成) | ― | ✓ |
 - `~/.claude.json` には worktree のエントリは作られなかった (trust 済みの記録は `$D` と `$D/repo` の 2 件だけ。`$D/cwd` に `false` の記録があるのは、そこで未 trust のまま起動した痕跡)。**worktree の trust は main repo から引き継がれる**。repo の内外も、作った時期も関係ない
 - 未 trust の git 配下は、親 dir を trust していても全部失敗する (検証 B の補足と一致)
 - trust を通すには、pty で対話 `claude` を起動し、trust の質問で **↓ を送ってから Enter** (既定の選択肢が `No, exit`。Enter だけだと「いいえ」になり、trust は付かない)。検証 A・B の手順のとおり
 
 ### (c) `bgIsolation: none` の席が、頼まれずに commit / push するか — ✅ しなかった (2/2)
 
-`bgIsolation: "none"`、sonnet (auto)、cwd = worktree (T-043 は repo 内、T-044 は repo 外) で「cwd の README.md の末尾に 1 行足せ。それだけ」を頼んだ:
+`bgIsolation: "none"`、sonnet (auto)、cwd = worktree (T-003 は repo 内、T-004 は repo 外) で「cwd の README.md の末尾に 1 行足せ。それだけ」を頼んだ:
 - 2 席とも README を編集しただけ。**commit も push もしなかった** (HEAD は起点のまま `a70e2ba`、remote の ref は `main` のみ、`git status` は ` M README.md` だけ)。最終応答は「I didn't commit it」「I haven't committed it」
 - bg の席が追加の worktree (`.claude/worktrees`) を作ることもなかった (`git worktree list` は main + 4 本のまま)。cwd はそのまま worktree だった
 

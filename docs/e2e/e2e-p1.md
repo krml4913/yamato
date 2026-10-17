@@ -10,7 +10,7 @@
 
 | シナリオ | 結果 | 根拠 |
 |---|---|---|
-| 1. 開発艦: 依頼 2 件 → pm が分けて impl-1 / impl-2 → worktree → PR | ✅ | 依頼から PR 2 本まで 70 秒 (16:07:57 → 16:09:03)。各自 `worktree add` で `ship/worktrees/T-00N` に作業し、`git push` → `pr open` |
+| 1. 開発艦: 依頼 2 件 → pm が分けて impl-1 / impl-2 → worktree → PR | ✅ | 依頼から PR 2 本まで 70 秒 (16:07:57 → 16:09:03)。各自 `worktree add` で `ship/worktrees/T-NNN` に作業し、`git push` → `pr open` |
 | 1. impl が `decide open --category design` → pm が閉じる → 再開 | ✅ | impl-1 が D-001 (0 除算の挙動) を開いて T-001 が blocked (16:08:24)、pm が 13 秒後に閉じ、T-001 が active に戻って impl-1 の新しいシフトが実装 |
 | 1. merge の判断は owner → driver が CLI で `decide close --by owner` → pm が `pr merge` | ✅ (不具合 1 件を直して) | pm が merge の判断 D-002 / D-003 を `--urgent` で開き、通知 (command) が届いた。owner が CLI で閉じても pm に何も届かなかった (不具合 A、直した)。直したあとも idle で生きている pm は起きない (問題 C、未修正) ので、driver のセッションから SendMessage で届けた。pm は 2 本を merge し、bare remote の main に squash の commit が 2 つ |
 | 1. 最終受付の注意 → 終業 → 日報 → notify | ✅ | 最終受付 (deadline の 3 分前) のあとの resume で注入に 1 回だけ注意が入り (events `last_call`)、pm から impl-1 への send の先頭に「(終了まで 3 分。片付く範囲で)」が付いた。日報は pm が書いて `report send`、command の通知がファイルに届いた。日報の稼働時間の誤り (不具合 B) を直した |
@@ -178,7 +178,7 @@ r1 (調査艦、問い 1 件):
 
 ### 直したもの (この PR)
 
-- **A. links だけの判断を席の外から閉じると、開いた席に何も届かない** (シナリオ 1)。merge の判断は `--links` でタスクを止めないので、`decide close` の「止まりが解けたタスクの担当に send」の対象が無い。owner が端末から閉じると、判断を開いて待っている pm は知る手段が無かった。→ `deliver_close` が、判断を開いた席 (`opened_by`) にも「D-00N が決まった: <決めた人> の決定「<決定>」。結んだ項目: …」を send する (閉じた本人と、タスクの担当として既に送った席には送らない)。テスト 2 本 (`tests/test_decide.py`)
+- **A. links だけの判断を席の外から閉じると、開いた席に何も届かない** (シナリオ 1)。merge の判断は `--links` でタスクを止めないので、`decide close` の「止まりが解けたタスクの担当に send」の対象が無い。owner が端末から閉じると、判断を開いて待っている pm は知る手段が無かった。→ `deliver_close` が、判断を開いた席 (`opened_by`) にも「D-NNN が決まった: <決めた人> の決定「<決定>」。結んだ項目: …」を send する (閉じた本人と、タスクの担当として既に送った席には送らない)。テスト 2 本 (`tests/test_decide.py`)
 - **B. 日報の「稼働 A–B」の終わりが、まだ動いている席を見ていない** (シナリオ 1)。pm が自分の終業前に日報を作ると、最後の `shift_end` (impl-1 の 16:09) で切れていた。→ 席ごとの最後の shift の出来事が `shift_start` の席が 1 つでもあれば、今 (と日の終わりの早い方) までにする。テスト 1 本 (`tests/test_report.py`)
 
 ### 直していないもの (設計の判断が要る・大きい)
@@ -234,7 +234,7 @@ r1 (調査艦、問い 1 件):
 | C: 送り手が席の未読では起こさない | unit test のみ | この E2E では editor 宛ての send は定型文 2 回と owner の 1 回だけで、席からの send は無かった (`test_wait_deadline_inbox_wakes_once_and_skips_seat_senders`) |
 | E: captain の送信のあとの seat-stop で送り直さない | ✅ | editor は 16:41:06 に日報を送り、16:41:17 に seat-stop (`shift_end`)。そのあとの `down --force` の安全網は送り直さなかった (シフトの終わりは変化に数えない)。2 回目の終業の更新は unit test で確かめた (`test_second_stop_of_the_day_refreshes_facts_and_sends_an_update`) |
 
-> 注 (2026-09-27, D-003): 上の D の検証は、ひな形が `env_unset: [GH_TOKEN, GITHUB_TOKEN]` を既定で持っていた当時のもの。今はこの既定を外し、GH_TOKEN はそのまま席に渡す (gh の権限はトークンのスコープで絞る)。`env_unset` の仕組み自体 (settings の `env` に空文字で書き出す、bg の席には `env -u` が効かないなど、上の検証結果) は変わらず、艦が明示して使う道具として残る。
+> 注 (2026-09-27、owner の決定): 上の D の検証は、ひな形が `env_unset: [GH_TOKEN, GITHUB_TOKEN]` を既定で持っていた当時のもの。今はこの既定を外し、GH_TOKEN はそのまま席に渡す (gh の権限はトークンのスコープで絞る)。`env_unset` の仕組み自体 (settings の `env` に空文字で書き出す、bg の席には `env -u` が効かないなど、上の検証結果) は変わらず、艦が明示して使う道具として残る。
 
 - 問いから報告書まで 2 分 4 秒 (16:39:13 → 16:41:17)。使用量は editor 748k (cache 読みがほとんど)
 - 片付け: `down x1 --force` → editor の session を `claude rm`。`claude agents --json --all` に `x1.` の名前は 0 件。watchdog のプロセスは kill し、watcher のプロセスも 0。艦フォルダ (worktree の中の一時フォルダ) は消した。YAMATO_HOME は scratchpad に向け、owner の `~/yamato` には触れていない

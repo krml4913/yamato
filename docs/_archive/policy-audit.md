@@ -97,7 +97,7 @@
 | P29 | P1 §7.2 | editor は外を読まない | 方針 | ひな形の既定値 (`trust: clean`) | |
 | P30 | P1 §7.1、§7.2、Q6 | `publish` の decider は owner に固定し、ひな形で変えられない | 方針 | **decisions 表で艦ごとに決める** (ひな形の既定は owner) | owner の決定。bmweb にとりあえず投稿させて owner が携帯で見る運用もありうる |
 | P31 | P1 §7.3 | 差し戻しは 2 回まで | 方針 | 役割プロンプト (editor) | |
-| P32 | P1 §8.1 | タスク = ブランチ、ブランチ名 `yamato/<ship>/T-042`、impl はそのブランチでだけ commit | 方針 | 役割プロンプト (ひな形)。道具 `yamato worktree add` はブランチ名を引数で受け、既定の名前だけ持つ | D8 と同じ |
+| P32 | P1 §8.1 | タスク = ブランチ、ブランチ名 `yamato/<ship>/T-NNN`、impl はそのブランチでだけ commit | 方針 | 役割プロンプト (ひな形)。道具 `yamato worktree add` はブランチ名を引数で受け、既定の名前だけ持つ | D8 と同じ |
 | P33 | P1 §8.1 | PR は `yamato pr open` だけ、生の `gh pr create` は deny | 方針 + 安全網 | `pr open` は道具 (項目の `pr` と column を書く便利さ)。`gh pr create` の deny は**ひな形の既定値** | 生の gh で PR を作ってよい艦もある |
 | P34 | P1 §8.1 | merge は `yamato pr merge` だけ、生の `gh pr merge` は全席で deny | 安全網 | ひな形の deny の既定値 (「全席で」を外す) | 無人の席の merge を止めるのは網だが、中身は艦で変えられる |
 | P35 | P1 §8.1 | シフトの終わりに必ずブランチを push | 方針 | 役割プロンプト | `rm` が未 push を拒否するのは Claude Code 側の制約 (道具の事実) |
