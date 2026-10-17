@@ -103,7 +103,7 @@ Claude Code 2.1.283 での観測。research preview なので変わりうる (de
 | 事実 | 出典 |
 |---|---|
 | 起動レシピ: `claude --bg --name <ship>.<seat> --agent <role> --agents '<json>' --model … --setting-sources project,local --settings <席の settings> --add-dir <ship> -- "<prompt>"`。`--add-dir` は後ろを食うので `--` が要る。settings は 1 本にまとめる | [verify-p0-b](verify/verify-p0-b.md) の起動レシピ、design.md §4.1 |
-| `--setting-sources project,local` でユーザー設定 (plugin hooks・env など) を席に持ち込まない。作業 repo の設定は効く。**`~/.claude/CLAUDE.md` は外しても席に入る** (2026-10-17 実機)。`--settings` の `remoteControlAtStartup: false` は user の `true` に勝つ (2026-10-17 実機)。未検証: resume の席に `--setting-sources` が引き継がれるか (目印の CLAUDE.md が使えないので別の目印が要る) | verify-p0-b Q3 |
+| `--setting-sources project,local` でユーザー設定 (plugin hooks・env など) を席に持ち込まない。作業 repo の設定は効く。**`~/.claude/CLAUDE.md` は外しても席に入る** (2026-10-17 実機)。`--settings` の `remoteControlAtStartup: false` は user の `true` に勝つ (2026-10-17 実機)。resume の席に `--setting-sources` は引き継がれず user 設定が戻る (付け直すとコピーになり、コピーでも入る。2026-10-17 実機)。止めたい値は team.yaml の `settings:` に書く | verify-p0-b Q3 |
 | resume は **pid が消えるのを待ってから、フルの sessionId で** `--resume <id> --bg`。短い id や stop 直後だとフラグ抜きのコピーになる (`started a copy`) | verify-p0-a Q2、verify-p0-b Q2 |
 | 生死は pid で見る。`state` は席の発言の意味づけのラベルで、詰まりは `status: waiting` + `waitingFor` と idle の `blocked` | [verify-p0-c](verify/verify-p0-c.md) Q5 |
 | `claude --bg` は worker が起動前に落ちても exit 0。起動のあと `claude agents --json` で確かめる | verify-p0-c Q5 |

@@ -440,7 +440,7 @@ design §6.6 は「memory に書き込むのは PM の週次の棚卸しだけ�
      -- "<最初のプロンプト: inbox の未読と担当の項目を読んで働け。終わる前に seat-stop>" \
      < /dev/null > <シフトの出力 (ラッパーが行ごとに読んで保存する)>
    ```
-   - `env -u` で外す変数は team.yaml の `env_unset` (検証時のひな形の既定は `[GH_TOKEN]`。D-003 で既定は空に変更し、`GH_TOKEN` は外さない前提になった)。上の例は検証時の既定のとき。`-p` は起動元の環境をそのまま使うので `env -u` が効く (検証 D V1)。bg は daemon から起動されるので効くかは別問題で、未確認
+   - `env -u` で外す変数は team.yaml の `env_unset` (検証時のひな形の既定は `[GH_TOKEN]`。D-003 で既定は空に変更し、`GH_TOKEN` は外さない前提になった)。上の例は検証時の既定のとき。`-p` は起動元の環境をそのまま使うので `env -u` が効く (検証 D V1)。bg は daemon から起動されるので効かない (knowledge・検証 B Q2)
    - **`--bare` を付けない**。サブスクでは `Not logged in` で終わる (bare は OAuth と keychain を読まず、`ANTHROPIC_API_KEY` か `apiKeyHelper` を要求する。検証 D V1)。`-p` の既定が将来 `--bare` に変わる予告がある (docs) が、`claude --help` に**打ち消すフラグは今は無い**。変わった版は、下の 4 の「SessionStart hook が走った印」の確認が拾う
    - **`< /dev/null` を付ける**。stdin を閉じないと 3 秒待つ (`no stdin data received in 3s`。検証 D V1)
    - **`--name <ship>.<seat>` を付ける**。実行中の席への SendMessage の宛先になる (検証 D V3)。ただし inbox への追記を正本に残す (終わる直前の取りこぼしの保険。§4.3)
@@ -792,7 +792,7 @@ P0 は「終業 + 強制」の 2 段 (§0)。**最終受付を軽い形で戻す
 
 | # | 確かめたこと | 判定 | 結果と設計への反映 | 反映した節 | 出典 (`verify/verify-p1-d.md`) |
 |---|---|---|---|---|---|
-| V1 | `claude -p` で `--agent` + `--agents` JSON、`--setting-sources project,local`、`--add-dir ... --` が bg と同じく効くか。SessionStart hook が走るか | ✅ | 動く。**`--bare` は付けない** (サブスクで `Not logged in`。将来 `-p` の既定になるときの打ち消すフラグは今は無く、hook が走った印の確認が拾う)。`< /dev/null` を付ける (無いと stdin を 3 秒待つ)。`env -u` は `-p` で効く (bg は未確認)。hook の実行は stream-json (`--verbose`) で確認できる | §4.2 | V1 |
+| V1 | `claude -p` で `--agent` + `--agents` JSON、`--setting-sources project,local`、`--add-dir ... --` が bg と同じく効くか。SessionStart hook が走るか | ✅ | 動く。**`--bare` は付けない** (サブスクで `Not logged in`。将来 `-p` の既定になるときの打ち消すフラグは今は無く、hook が走った印の確認が拾う)。`< /dev/null` を付ける (無いと stdin を 3 秒待つ)。`env -u` は `-p` で効く (bg は効かない)。hook の実行は stream-json (`--verbose`) で確認できる | §4.2 | V1 |
 | V2 | `-p` で `--permission-prompts none` と auto + deny が一緒に効くか | ✅ | 動く。ask 由来のダイアログは即 deny で、席は先へ進む。host が無い `-p` ではフラグ無しでも同じ (付けると Claude に再試行させない)。**auto の classifier は揺れる** ので、無人の権限の安全は deny リストと dontAsk が本命 | §4.1、§7.2 | V2 |
 | V3 | 実行中の `-p` に SendMessage が届くか | ✅ | 動く。`--name <ship>.<seat>` が宛先になり、tool の境界か idle のときに取り込まれる (最終の `result` に本文が載る)。終わる直前は取りこぼす窓があるので、inbox への追記を正本に残し、終わる前に未読を確認する | §4.1、§4.2、§4.3 | V3 |
 | V4 | `-p` に SIGTERM で exit 143 + SessionEnd hook が走るか | ✅ (注意つき) | 動く。ただし**結果 JSON は出ない**ので使用量は transcript から数える (`total_cost_usd` は取れない)。**SessionEnd hook の既定の待ちは 1.5 秒**で、超えるなら hook に `timeout` を付ける | §4.2 の 3、4 | V4 |
@@ -810,7 +810,7 @@ P0 は「終業 + 強制」の 2 段 (§0)。**最終受付を軽い形で戻す
 - **V8**: 検証 C で判定済み (✅)。閾値 (10,000 文字) は 2.1.283 での観測で、設定で変えられるかは調べていない
 - **V11**: bg の席 + Remote Control (captain のような席) からの `PushNotification`。実際に通知が届くので試していない
 - **V3**: `crossSessionInbound: "accept"` を外した `-p` (承認する人がいないので保留のまま残るはずだが未確認)
-- **V1**: `env -u GH_TOKEN` が bg (daemon から起動) で効くか。検証 B から引き続き未確認
+- **V1**: `env -u GH_TOKEN` は bg (daemon から起動) では**効かない** (knowledge・検証 B Q2。席の Bash に効くのは settings の `env`)
 - **V6 (c)**: 「頼まれずに commit / push しない」は n=2 (sonnet)。条件を変えると起きるかもしれない
 - **V10**: `--settings` の `remoteControlAtStartup: true` が効くか (既定が接続だったため判別できなかった)。スマホ側の一覧の表示そのもの
 - **V2**: auto の classifier の判定は揺れる。判断はモデル任せなので、deny リストと dontAsk が本命

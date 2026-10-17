@@ -127,6 +127,7 @@ deny:
   - "Write(/{{ship}}/knowledge.md)"
 
 # 席の settings.json に重ねる中身 (yamato が要る hooks・auto・受信の設定はその上に載る)
+# resume した席には user 設定 (~/.claude/settings.json) が戻る (setting_sources では止まらない)。止めたい値はここに書く (user に勝つ。permissions の allow は足し算なので消せない)
 settings:
   worktree:
     bgIsolation: none        # 席は workspace を共有し、自動 worktree を作らない (repo がない艦では yamato が常に none にする)
