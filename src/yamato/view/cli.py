@@ -2,6 +2,7 @@
 
     yamato view [<name>...] [-o FILE] [--command PATH] [--session NAME]   (= view open)
     yamato view attach <ship> <seat> [--poll SEC]
+    yamato view stale [--kill]
     yamato view layout <ship>... [-o FILE] [--command PATH]
     yamato view open [<ship>...] [-o FILE] [--command PATH] [--session NAME]
 
@@ -15,7 +16,7 @@ import os
 import sys
 
 
-SUBCOMMANDS = ("attach", "layout", "open")
+SUBCOMMANDS = ("attach", "layout", "open", "stale")
 
 
 def normalize(argv: list[str]) -> list[str]:
@@ -35,6 +36,9 @@ def add_parser(sub) -> None:
     a.add_argument("seat")
     a.add_argument("--poll", type=float, default=None,
                    help="確認の間隔 (秒, 既定 3。環境変数 YAMATO_VIEW_POLL でも指定できる)")
+
+    st = vs.add_parser("stale", help="ペインを失って残った `view attach` / `claude attach` (親が init の孤児) を一覧する。--kill で止める")
+    st.add_argument("--kill", action="store_true", help="一覧したプロセスに SIGTERM を送る (付けなければ一覧するだけ)")
 
     lo = vs.add_parser("layout", help="艦ごとに 1 タブ、席ごとに 1 ペインの zellij layout (KDL) を出力する")
     lo.add_argument("ships", nargs="+", metavar="ship", help="艦の名前か、艦フォルダのパス")
@@ -61,6 +65,22 @@ def run(args) -> int:
             sys.stdout.write(text)
         return 0
 
+    if args.view_cmd == "stale":
+        from . import procs
+
+        found = procs.orphans()
+        if not found:
+            print("孤児の attach プロセスはありません")
+            return 0
+        for p in found:
+            print(f"{p.pid}\t{p.text}")
+        if args.kill:
+            done = procs.terminate([p.pid for p in found])
+            print(f"{len(done)} 件に SIGTERM を送りました")
+        else:
+            print("止めるなら `yamato view stale --kill` (親のいる attach には触りません)")
+        return 0
+
     if args.view_cmd == "open":
         from . import opener
 
@@ -69,6 +89,13 @@ def run(args) -> int:
 
             admiral.wake_admiral()   # admiral is who the owner opens the view to talk to
         kwargs = {"session": args.session} if args.session else {}
+        from . import procs
+
+        old = procs.orphans()
+        if old:   # warn only: they are the user's processes, `view stale --kill` stops them
+            print(f"警告: ペインを失った attach プロセスが {len(old)} 件残っています "
+                  f"(pid {', '.join(str(p.pid) for p in old)})。席の取り合いになるなら `yamato view stale --kill`",
+                  file=sys.stderr)
         opener.open_ships(args.ships or None, command=args.command, output=args.output, **kwargs)
         return 0
 
@@ -82,4 +109,7 @@ def run(args) -> int:
     seat_spec(team, args.seat)   # a typo'd seat would otherwise wait forever
     poll = args.poll if args.poll is not None else float(os.environ.get("YAMATO_VIEW_POLL") or attach.DEFAULT_POLL)
     resolve = attach.roster_resolver(shipdir, args.seat)
-    return attach.run(resolve, session_name(team, args.seat), poll=poll)
+    from . import procs
+
+    peers = lambda: procs.other_view_attachers(args.ship, args.seat)   # noqa: E731
+    return attach.run(resolve, session_name(team, args.seat), poll=poll, peers=peers)

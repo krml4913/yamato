@@ -7,6 +7,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -14,7 +15,7 @@ from unittest import mock
 
 from yamato import cli, roster, seat, ship
 from yamato.util import YAMATO_BIN, YamatoError, resolve_ship
-from yamato.view import attach, layout, opener
+from yamato.view import attach, layout, opener, procs
 from yamato.view import cli as view_cli
 
 from .helpers import ShipTestCase
@@ -625,6 +626,12 @@ class OpenerTest(ShipTestCase):
 
 
 class ViewCliTest(ShipTestCase):
+    def setUp(self):
+        super().setUp()
+        p = mock.patch("yamato.view.procs.orphans", return_value=[])
+        p.start()
+        self.addCleanup(p.stop)
+
     def call(self, argv):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
@@ -698,6 +705,102 @@ class ViewCliTest(ShipTestCase):
         with mock.patch.object(opener, "open_ships") as open_ships, mock.patch("yamato.admiral.wake_admiral"):
             self.call(["view", "open"])
         open_ships.assert_called_once_with(None, command=None, output=None)
+
+class StuckAndStaleTest(ShipTestCase):
+    """T-089: a stuck zellij, a pane lost with its `claude attach`, and two attaches fighting over a seat."""
+
+    def test_stuck_zellij_call_times_out_into_an_error(self):
+        def run(argv, **kwargs):
+            raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+        with self.assertRaises(YamatoError) as cm:
+            opener.open_ships(["t1"], run=run, in_zellij=False, output=str(self.tmp / "v.kdl"))
+        self.assertIn("固まっている", str(cm.exception))
+        self.assertIn("delete-session", str(cm.exception))   # a hint, never an automatic kill
+
+    def test_noninteractive_calls_carry_a_timeout_attach_does_not(self):
+        run = FakeZellijRun(sessions="yamato-view\n", tabs="ship:t1")
+        opener.open_ships(["t1"], run=run, in_zellij=False, output=str(self.tmp / "v.kdl"))
+        for argv, kw in zip(run.calls, run.kwargs):
+            if argv[1] == "attach":
+                self.assertNotIn("timeout", kw)
+            else:
+                self.assertEqual(kw.get("timeout"), opener.ZELLIJ_TIMEOUT, argv)
+
+    def test_rebuilding_the_session_says_so(self):
+        run = FakeZellijRun(sessions="yamato-view\n", rc_for=lambda a: 1 if "list-tabs" in a else 0)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            opener.open_ships(["t1"], run=run, in_zellij=False, output=str(self.tmp / "v.kdl"))
+        self.assertIn("作り直します", err.getvalue())
+        self.assertTrue(any(c[1:2] == ["delete-session"] for c in run.calls))
+
+    def test_orphans_are_view_and_claude_attach_with_ppid_1(self):
+        ps = [procs.Proc(10, 1, ("python3", "yamato", "view", "attach", "/s", "pm")),
+              procs.Proc(11, 1, ("/usr/bin/claude", "attach", "abcd1234")),
+              procs.Proc(12, 500, ("claude", "attach", "abcd1234")),      # someone's own terminal
+              procs.Proc(13, 1, ("vim", "attach")),
+              procs.Proc(14, 1, ("python3", "yamato", "view", "layout", "t1"))]
+        self.assertEqual([p.pid for p in procs.orphans(procs=lambda: ps)], [10, 11])
+
+    def test_other_attachers_exclude_me_and_my_ancestors(self):
+        ps = [procs.Proc(100, 1, ("zellij",)),
+              procs.Proc(101, 100, ("python3", "yamato", "view", "attach", "/s", "pm")),   # me
+              procs.Proc(102, 1, ("python3", "yamato", "view", "attach", "/s", "pm")),     # a stale one
+              procs.Proc(103, 1, ("python3", "yamato", "view", "attach", "/s", "impl"))]   # other seat
+        got = procs.other_view_attachers("/s", "pm", me=101, procs=lambda: ps)
+        self.assertEqual([p.pid for p in got], [102])
+
+    def test_terminate_only_signals_given_pids(self):
+        sent = []
+        self.assertEqual(procs.terminate([5, 6], kill=lambda pid, sig: sent.append((pid, sig))), [5, 6])
+        self.assertEqual([p for p, _ in sent], [5, 6])
+
+    def test_stale_cli_lists_and_kills_only_with_the_flag(self):
+        found = [procs.Proc(10, 1, ("claude", "attach", "abcd1234"))]
+        for flag, killed in ((None, False), ("--kill", True)):
+            out = io.StringIO()
+            with mock.patch.object(procs, "orphans", return_value=found), \
+                    mock.patch.object(procs, "terminate", return_value=[10]) as term, \
+                    contextlib.redirect_stdout(out):
+                self.assertEqual(cli.main(["view", "stale", *([flag] if flag else [])]), 0)
+            self.assertIn("10\t", out.getvalue())
+            self.assertEqual(term.called, killed)
+
+    def test_repeated_fast_exits_back_off_and_say_why(self):
+        sleeps = []
+        out = io.StringIO()
+        clock = iter(range(0, 1000))
+        procs_ = []
+
+        def spawn(argv):
+            procs_.append(FakeProc(argv, lives=1))
+            return procs_[-1]
+        attach.run(lambda: SID_A, "dev.pm", poll=0, out=out, spawn=spawn, sleep=sleeps.append,
+                   rounds=3, monotonic=lambda: next(clock) * 0.1)
+        self.assertIn(attach.FAST_BACKOFF, sleeps)
+        self.assertIn("取り合っている", out.getvalue())
+
+    def test_warns_once_about_another_attach_on_the_same_seat(self):
+        out = io.StringIO()
+        other = procs.Proc(77, 1, ("x",))
+        attach.run(lambda: SID_A, "dev.pm", poll=0, out=out, spawn=lambda a: FakeProc(a, lives=1),
+                   sleep=lambda s: None, rounds=2, peers=lambda: [other])
+        self.assertEqual(out.getvalue().count("他にもあります"), 1)
+        self.assertIn("77", out.getvalue())
+
+    def test_sigterm_stops_the_child_attach(self):
+        # the pane gets SIGHUP/SIGTERM: the child `claude attach` must not outlive it
+        made = []
+
+        def spawn(argv):
+            made.append(FakeProc(argv))
+            return made[-1]
+        timer = threading.Timer(0.3, lambda: os.kill(os.getpid(), signal.SIGTERM))
+        timer.daemon = True
+        timer.start()
+        code = attach.run(lambda: SID_A, "dev.pm", poll=0.01, out=io.StringIO(), spawn=spawn)
+        self.assertEqual(code, 130)
+        self.assertTrue(made[0].terminated)
 
 
 # A `claude` that only knows what the view uses: `agents --json --all` reads a JSON file,
