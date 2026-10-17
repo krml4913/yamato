@@ -106,7 +106,7 @@ class TeamTest(unittest.TestCase):
                 validate(base(inject=bad), Path("/ship"))
 
     def test_inject_limits_shape_per_key(self):
-        """T-073: [lines, chars] keys refuse a bare int (it used to crash `cap_text(*limit)` at run time);
+        """[lines, chars] keys refuse a bare int (it used to crash `cap_text(*limit)` at run time);
         the single-int keys refuse a list. Both fail at validate with the key named."""
         for k in ("handoff", "log_tail", "last_report", "memory", "knowledge"):
             for bad in (500, [10], [10, 500, 1], [0, 500], [10, "x"], [True, 500], "big"):
@@ -120,7 +120,7 @@ class TeamTest(unittest.TestCase):
                     validate(base(inject={"limits": {k: bad}}), Path("/ship"))
 
     def test_inject_files_resolve_and_validate(self):
-        """T-075 (D-089): `inject.files` names a path, `file:<名前>` refers to it."""
+        """`inject.files` names a path, `file:<名前>` refers to it."""
         ws = [{"name": "tmp", "path": "/tmp"}]
         t = validate(base(workspace="/tmp", inject={
             "files": {"charter": "charter.md", "home": "~/x.md", "abs": "/etc/hosts", "repo": "@tmp/docs/d.md"},
@@ -160,7 +160,7 @@ class TeamTest(unittest.TestCase):
         self.assertEqual(ok["inject"]["parts"], ["file:a"])
 
     def test_old_charter_spellings_are_refused(self):
-        """T-095: the part `charter`, the top-level `charter:` and `limits.charter` (read for v1.2.0) are errors now."""
+        """the part `charter`, the top-level `charter:` and `limits.charter` (read for v1.2.0) are errors now."""
         for what, kw, msg in (
                 ("top", {"charter": "doc/c.md"}, "トップの charter: は無くなった。inject.files.charter"),
                 ("parts", {"inject": {"parts": ["handoff", "charter"]}}, "inject.parts の charter は無くなった。file:charter"),
@@ -171,7 +171,7 @@ class TeamTest(unittest.TestCase):
                 validate(base(**kw), Path("/ship"))
 
     def test_inject_fleet_part_and_limit(self):
-        """T-022: `fleet` (admiral の全艦の要約) is a selectable part with its own limit key."""
+        """`fleet` (admiral の全艦の要約) is a selectable part with its own limit key."""
         from yamato.team import inject_parts
 
         t = validate(base(inject={"parts": ["fleet"], "limits": {"fleet_items": 5}},
@@ -185,7 +185,7 @@ class TeamTest(unittest.TestCase):
         self.assertEqual(validate(base(grace=0), Path("/ship"))["grace"], 0)
 
     def test_time_limit_none_is_the_admiral_only_exception(self):
-        # D-013 (T-020): time_limit: none は上限を持たない艦を表す。既定・数値指定は変わらない
+        # time_limit: none は上限を持たない艦を表す。既定・数値指定は変わらない
         self.assertIsNone(validate(base(time_limit="none"), Path("/ship"))["time_limit"])
         self.assertIsNone(validate(base(time_limit="NONE"), Path("/ship"))["time_limit"])
         self.assertEqual(validate(base(), Path("/ship"))["time_limit"], 3 * 3600)

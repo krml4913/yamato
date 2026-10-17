@@ -1,4 +1,4 @@
-"""feed.py: events.jsonl の流し見 (T-007, owner 依頼 inbox #14)。
+"""feed.py: events.jsonl の流し見 (owner 依頼 inbox #14)。
 
 sleep は使わない。follow のポーリング間隔は ``feed.POLL`` を
 ``mock.patch.object`` で 0 にして、別スレッドから追記しつつ ``next()`` を

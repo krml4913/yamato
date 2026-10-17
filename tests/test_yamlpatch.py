@@ -1,4 +1,4 @@
-"""yamlpatch: コメントと並びを保った部分置き換え (T-110)。"""
+"""yamlpatch: コメントと並びを保った部分置き換え。"""
 from __future__ import annotations
 
 import difflib

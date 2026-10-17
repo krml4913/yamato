@@ -1,4 +1,4 @@
-"""team.yaml's JSON Schema (T-057): the editor's completion / hover / warnings.
+"""team.yaml's JSON Schema: the editor's completion / hover / warnings.
 
 team.py's validate stays the authority; the schema is a second copy for the editor, so these
 tests keep the two from drifting: the key sets must match, every property needs a description,
@@ -114,20 +114,20 @@ class TeamSchemaTest(ShipTestCase):
         self.assertEqual(self.keys("board"), {"archive_on_done", "kinds", "fields", "columns"})
 
     def test_inject_limits_shape_matches_team_py(self):
-        """T-073: the pair keys are [lines, chars] only in the schema too (no bare int)."""
+        """the pair keys are [lines, chars] only in the schema too (no bare int)."""
         props = find(self.schema, "inject", "limits")["properties"]
         for k in team.INJECT_LIMIT_KEYS:
             good, bad = ([10, 500], 500) if k in team.INJECT_PAIR_LIMIT_KEYS else (10, [10, 500])
             with self.subTest(key=k):
                 self.assertIsNone(check(good, props[k]))
                 self.assertIsNotNone(check(bad, props[k]))
-        # T-075: limits.files is {名前 or default: [行数, 文字数]}
+        # limits.files is {名前 or default: [行数, 文字数]}
         self.assertIsNone(check({"default": [60, 3000], "design": [80, 4000]}, props["files"]))
         for bad in ({"design": 500}, {"design": [1, "x"]}, {"default": "x"}):
             self.assertIsNotNone(check(bad, props["files"]), bad)
 
     def test_inject_parts_accept_file_references(self):
-        """T-075: the lists take the fixed parts and `file:<名前>`; inject.files is {名前: パス}."""
+        """the lists take the fixed parts and `file:<名前>`; inject.files is {名前: パス}."""
         for node in (find(self.schema, "inject")["properties"]["parts"],
                      find(self.schema, "roles", "*")["properties"]["inject"]):
             self.assertIsNone(check(["handoff", "file:charter"], node))
@@ -156,7 +156,7 @@ class TeamSchemaTest(ShipTestCase):
         self.assertTrue(self.schema["description"])
 
     def test_the_old_charter_and_memory_limits_are_gone(self):
-        """T-095: the v1.2.0 compatibility keys left the schema."""
+        """the v1.2.0 compatibility keys left the schema."""
         self.assertNotIn("charter", self.schema["properties"])
         self.assertNotIn("limits", find(self.schema, "memory")["properties"])
         self.assertNotIn("charter", find(self.schema, "inject", "limits")["properties"])

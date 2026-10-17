@@ -30,7 +30,7 @@ class InjectTest(ShipTestCase):
     def _fleet_section(text):
         """Only the `fleet` part, not the whole hook: the header carries the ship folder
         (a random tmpXXXXXXXX path) and asserting ship names like t2/t3 against the full
-        text risks a ~1% collision with that random suffix (reviewer #16 T-022)."""
+        text risks a ~1% collision with that random suffix (reviewer #16)."""
         start = text.index("## fleet")
         rest = text[start:]
         end = rest.find("\n## ", 1)
@@ -103,7 +103,7 @@ class InjectTest(ShipTestCase):
         self.assertIn("ほか 25 件", text)
 
     def test_board_part_is_opt_in_and_capped(self):
-        """T-030: the `board` part is not in a role's inject unless named (opt-in, DEFAULT
+        """the `board` part is not in a role's inject unless named (opt-in, DEFAULT
         excludes it); when named, it lists the whole ship (not just `impl`'s own), capped
         by `board_items` and ordered blocked -> active -> open."""
         b = board.Board(self.shipdir, self.t)
@@ -222,7 +222,7 @@ class InjectTest(ShipTestCase):
         self.assertNotIn("charter", team_mod.INJECT_LIMIT_KEYS)
 
     def test_templates_use_file_charter(self):
-        """T-075: dev / research / admiral spell the charter as inject.files.charter + file:charter, with no warning."""
+        """dev / research / admiral spell the charter as inject.files.charter + file:charter, with no warning."""
         from yamato import ship as ship_mod
         import yaml
         for name, seats in (("dev", ("pm", "planner")), ("research", ("editor",)), ("admiral", ("admiral",))):
@@ -234,7 +234,7 @@ class InjectTest(ShipTestCase):
                 self.assertIn("file:charter", raw["roles"][role]["inject"], (name, role))
 
     def test_fleet_part_is_opt_in_and_lists_every_ship(self):
-        """T-022: the `fleet` part (admiral's own; opt-in like `board`) is a one-line-per-ship
+        """the `fleet` part (admiral's own; opt-in like `board`) is a one-line-per-ship
         summary, the same shape as `yamato ships` (admiral.ship_line), not just this ship."""
         from yamato import ship
 
@@ -265,7 +265,7 @@ class InjectTest(ShipTestCase):
         self.assertIn(f"…ほか 2 件 (`{runtime.yamato_invocation()} ships` で見る)", section)
 
     def test_fleet_part_survives_claude_agents_failure(self):
-        """reviewer #16 (T-022 差し戻し): claude.agents() は失敗/タイムアウトで YamatoError
+        """reviewer #16 (差し戻し): claude.agents() は失敗/タイムアウトで YamatoError
         を投げうる。おまけの `fleet` 部品のせいで session_start 全体を落とすな (_touch と同じ
         考え) — handoff など本業の部品は出た上で、fleet だけ読めない旨に置き換わること。"""
         from yamato.util import YamatoError
@@ -343,7 +343,7 @@ class HookTest(ShipTestCase):
                            session_name="t1.impl", how="new")
 
     def test_stop_and_pre_tool_use_are_quiet_with_no_deadline_at_all(self):
-        # T-020 / D-013: the admiral's permanent state is no ``.runtime/deadline`` ever
+        # the admiral's permanent state is no ``.runtime/deadline`` ever
         # written (``time_limit: none``), so ``deadline.phase`` stays NOT_UP forever and
         # none of §0 B4's wrap-up / force-stop fires, the same as before any ``up``.
         self.assertIsNone(deadline.read(self.shipdir))
@@ -413,7 +413,7 @@ class HookTest(ShipTestCase):
     def test_wait_deadline_exits_when_not_up(self):
         self.assertEqual(self.run_hook(hooks.wait_deadline, {})[0], 0)
 
-    # --- T-021: time_limit: none (D-013, the admiral) never has a deadline to read at all,
+    # --- time_limit: none (the admiral) never has a deadline to read at all,
     # not just "not up yet" -- the watcher must still notice an outside sender's message ---
 
     def _make_no_time_limit(self):
@@ -439,7 +439,7 @@ class HookTest(ShipTestCase):
             self.assertEqual(self.run_hook(hooks.wait_deadline, {})[0], 0)
         sleep.assert_called_once_with(hooks.WAIT_POLL)
 
-    # --- T-038: a watcher with no deadline leaves when it is stale ---
+    # --- a watcher with no deadline leaves when it is stale ---
 
     def _stop_after(self, n, fn=None):
         """A ``time.sleep`` stand-in: runs ``fn`` on the n-th call, and ends the shift on the one after

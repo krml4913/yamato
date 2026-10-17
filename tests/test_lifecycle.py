@@ -221,7 +221,7 @@ class SeatStopRotateTest(_Base):
 
 
 class RotateCommandTest(_Base):
-    """``yamato rotate <ship> <seat>...`` (T-024): the same mark as ``seat-stop --rotate``,
+    """``yamato rotate <ship> <seat>...``: the same mark as ``seat-stop --rotate``,
     but set from outside for a *stopped* persistent seat (no session to run it from)."""
 
     def cli(self, *argv):
@@ -272,7 +272,7 @@ class RotateCommandTest(_Base):
         self.assertIsNone(roster.seat(self.shipdir, "impl").get("rotateRequested"))
 
     def test_refuses_a_headless_seat_with_a_reason(self):
-        # reviewer's finding on T-024/PR #43: only per_task was exercised, and headless
+        # reviewer's finding on PR #43: only per_task was exercised, and headless
         # takes the same "shift != persistent" branch -- a dedicated test for it.
         ty = self.shipdir / "team.yaml"
         ty.write_text(ty.read_text(encoding="utf-8").replace(

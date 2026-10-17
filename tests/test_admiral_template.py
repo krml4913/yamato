@@ -1,9 +1,9 @@
-"""templates/admiral/ (D-011, D-013): the admiral's role prompt and settings.
+"""templates/admiral/: the admiral's role prompt and settings.
 
-Only the static template is under test here (T-023, completion 1-2; T-036 adds the
+Only the static template is under test here (completion 1-2; T-036 adds the
 ``fleet`` inject part, T-023 completion 3). The ``yamato admiral`` command that builds
 ``_admiral/`` from it (T-020 laid the ``register=False`` / ``time_limit: none``
-groundwork; the CLI verb landed in T-021) is out of scope."""
+groundwork; the CLI verb landed later) is out of scope."""
 import json
 import unittest
 from unittest import mock
@@ -15,7 +15,7 @@ from yamato.util import YamatoError
 
 # a name is enough to build and validate the template; the real seat lives at
 # $YAMATO_HOME/_admiral (a name check_name forbids for an ordinary `ship create`,
-# T-020) is the future `yamato admiral` command's business, not this template's
+# the earlier work) is the future `yamato admiral` command's business, not this template's
 ADMIRAL_NAME = "admiraltest"
 
 
@@ -50,7 +50,7 @@ class AdmiralTemplateTest(ShipTestCase):
 
         self.assertNotIn(ADMIRAL_NAME, load_registry())
 
-    # --- D-013: no time limit -------------------------------------------------
+    # --- no time limit -------------------------------------------------
 
     def test_time_limit_is_none(self):
         self.assertIsNone(self.ateam["time_limit"])
@@ -61,7 +61,7 @@ class AdmiralTemplateTest(ShipTestCase):
         # 常駐で時間の上限がない席が、シフト 8h 超の rotate で自分で止まらないように (drift H)
         self.assertIsNone(rotate_conf(self.ateam, "admiral")["hours"])
 
-    # --- D-011 Q2: auto + WebFetch/WebSearch allowed, ~/dev/yamato read-only --
+    # --- auto + WebFetch/WebSearch allowed, ~/dev/yamato read-only --
 
     def test_admiral_runs_auto_with_web_allowed(self):
         st = self.settings()
@@ -113,7 +113,7 @@ class AdmiralTemplateTest(ShipTestCase):
         with self.assertRaises(YamatoError):
             ship.create("d2", None, str(self.tmp / "d2"), "dev")
 
-    # --- T-036 (T-023 完了条件 3): the fleet summary is injected -------------
+    # --- the fleet summary is injected -------------
 
     def test_inject_names_fleet(self):
         self.assertIn("fleet", self.ateam["roles"]["admiral"]["inject"])

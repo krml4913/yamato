@@ -21,7 +21,7 @@ class _SeatBase(ShipTestCase):
         p.start()
         self.addCleanup(p.stop)
         self.spawned = []
-        self.spawn_kwargs = []   # T-012: the same calls' kwargs (cwd=...), kept separate so the
+        self.spawn_kwargs = []   # the same calls' kwargs (cwd=...), kept separate so the
                                   # existing `[args] = self.spawned` call sites do not have to change
 
         def _capture(args, **kwargs):
@@ -56,7 +56,7 @@ class _SeatBase(ShipTestCase):
 
 
 class SeatTest(_SeatBase):
-    # --- T-014: count の変更で席の名前が変わったとき ---
+    # --- count の変更で席の名前が変わったとき ---
 
     def _retire(self, name="impl-1", tasks=("T-001",), unread=2):
         """A seat the roster knows (a shift once ran) that team.yaml no longer has."""
@@ -118,7 +118,7 @@ class SeatTest(_SeatBase):
         self.assertEqual(self._notices(), [])
 
     def test_a_broken_board_item_does_not_stop_up(self):
-        # レビュー指摘 (T-014 差し戻し): 知らせは安全網。board が壊れていても up は captain を
+        # レビュー指摘 (差し戻し): 知らせは安全網。board が壊れていても up は captain を
         # 起こす (知らせだけ諦めて注意を出す)。
         self._retire()
         (self.shipdir / "board" / "items" / "T-999.md").write_text("frontmatter がない壊れた項目", encoding="utf-8")
@@ -136,7 +136,7 @@ class SeatTest(_SeatBase):
         [call] = self.bg_calls()
         a = call["argv"]
         self.assertEqual(call["cwd"], str(self.workspace))
-        self.assertEqual(call["GH_TOKEN"], "secret")  # D-003: env_unset の既定は空。gh の権限はトークン側で絞る
+        self.assertEqual(call["GH_TOKEN"], "secret")  # env_unset の既定は空。gh の権限はトークン側で絞る
         self.assertEqual(a[a.index("--name") + 1], "t1.pm")
         self.assertEqual(a[a.index("--agent") + 1], "pm")
         self.assertEqual(a[a.index("--model") + 1], "opus")
@@ -155,7 +155,7 @@ class SeatTest(_SeatBase):
         self.assertIsNone(roster.seat(self.shipdir, "impl").get("sessionId"))  # only the hub
 
     def test_up_with_time_limit_none_skips_deadline_and_watchdog(self):
-        # T-020 / D-013: the admiral-only exception. No --for: no deadline is written, no
+        # the admiral-only exception. No --for: no deadline is written, no
         # watchdog is spawned, and §0 B4's enforcement stays permanently a no-op.
         ty = self.shipdir / "team.yaml"
         ty.write_text(ty.read_text(encoding="utf-8").replace("time_limit: 3h", "time_limit: none"), encoding="utf-8")
@@ -195,7 +195,7 @@ class SeatTest(_SeatBase):
         self.assertEqual(rec["sessionId"], self.fake()["sessions"][0]["sessionId"])
 
     def test_env_unset_comes_from_team_yaml(self):
-        """D-003: 既定は空 (GH_TOKEN はそのまま渡す)。艦が env_unset を書けば、その名前を外す道具は残る。"""
+        """既定は空 (GH_TOKEN はそのまま渡す)。艦が env_unset を書けば、その名前を外す道具は残る。"""
         os.environ["GH_TOKEN"] = "secret"
         self.addCleanup(os.environ.pop, "GH_TOKEN", None)
         ty = self.shipdir / "team.yaml"
@@ -539,7 +539,7 @@ class SeatTest(_SeatBase):
         self.assertEqual(len(self.bg_calls()), 3)
 
     def test_send_to_a_live_per_task_seat_without_an_active_item_warns_but_still_delivers(self):
-        # design-drift #11 / D-019: attach cannot be told apart from idle (docs/verify/
+        # design-drift #11 / attach cannot be told apart from idle (docs/verify/
         # verify-p0-c.md:135), so a live per_task orphan is never stopped -- only warned
         self.up()
         self.run_cmd(seat.send, self.shipdir, "impl", "T-001", "pm")   # starts impl's shift; it stays alive
@@ -626,7 +626,7 @@ class SeatTest(_SeatBase):
         self.assertIn(f"sleep 7; ", args[2])
         self.assertIn(f" stop {rec['sessionId'][:8]}; ", args[2])
         self.assertIn("_shift-ended", args[2])
-        self.assertEqual(self.spawn_kwargs[-1]["cwd"], str(self.shipdir))   # T-012: never the caller's cwd
+        self.assertEqual(self.spawn_kwargs[-1]["cwd"], str(self.shipdir))   # never the caller's cwd
         # the delayed part: after the stop, the shift is closed with its usage
         self.stop_session("pm")
         seat.shift_ended(self.shipdir, "pm", rec["sessionId"])
@@ -636,7 +636,7 @@ class SeatTest(_SeatBase):
         self.assertTrue((self.shipdir / "usage.jsonl").is_file())
 
     def test_seat_stop_records_when_the_delayed_stop_fails_to_launch(self):
-        """T-012: spawning itself can fail (rare); seat-stop still accepts the stop (the
+        """spawning itself can fail (rare); seat-stop still accepts the stop (the
         seat is not stuck retrying the same call), but the failure is not silent."""
         self.up()
         rec = roster.seat(self.shipdir, "pm")
@@ -834,7 +834,7 @@ class SeatTest(_SeatBase):
 
 
 class RestopStuckTest(_SeatBase):
-    """T-012: a seat stuck ``stopping`` past ``STOPPING_STUCK_AFTER`` (its delayed stop
+    """a seat stuck ``stopping`` past ``STOPPING_STUCK_AFTER`` (its delayed stop
     likely never ran -- a removed worktree cwd, say) is forced again by ``restop_stuck``,
     which ``status`` and the watchdog both call."""
 
@@ -899,7 +899,7 @@ class RealClaudeProcessTest(_SeatBase):
 
 
 class MultiWorkspaceTest(_SeatBase):
-    """T-067 (D-071): seat cwd = first repo, the rest are --add-dir, trust/existence for every repo."""
+    """seat cwd = first repo, the rest are --add-dir, trust/existence for every repo."""
 
     def two_repos(self, trust_second=True):
         import re

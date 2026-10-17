@@ -307,7 +307,7 @@ class FakeZellijRun:
         self.calls: list[list[str]] = []
         self.kwargs: list[dict] = []
         self.layouts: list[str] = []   # new-tab --layout <file>: that file's content, read
-                                        # at call time (T-015 removes the file once zellij returns)
+                                        # at call time (the file is removed once zellij returns)
         self.sessions = sessions
         self.rc = rc
         self.rc_for = rc_for or (lambda argv: self.rc)
@@ -479,13 +479,13 @@ class OpenerTest(ShipTestCase):
         for call in new_tabs:
             self.assertEqual(call[0], "zellij")
             self.assertEqual(call[3], "--layout")
-        # each ship's own tab landed in its own file (content read at call time -- T-015
+        # each ship's own tab landed in its own file (content read at call time; zellij
         # removes the file once new-tab returns, so it is gone by the time we get here)
         self.assertEqual([t.count("tab name=") for t in run.layouts], [1, 1])
         self.assertTrue(any('tab name="ship:t1"' in t for t in run.layouts))
         self.assertTrue(any('tab name="ship:other"' in t for t in run.layouts))
 
-    # --- the admiral's tab, and `yamato view` with no `open` (T-040) ---
+    # --- the admiral's tab, and `yamato view` with no `open` ---
 
     def make_admiral(self):
         from yamato import admiral
@@ -574,7 +574,7 @@ class OpenerTest(ShipTestCase):
         self.assertEqual(layout.assemble(list(tabs.values())), text)
 
     def test_in_zellij_removes_the_temp_layout_file_after_new_tab(self):
-        # T-015: the mkstemp file for each ship's tab must not be left behind once
+        # the mkstemp file for each ship's tab must not be left behind once
         # zellij has read it (new-tab returned).
         ship.create("other", str(self.workspace), None, "dev")
         run = FakeZellijRun()
@@ -601,7 +601,7 @@ class OpenerTest(ShipTestCase):
         self.assertEqual(len(new_tabs), 1)
         # os.remove was mocked out above, so the real mkstemp file (under the system
         # temp dir, not self.tmp) is still there -- remove it for real now that the
-        # mock is gone, or it piles up in /tmp across test runs (T-027)
+        # mock is gone, or it piles up in /tmp across test runs
         with contextlib.suppress(FileNotFoundError):
             os.remove(new_tabs[0][4])
 
@@ -707,7 +707,7 @@ class ViewCliTest(ShipTestCase):
         open_ships.assert_called_once_with(None, command=None, output=None)
 
 class StuckAndStaleTest(ShipTestCase):
-    """T-089: a stuck zellij, a pane lost with its `claude attach`, and two attaches fighting over a seat."""
+    """a stuck zellij, a pane lost with its `claude attach`, and two attaches fighting over a seat."""
 
     def test_stuck_zellij_call_times_out_into_an_error(self):
         def run(argv, **kwargs):

@@ -1,4 +1,4 @@
-"""API の応答を docs/api/openapi.yaml のスキーマで確かめる小さな検査器 (T-106)。
+"""API の応答を docs/api/openapi.yaml のスキーマで確かめる小さな検査器。
 
 jsonschema は vendor しない。扱う範囲は type (配列で "null" も可)・nullable・properties・required・
 additionalProperties (bool か schema)・items・enum・const・$ref (``#/…`` のこの文書の中だけ)。

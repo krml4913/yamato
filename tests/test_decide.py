@@ -285,7 +285,7 @@ class CloseTest(DecideTestCase):
         [impl_msg] = inbox.entries(self.shipdir, "impl")
         self.assertIn("D-001 が決まった", impl_msg["text"])
         self.assertIn("T-001", impl_msg["text"])
-        # T-002 has no assignee, so the hub hears -- but pm closed it itself
+        # the blocked item has no assignee, so the hub hears -- but pm closed it itself
         self.assertEqual(inbox.entries(self.shipdir, "pm")[1:], [])   # [0] is the open request
         self.assertIn("閉じた本人なので送らない", out)
 

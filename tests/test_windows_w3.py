@@ -1,4 +1,4 @@
-"""W3: process OS differences on Windows (T-042, work/requirements/windows-w3.md).
+"""W3: process OS differences on Windows (work/requirements/windows-w3.md).
 
 Windows is never available here, so the Windows branches run with ``procs.is_windows`` /
 ``procs._kernel32`` replaced, asserting which API gets called (the real check is W5).
@@ -228,11 +228,11 @@ class LivePidWindowsTest(WinCase):
         rec = {"pid": 100, "sessionId": "s"}
         self.assertEqual(headless.live_pid({**rec, "pidStart": 555}), 100)
         self.assertIsNone(headless.live_pid({**rec, "pidStart": 999}))       # pid を別のプロセスが使っている
-        self.assertIsNone(headless.live_pid(rec))                            # 印が無ければ生きた -p とみなさない (T-050)
+        self.assertIsNone(headless.live_pid(rec))                            # 印が無ければ生きた -p とみなさない
         self.assertIsNone(headless.live_pid({"pid": 300, "sessionId": "s", "pidStart": 1}))
 
     def test_no_pid_start_means_no_ctrl_break_to_an_orphan(self):
-        """pidStart の無い roster の pid には CTRL_BREAK を送らない (コンソールごと落とす事故, T-050)。"""
+        """pidStart の無い roster の pid には CTRL_BREAK を送らない (コンソールごと落とす事故)。"""
         self.win(FakeKernel32({100: None}, created={100: 555}))
         with tempfile.TemporaryDirectory() as d:
             ship = Path(d)
@@ -246,7 +246,7 @@ class LivePidWindowsTest(WinCase):
         soft.assert_not_called()
 
     def test_terminate_sends_no_ctrl_break_to_an_unverified_pid(self):
-        """down --force (headless.terminate) も pidStart で確かめた pid にしか CTRL_BREAK を送らない (T-050 差し戻し)。"""
+        """down --force (headless.terminate) も pidStart で確かめた pid にしか CTRL_BREAK を送らない (差し戻し)。"""
         self.win(FakeKernel32({100: None}, created={100: 555}))
         for extra, sent in (({}, False), ({"pidStart": 999}, False), ({"pidStart": 555}, True)):
             rec = {"state": roster.ON_SHIFT, "pid": 100, "sessionId": "s", **extra}

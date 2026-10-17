@@ -1,4 +1,4 @@
-"""T-035: 出力を head などで途中で閉じても ./yamato がトレースバックを出さない。
+"""出力を head などで途中で閉じても ./yamato がトレースバックを出さない。
 
 入口 (./yamato) だけを直す task なので、実物の ./yamato を実際の OS パイプに
 つなぎ、途中で読み手を閉じて本物の BrokenPipeError (SIGPIPE) を起こす。
