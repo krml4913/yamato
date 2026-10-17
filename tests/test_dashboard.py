@@ -401,3 +401,65 @@ def yaml_keys(path: Path) -> set:
     import yaml
 
     return set(yaml.safe_load(path.read_text(encoding="utf-8")))
+
+
+class FleetTest(ShipTestCase):
+    def get(self):
+        status, body = dashboard.api_get("/api/v1/fleet")
+        body = json.loads(json.dumps(body))
+        api_schema.assert_valid(self, body, "/api/v1/fleet")
+        return status, body
+
+    def test_registered_ship_and_no_admiral(self):
+        status, body = self.get()
+        self.assertEqual(status, 200)
+        self.assertEqual(body["home"], str(self.tmp / "home"))
+        ship = next(s for s in body["ships"] if s["name"] == "t1")
+        self.assertEqual((ship["path"], ship["exists"], ship["error"]), (str(self.shipdir), True, None))
+        self.assertEqual(ship["team"], "t1")
+        self.assertIsNone(body["admiral"])
+
+    def test_missing_folder_and_broken_team_yaml_do_not_drop_the_ship(self):
+        from yamato.util import register_ship
+
+        gone = self.tmp / "gone"
+        register_ship("gone", gone)
+        (self.shipdir / "team.yaml").write_text("- not a mapping\n", encoding="utf-8")
+        _, body = self.get()
+        by = {s["name"]: s for s in body["ships"]}
+        self.assertEqual((by["gone"]["exists"], by["gone"]["registered"], by["gone"]["team"]), (False, True, None))
+        self.assertIn("gone", by["gone"]["error"])
+        self.assertTrue(by["t1"]["exists"])
+        self.assertIsNone(by["t1"]["team"])
+        self.assertIn("mapping", by["t1"]["error"])
+
+    def test_unregistered_folder_under_home_is_picked_up(self):
+        home = self.tmp / "home"
+        (home / "loose").mkdir()
+        (home / "loose" / "team.yaml").write_text("name: loose\nroles: {}\n", encoding="utf-8")
+        (home / "_hidden").mkdir()
+        (home / "_hidden" / "team.yaml").write_text("name: h\n", encoding="utf-8")
+        _, body = self.get()
+        loose = next(s for s in body["ships"] if s["name"] == "loose")
+        self.assertEqual((loose["registered"], loose["exists"], loose["team"]), (False, True, "loose"))
+        self.assertNotIn("_hidden", [s["name"] for s in body["ships"]])
+
+    def test_admiral_is_separate_with_roles_and_never_in_ships(self):
+        adm = self.tmp / "home" / "_admiral"
+        adm.mkdir()
+        (adm / "team.yaml").write_text("name: yamato\nroles:\n  admiral: {model: opus}\n", encoding="utf-8")
+        _, body = self.get()
+        self.assertEqual(body["admiral"], {"path": str(adm), "team": "yamato", "roles": ["admiral"], "error": None})
+        self.assertNotIn("_admiral", [s["name"] for s in body["ships"]])
+
+    def test_unreadable_admiral_reports_the_reason(self):
+        adm = self.tmp / "home" / "_admiral"
+        adm.mkdir()
+        _, body = self.get()
+        self.assertEqual((body["admiral"]["team"], body["admiral"]["roles"]), (None, []))
+        self.assertIn("team.yaml", body["admiral"]["error"])
+
+    def test_writes_nothing(self):
+        before = sorted(p for p in self.tmp.rglob("*"))
+        self.get()
+        self.assertEqual(sorted(p for p in self.tmp.rglob("*")), before)

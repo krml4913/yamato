@@ -731,7 +731,7 @@ class PrTest(GitShipTestCase):
         self.assertNotIn(third, out)
         meta, body, _ = self.board().read(second)
         self.assertEqual(meta["column"], "rebase")
-        self.assertIn("rebase して push", body)
+        self.assertIn("を merge して push", body)
         self.assertEqual(self.board().read(third)[0]["column"], "review")
         msgs = inbox.entries(self.shipdir, "impl")
         self.assertEqual(len(msgs), 1)

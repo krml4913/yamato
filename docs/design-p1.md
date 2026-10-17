@@ -740,7 +740,7 @@ git:
 1. 呼び出し元を記録する (`merged_by`)。**誰が打てるかは検査しない** (v1)
 2. `merge_requires` に並べた条件を確かめる: `review` = reviewer の承認が項目に記録されている、`ci` = CI が通っている (`gh pr checks`)、`decision` = merge の D 項目があれば閉じている。満たさなければ断る (理由を出す)。`merge_requires: []` の艦では確かめない
 3. ロックを取り、1 本ずつ merge する (記録の整合性)
-4. merge したら、他の開いている PR の衝突を確かめる (`gh pr view --json mergeable`)。衝突したものは、その項目を `blocked` にせず `column: rebase` に動かし (艦の列に `rebase` があれば。無ければ本文に追記するだけ)、`conflict` の宛先に send する (「main が進んだ。rebase して push せよ」)
+4. merge したら、他の開いている PR の衝突を確かめる (`gh pr view --json mergeable`)。衝突したものは、その項目を `blocked` にせず `column: rebase` に動かし (艦の列に `rebase` があれば。無ければ本文に追記するだけ)、`conflict` の宛先に send する (「main が進んだ。origin/main を merge して push せよ」)
 
 `yamato pr open T-042`: `gh pr create` を呼び、項目の `pr` に番号を書き、`column` を review に進め (艦の列に review があれば)、項目の reviewer (無ければ hub) に `send` する。使うかどうかは役割プロンプト次第で、生の `gh pr create` を使う艦では項目の `pr` を `board set` で書く。
 

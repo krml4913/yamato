@@ -280,7 +280,8 @@ def _check_conflicts(shipdir: Path, team: dict, merged_id: str, merged_pr, who: 
             continue
         fields = {"column": "rebase"} if _column(team, "rebase") else {}
         text = (f"{conf['base']} が進んで ({merged_id} の PR #{merged_pr} を merge){lab}、"
-                f"{meta['id']} の PR #{number} が衝突している。rebase して push してください")
+                f"{meta['id']} の PR #{number} が衝突している。"
+                f"origin/{conf['base']} を merge して push してください (rebase はしない)")
         brd.set(meta["id"], fields, note=text, by=who)
         print(f"衝突: {meta['id']} の PR #{number}{lab}")
         to = meta.get("assignee") if conf["conflict"] == "author" else conf["conflict"]

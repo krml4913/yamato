@@ -162,9 +162,9 @@ OVERVIEW = {"generated_at": 1.7e9, "agents_error": None,
             "waits": [{"ship": "a", "id": "D-1", "title": "t", "urgent": True, "age": "1h", "recommendation": None}],
             "ships": [{"name": "a", "error": None, "state": state()},
                       {"name": "b", "error": "ValueError: 壊れ", "state": None}]}
-FLEET = {"home": "/h", "ships": [{"name": "a", "path": "/h/a", "registered": True, "team": "t", "error": None},
-                                 {"name": "b", "path": "/h/b", "registered": False, "team": None, "error": "x"}],
-         "admiral": {"path": "/h/_admiral", "team": None}}
+FLEET = {"home": "/h", "ships": [{"name": "a", "path": "/h/a", "registered": True, "exists": True, "team": "t", "error": None},
+                                 {"name": "b", "path": "/h/b", "registered": False, "exists": False, "team": None, "error": "x"}],
+         "admiral": {"path": "/h/_admiral", "team": None, "roles": [], "error": "x"}}
 CONFIG = {"name": "a", "path": "/h/a/team.yaml", "raw": "name: a\n# c\n", "pending": {"changed": True, "keys": ["roles"]},
           "files": [{"file": "roles/impl.md", "kind": "role", "bytes": 10}, {"file": "charter.md", "kind": "charter", "bytes": 0}],
           "fields": [{"key": "name", "set": True, "required": True, "value": "a", "type": "string",

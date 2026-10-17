@@ -183,7 +183,7 @@ class BuildTest(ReportTestCase):
                     data={"reason": "x"})   # a refused merge is the safety net working, not an anomaly
         anomalies = report.sections(self.build())["異常"].splitlines()
         self.assertEqual(anomalies, [
-            "- T-002 の PR #2 が 10:30 に衝突 (T-001 の PR #1 を merge)。impl に rebase を頼んだ",
+            "- T-002 の PR #2 が 10:30 に衝突 (T-001 の PR #1 を merge)。impl に base の取り込みを頼んだ",
             "- T-003 の PR #3 が 10:40 に衝突 (T-001 の PR #1 を merge)",
             "- D-001 の判断を decider (owner) 以外の pm が 11:00 に閉じた。--by は owner",
         ])
