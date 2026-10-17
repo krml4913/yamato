@@ -26,6 +26,22 @@ export async function getShipConfig(name: string): Promise<ShipConfig> {
   return res.json();
 }
 
+export type Fleet = paths["/api/v1/fleet"]["get"]["responses"]["200"]["content"]["application/json"];
+
+export async function getFleet(): Promise<Fleet> {
+  const res = await fetch("/api/v1/fleet");
+  if (!res.ok) {
+    let message = `${res.status}`;
+    try {
+      message = (await res.json()).error.message;
+    } catch {
+      /* 本文が JSON でなければ status だけ */
+    }
+    throw new Error(message);
+  }
+  return res.json();
+}
+
 type EditPaths = paths["/api/v1/edit/preview"]["post"];
 export type EditRequest = EditPaths["requestBody"]["content"]["application/json"];
 export type EditPreview = EditPaths["responses"]["200"]["content"]["application/json"];

@@ -1,5 +1,6 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { createMemoryRouter, MemoryRouter, RouterProvider } from "react-router-dom";
+import { ShipFilePage } from "./ShipFilePage";
 import { vi } from "vitest";
 import { App } from "../App";
 
@@ -96,5 +97,29 @@ describe("ShipFilePage の編集", () => {
     fireEvent.click(screen.getByRole("button", { name: "差分を見る" }));
     fireEvent.click(await screen.findByRole("button", { name: "確定" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("変わっている");
+  });
+});
+
+describe("ShipFilePage の編集 (移動)", () => {
+  it("編集中に別の file へ戻る/進むと編集は閉じる (knowledge では開かない)", async () => {
+    document.head.innerHTML = '<meta name="yamato-token" content="tok">';
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => ({
+      ok: true,
+      status: 200,
+      json: async () => url.includes("knowledge")
+        ? { name: "a", file: "knowledge.md", kind: "knowledge", text: "# 知見\n", bytes: 5 }
+        : { name: "a", file: "charter.md", kind: "charter", text: "# 憲章\n", bytes: 7 },
+    })));
+    const router = createMemoryRouter([{ path: "/ship/:name/files/:file", element: <ShipFilePage /> }], {
+      initialEntries: ["/ship/a/files/charter.md"],
+    });
+    render(<RouterProvider router={router} />);
+    fireEvent.click(await screen.findByRole("button", { name: "編集" }));
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
+    await act(async () => { await router.navigate("/ship/a/files/knowledge.md"); });
+    await screen.findByRole("heading", { level: 1, name: "知見" });
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.queryByRole("button", { name: "編集" })).toBeNull();
+    document.head.innerHTML = "";
   });
 });

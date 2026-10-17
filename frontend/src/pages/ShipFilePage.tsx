@@ -10,9 +10,11 @@ import { MdEditor } from "./MdEditor";
 export function ShipFilePage() {
   const { name = "", file = "" } = useParams();
   const [state, setState] = useState<{ key: string; file?: ShipFile; error?: string }>({ key: "" });
-  const [editing, setEditing] = useState(false);
   const [reload, setReload] = useState(0);
   const key = `${name}\n${file}`;
+  const [editKey, setEditKey] = useState<string | null>(null);
+  const editing = editKey === key;   // 別の file に移ったら編集は閉じる
+  const setEditing = (on: boolean) => setEditKey(on ? key : null);
 
   useEffect(() => {
     let live = true;
@@ -29,13 +31,13 @@ export function ShipFilePage() {
       <p><Link to={`/ship/${encodeURIComponent(name)}`}>← {name}</Link></p>
       <h1>{file}</h1>
       {cur.error && <p role="alert">読めない: {cur.error}</p>}
-      {cur.file && !editing && (
+      {cur.file && !(editing && cur.file.kind !== "knowledge") && (
         <>
           {editToken() && cur.file.kind !== "knowledge" && <p><button onClick={() => setEditing(true)}>編集</button></p>}
           <Markdown text={cur.file.text} />
         </>
       )}
-      {cur.file && editing && (
+      {cur.file && editing && cur.file.kind !== "knowledge" && (
         <MdEditor
           ship={name}
           file={file}

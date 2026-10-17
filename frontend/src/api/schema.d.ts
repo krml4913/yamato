@@ -33,7 +33,7 @@ export interface paths {
         };
         /**
          * 艦の一覧 (ships.json と _admiral)
-         * @description ships.json と $YAMATO_HOME 直下の艦。_admiral は別枠 (admiral) に出す (一覧の ships には入れない)。読むだけ。
+         * @description ships.json の艦 (フォルダが消えていても exists=false で出す) と $YAMATO_HOME 直下の艦。_admiral は別枠 (admiral) に出す (一覧の ships には入れない)。読むだけ。
          */
         get: operations["getFleet"];
         put?: never;
@@ -316,11 +316,15 @@ export interface components {
             /** @description $YAMATO_HOME。 */
             home: string;
             ships: components["schemas"]["FleetShip"][];
-            /** @description _admiral。無ければ null。 */
+            /** @description _admiral。フォルダが無ければ null。 */
             admiral: {
                 path: string;
                 /** @description team.yaml の name。読めなければ null。 */
                 team: string | null;
+                /** @description team.yaml の roles の名前 (読めなければ空)。 */
+                roles: string[];
+                /** @description team.yaml を読めなかった理由。 */
+                error: string | null;
             } | null;
         };
         FleetShip: {
@@ -328,6 +332,8 @@ export interface components {
             path: string;
             /** @description ships.json にあるか (false は $YAMATO_HOME 直下の拾い上げ)。 */
             registered: boolean;
+            /** @description path に team.yaml があるか (ships.json にあってフォルダが消えた艦は false)。 */
+            exists: boolean;
             team: string | null;
             /** @description team.yaml を読めなかった理由。 */
             error: string | null;
