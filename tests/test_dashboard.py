@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 from tests.helpers import ShipTestCase
-from yamato import board, claude, cli, dashboard, events, feed, inbox, roster, seat
+from yamato import board, claude, cli, dashboard, events, feed, inbox, report, roster, seat
 from yamato.util import YamatoError
 
 
@@ -126,6 +126,37 @@ class DashboardTest(ShipTestCase):
         page = self.render(ships={"bad": broken, "t1": self.shipdir})
         self.assertIn("読めない", page)
         self.assertIn("<h2>t1</h2>", page)
+
+    def test_second_tier_report_orphans_memory_context(self):
+        rd = report.reports_dir(self.shipdir)
+        rd.mkdir(parents=True, exist_ok=True)
+        (rd / "2026-10-16.md").write_text("# 日報\n\n## 一言\n静かな一日 <b>\n\n## 明日\nT-9 を進める\n", encoding="utf-8")
+        board.Board(self.shipdir, self.team()).add("T-001", {"assignee": "impl", "state": "active"}, by="pm")
+        roster.seat(self.shipdir, "impl")
+        roster.update(self.shipdir, "impl", state=roster.OFF, handoffWritten=False, sessionId="S9")
+        tp = self.tmp / "S9.jsonl"
+        tp.write_text(json.dumps({"type": "assistant", "message": {"model": "claude-sonnet-5", "usage": {
+            "input_tokens": 10, "cache_read_input_tokens": 290000}}}) + "\n", encoding="utf-8")
+        with mock.patch.object(claude, "transcript_paths", return_value=[tp]), \
+                mock.patch.object(dashboard.rotate, "context_threshold", return_value=300000):
+            page = self.render()
+        self.assertIn("2026-10-16", page)
+        self.assertIn("静かな一日 &lt;b&gt;", page)
+        self.assertIn("明日: T-9 を進める", page)
+        self.assertIn("孤児", page)
+        self.assertIn("引き継ぎなしで終了", page)
+        self.assertIn("前回の反映なし", page)
+        self.assertIn("290k / 300k (96%)", page)
+        self.assertIn("rotate が近い", page)
+        top = page.split("owner の判断待ち")[1].split("</section>")[0]
+        self.assertNotIn("静かな一日", top)
+
+    def test_second_tier_empty_values(self):
+        page = self.render()
+        self.assertIn("まだ無い", page)
+        self.assertIn("<h3>孤児", page)
+        data = dashboard.gather("t1", self.shipdir, {}, time.time())
+        self.assertTrue(all(s["context"] is None for s in data["seats"]))
 
     def test_render_page_calls_agents_once(self):
         with mock.patch.object(claude, "agents", return_value=[]) as ag, \

@@ -511,12 +511,12 @@ zellij セッション
 
 `yamato dashboard [--port N] [--no-open]` は、全艦 (`admiral.all_ships()` と同じ範囲) を 1 ページに並べてブラウザで見せる。owner が「自分待ち」と各席の様子を一目で見るためのもの。
 
-- **読むだけ**: GET だけ、艦フォルダに何も書かない。`seat.status` は呼ばない (reconcile・enforce・restop_stuck が roster を書き換え席を止めるため)。roster・board・inbox・events・usage・作業ログを読み、`claude agents --json` は 1 回の描画で 1 回
+- **読むだけ**: GET だけ、艦フォルダに何も書かない。`seat.status` は呼ばない (reconcile・enforce・restop_stuck が roster を書き換え席を止めるため)。roster・board・inbox・events・usage・作業ログ・日報 (`report.latest`)・transcript (`rotate.last_usage`。末尾だけ)・memory の候補と反映の記録 (`memory.status`) を読み、`claude agents --json` は 1 回の描画で 1 回
 - **ローカルだけ**: `127.0.0.1` に bind。bind 先を変えるオプションは作らない。認証なし。既定 port は 8765 (`--port` を書かなければ使用中なら 8766… と 10 個まで試す。書いたのに使用中ならエラー)
-- **載せるもの**: ページの一番上に owner の判断待ち (decider が人間の open な判断 + 急ぎ・経過・推しだけ。owner 宛て inbox の未読は上部に並べず、艦の枠に件数だけ出す。`status=waiting` の席の waitingFor は席の表の status 列で見る)。艦ごとに deadline・席の表 (生存 pid・status・最終・active の項目・未読数・要対応 (`admiral.red_flags` の `Flag(重さ, 文, 詳細)`。赤 = 詰まり・API エラー、黄 = 動いていない・担当が無い。文は「何が起きた → 何をする」で、内部の言葉は title 属性。列名は赤と黄が並ぶので「要対応」、凡例は表の上)・今日のトークン・作業ログの最後の 1 行)・board の state 別の件数と active / blocked の項目・PR (board の `pr` 欄がある done 以外。workspace の origin が GitHub ならリンク)・直近 3 日の異常 (feed が赤くする種類と同じ集合 `feed.ABNORMAL_KINDS` を共有)
+- **載せるもの**: ページの一番上に owner の判断待ち (decider が人間の open な判断 + 急ぎ・経過・推しだけ。owner 宛て inbox の未読は上部に並べず、艦の枠に件数だけ出す。`status=waiting` の席の waitingFor は席の表の status 列で見る)。艦ごとに deadline・席の表 (生存 pid・status・最終・active の項目・未読数・要対応 (`admiral.red_flags` の `Flag(重さ, 文, 詳細)`。赤 = 詰まり・API エラー、黄 = 動いていない・担当が無い。文は「何が起きた → 何をする」で、内部の言葉は title 属性。列名は赤と黄が並ぶので「要対応」、凡例は表の上)・今日のトークン・作業ログの最後の 1 行)・board の state 別の件数と active / blocked の項目・PR (board の `pr` 欄がある done 以外。workspace の origin が GitHub ならリンク)・直近 3 日の異常 (feed が赤くする種類と同じ集合 `feed.ABNORMAL_KINDS` を共有)。艦の枠の 2 段目 (T-096): 前回の日報の一言・明日 / 孤児 (`monitor.orphans`) / memory の候補数と前回の反映からの日数・棚卸しの目安 / 席の文脈量と rotate の閾値に対する割合 (80% 以上で「rotate が近い」、取れない席は「-」)。上部は判断待ちだけのまま
 - **壊れた艦**: 1 艦の読み取りで例外が出ても、その艦の枠にエラーを出して他の艦は描く
 - HTML はモジュール内で組み立てる (テンプレートエンジン・外部 CDN なし。値は必ず `html.escape` を通す)。60 秒ごとに meta refresh
-- 範囲外: 操作 (判断を閉じる・返事・席を止める)・ローカル以外からの閲覧・認証。2 段目の候補は GitHub issue #101
+- 範囲外: 操作 (判断を閉じる・返事・席を止める)・ローカル以外からの閲覧・認証。予算の見せ方は別 task
 
 ## 11. admiral (窓口)
 
