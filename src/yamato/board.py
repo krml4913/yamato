@@ -19,6 +19,7 @@ from .util import YamatoError, atomic_write, ship_lock
 
 STATES = ("open", "active", "blocked", "done")
 FIXED = ("id", "title", "kind", "parent", "assignee", "state", "blocked_on", "links")
+SEAT_FIELDS = ("assignee", "reviewer")   # reviewer: who is reviewing it (T-093); kept after assignee
 LIST_FIELDS = ("blocked_on", "links")
 REPO_FIELDS = ("worktree", "branch", "pr", "merged_by")   # {repo: value} maps in a several-repo ship
 ID_PREFIX = "T-"
@@ -48,6 +49,26 @@ def _load_value(raw: str):
         return json.loads(raw)
     except ValueError:
         return raw
+
+
+def _reviewer_after_assignee(meta: dict) -> dict:
+    """``reviewer`` sits right after ``assignee`` (T-093). Items written before the field existed
+    have none; ``board set reviewer=`` on one inserts it here, not at the end."""
+    if "reviewer" not in meta or "assignee" not in meta:
+        return meta
+    out = {}
+    for k, v in meta.items():
+        if k == "reviewer":
+            continue
+        out[k] = v
+        if k == "assignee":
+            out["reviewer"] = meta["reviewer"]
+    return out
+
+
+def active_seats(items: list[dict]) -> set:
+    """Seats that hold an ``active`` item, as assignee or as reviewer (T-093)."""
+    return {m.get(f) for m in items if m.get("state") == "active" for f in SEAT_FIELDS} - {None}
 
 
 def dumps(meta: dict, body: str) -> str:
@@ -135,11 +156,11 @@ class Board:
             if value not in STATES:
                 raise YamatoError(f"state は {' / '.join(STATES)} のどれか (今: {value})")
             return value
-        if key == "assignee":
+        if key in SEAT_FIELDS:
             if value in (None, "", "-"):
                 return None
             if value not in self.team["seats"] and value != "owner":
-                raise YamatoError(f"assignee は席の名前 ({', '.join(self.team['seats'])}) (今: {value})")
+                raise YamatoError(f"{key} は席の名前 ({', '.join(self.team['seats'])}) (今: {value})")
             return value
         if key == "parent":
             if value in (None, "", "-"):
@@ -257,7 +278,7 @@ class Board:
         archive = self.team.get("board", {}).get("archive_on_done", True)
         d = self.archive_dir if meta.get("state") == "done" and archive else self.items_dir
         p = d / f"{meta['id']}.md"
-        atomic_write(p, dumps(meta, body))
+        atomic_write(p, dumps(_reviewer_after_assignee(meta), body))
         return p
 
     def archive(self, item_id: str | None = None) -> list[str]:
@@ -279,7 +300,9 @@ class Board:
         return moved
 
     def mine(self, seat: str) -> list[dict]:
-        return [m for m in self.items() if m.get("assignee") == seat and m.get("state") != "done"]
+        """Items the seat is assigned, plus those it is reviewing (``format_item`` marks them)."""
+        return [m for m in self.items()
+                if seat in (m.get("assignee"), m.get("reviewer")) and m.get("state") != "done"]
 
 
 def _check_decision_set(meta: dict, fields: dict) -> None:
@@ -309,14 +332,18 @@ def _note_line(by: str | None, text: str) -> str:
     return f"- {stamp} {by or '?'}: {text}\n"
 
 
-def format_item(meta: dict) -> str:
+def format_item(meta: dict, seat: str | None = None) -> str:
     extra = []
+    if seat and meta.get("assignee") != seat and meta.get("reviewer") == seat:
+        extra.append("レビュー")
     if meta.get("column"):
         extra.append(f"column={meta['column']}")
     if meta.get("blocked_on"):
         extra.append(f"blocked_on={','.join(meta['blocked_on'])}")
     if meta.get("parent"):
         extra.append(f"parent={meta['parent']}")
+    if meta.get("reviewer") and not (seat and meta.get("reviewer") == seat):
+        extra.append(f"reviewer={meta['reviewer']}")
     tail = f"  ({'; '.join(extra)})" if extra else ""
     return f"{meta['id']} [{meta.get('state')}] {meta.get('assignee') or '-'}: {meta.get('title')}{tail}"
 

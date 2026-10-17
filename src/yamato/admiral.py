@@ -76,15 +76,17 @@ class Flag(NamedTuple):
 
 
 def red_flags(team: dict, seat_name: str, rec: dict, live: dict | None, now: float, *,
-              has_active: bool = True) -> list[str]:
-    """Why a seat shows red: a live seat idle for longer than ``watch.stale_after``, one
+              has_active: bool = True) -> list[Flag]:
+    """Flags (``Flag``, level ``RED`` = needs a hand now / ``WARN`` = keep an eye on it) for a
+    live seat: one idle for longer than ``watch.stale_after``, one
     waiting on an open prompt (``status: waiting``), or one whose API call failed
     (``state: failed``, verify-p1-d V5). A stopped seat is not red: liveness is the pid,
     never ``state`` (verify-p0-c Q5). ``state: blocked`` alone is not red (v1.2.0): it is
     Claude Code's label on the last words, so it misfires; ``status=idle`` already shows a
     seat is idle.
 
-    ``has_active``: whether the seat has an ``active`` board item (design-drift #11, D-019).
+    ``has_active``: whether the seat has an ``active`` board item, as assignee or reviewer
+    (design-drift #11, D-019; T-093).
     A live ``per_task`` seat with none is flagged -- it should have been ``seat-stop``'d when
     its task ended; a caller that does not track the board (or has none to check) can leave
     the default and this check is skipped."""
@@ -228,8 +230,7 @@ def ship_line(name: str, shipdir: Path, by: dict, now: float) -> str:
         f" ({fmt_span(now - last)}前)" if last else "")
     from . import board as board_mod
 
-    active_assignees = {m.get("assignee") for m in board_mod.Board(shipdir, team).items()
-                        if m.get("state") == "active"}
+    active_assignees = board_mod.active_seats(board_mod.Board(shipdir, team).items())
     red, warn = [], []
     for s in team["seats"]:
         rec = roster.seat(shipdir, s)

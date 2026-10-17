@@ -85,7 +85,7 @@ def gather(name: str, shipdir: Path, by: dict, now: float) -> dict:
     team = seat.current_team(shipdir)
     dl = deadline.read(shipdir)
     items = board_mod.Board(shipdir, team).items()
-    active_assignees = {m.get("assignee") for m in items if m.get("state") == "active"}
+    active_assignees = board_mod.active_seats(items)
     usage = _today_usage(shipdir, now)
     seats = []
     for s, spec in team["seats"].items():
@@ -100,6 +100,8 @@ def gather(name: str, shipdir: Path, by: dict, now: float) -> dict:
             "pid": (live or {}).get("pid"), "status": (live or {}).get("status"),
             "waitingFor": (live or {}).get("waitingFor"), "last": last,
             "active": [m["id"] for m in items if m.get("state") == "active" and m.get("assignee") == s],
+            "reviewing": [m["id"] for m in items if m.get("state") == "active" and m.get("reviewer") == s
+                          and m.get("assignee") != s],
             "unread": len(inbox.unread(shipdir, s)),
             "red": admiral.red_flags(team, s, rec, live, now, has_active=s in active_assignees),
             "log": _last_log_line(shipdir, s), "tokens": usage.get(s, 0),
@@ -193,7 +195,7 @@ def _seat_table(g: dict, now: float) -> str:
         status = e(str(s["status"] or "-")) + (f" <span class='warn'>{e(str(s['waitingFor']))}</span>" if s["waitingFor"] else "")
         budget = f" <span class='dim'>/ 上限 ${e(str(s['budget']))}</span>" if s["budget"] else ""
         out.append(f"<tr><td><b>{e(s['name'])}</b> <span class='dim'>{e(str(s['shift']))}</span></td><td>{alive}</td>"
-                   f"<td>{status}</td><td>{last}</td><td>{e(', '.join(s['active']) or '-')}</td>"
+                   f"<td>{status}</td><td>{last}</td><td>{e(', '.join(s['active'] + [f'{i} (レビュー)' for i in s['reviewing']]) or '-')}</td>"
                    f"<td>{s['unread'] or '-'}</td><td>{red}</td>"
                    f"<td>{e(report._tokens(s['tokens']))}{budget}</td><td class='dim'>{e(s['log'][:160])}</td></tr>")
     return "".join(out) + "</table>"

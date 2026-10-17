@@ -219,7 +219,7 @@ def _board(args) -> int:
         print(f"archive へ移した: {', '.join(moved) if moved else '(なし)'}")
     elif args.board_cmd == "mine":
         items = brd.mine(args.seat)
-        print("\n".join(bmod.format_item(m) for m in items) if items else "(担当なし)")
+        print("\n".join(bmod.format_item(m, args.seat) for m in items) if items else "(担当なし)")
     elif args.board_cmd == "tree":
         from . import board_view
 

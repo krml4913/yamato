@@ -81,6 +81,14 @@ class DashboardTest(ShipTestCase):
         self.assertIn("テストを書いた &lt;x&gt;", page)
         self.assertNotIn("<x>", page)
 
+    def test_reviewing_item_shows_in_the_assignee_column_and_is_not_flagged(self):
+        board.Board(self.shipdir, self.team()).add(
+            "T-001", {"assignee": "impl", "reviewer": "pm", "state": "active"}, by="pm")
+        data = dashboard.gather("t1", self.shipdir, {}, time.time())
+        pm = next(s for s in data["seats"] if s["name"] == "pm")
+        self.assertEqual(pm["reviewing"], ["T-001"])
+        self.assertIn("T-001 (レビュー)", self.render())
+
     def test_anomaly_kinds_are_shared_with_feed(self):
         events.emit(self.shipdir, events.FORCE_STOP, seat="impl", summary="強制停止した")
         events.emit(self.shipdir, events.SEND, seat="pm", summary="ふつうの送信")
