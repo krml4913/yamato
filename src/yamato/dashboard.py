@@ -15,7 +15,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import admiral, claude, deadline, feed, inbox, procs, report, roster, seat
+from . import admiral, claude, deadline, feed, inbox, memory, monitor, procs, report, roster, rotate, seat
 from . import board as board_mod
 from .decide import _epoch
 from .util import YamatoError, fmt_span, fmt_time, today
@@ -27,6 +27,7 @@ PORT_TRIES = 10             # --port を書かないとき、使用中なら次�
 REFRESH = 60                # 秒。ページの自動再読み込み
 ANOMALIES = 8               # 艦ごとに出す直近の異常の件数
 ANOMALY_WINDOW = 3 * 86400  # 異常を拾う期間 (秒)
+CONTEXT_NEAR = 0.8          # 文脈量が rotate の閾値のこの割合を超えたら「近い」と出す
 
 e = html.escape
 
@@ -80,6 +81,32 @@ def _today_usage(shipdir: Path, now: float) -> dict[str, int]:
     return out
 
 
+def _report_summary(shipdir: Path) -> dict | None:
+    """前回の日報 (report.latest) の「一言」「明日」。日報が無ければ None。"""
+    p = report.latest(shipdir)
+    if p is None:
+        return None
+    try:
+        sec = report.sections(p.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError):
+        return None
+    return {"date": p.stem, "word": sec.get(report.S_WORD, "").strip(), "tomorrow": sec.get(report.S_TOMORROW, "").strip()}
+
+
+def _context_of(team: dict, shipdir: Path, seat_name: str, rec: dict) -> dict | None:
+    """席の文脈量 (rotate の判定と同じ last_usage / context_threshold)。取れなければ None。"""
+    if not rec.get("sessionId"):
+        return None
+    try:
+        mains = [p for p in claude.transcript_paths(rec["sessionId"]) if p.parent.name != "subagents"]
+        use = rotate.last_usage(mains[0]) if mains else None
+        if not use:
+            return None
+        return {"tokens": use["tokens"], "limit": rotate.context_threshold(team, seat_name, use.get("model"))}
+    except (OSError, ValueError, KeyError):
+        return None
+
+
 def gather(name: str, shipdir: Path, by: dict, now: float) -> dict:
     """1 艦ぶんの事実。壊れていれば例外 (呼び側が枠にエラーを出す)。"""
     team = seat.current_team(shipdir)
@@ -117,6 +144,17 @@ def gather(name: str, shipdir: Path, by: dict, now: float) -> dict:
     for m in items:
         if m.get("kind") != "decision":
             counts[m.get("state") or "?"] = counts.get(m.get("state") or "?", 0) + 1
+    contexts = {}
+    for s in team["seats"]:
+        ctx = _context_of(team, shipdir, s, roster.seat(shipdir, s))
+        if ctx:
+            contexts[s] = ctx
+    for x in seats:
+        x["context"] = contexts.get(x["name"])
+    orphans = [{"id": m.get("id"), "title": m.get("title"), "seat": m.get("assignee"), "why": why}
+               for m, why in monitor.orphans(shipdir, team, now)]
+    mem = [{"role": r["role"], "count": r["count"], "days": r["days"], "due": r["due"]}
+           for r in memory.status(shipdir, team, now)]
     url = _repo_url(team)
     prs = []
     for m in items:
@@ -134,6 +172,7 @@ def gather(name: str, shipdir: Path, by: dict, now: float) -> dict:
         "board": [{"id": m["id"], "title": m.get("title"), "state": m.get("state"), "assignee": m.get("assignee"),
                    "blocked_on": m.get("blocked_on") or []}
                   for m in items if m.get("state") in ("active", "blocked") and m.get("kind") != "decision"],
+        "report": _report_summary(shipdir), "orphans": orphans, "memory": mem,
         "prs": prs, "anomalies": anomalies, "tokens": sum(usage.values()), "multi_repo": len(team.get("workspaces") or []) > 1,
         "hub": team["hub"], "hub_last": next((x["last"] for x in seats if x["name"] == team["hub"]), None),
     }
@@ -201,6 +240,43 @@ def _seat_table(g: dict, now: float) -> str:
     return "".join(out) + "</table>"
 
 
+def _ctx_cell(ctx: dict | None) -> str:
+    if not ctx:
+        return "-"
+    k = f"{ctx['tokens'] // 1000}k"
+    if not ctx["limit"]:
+        return e(k)
+    ratio = ctx["tokens"] / ctx["limit"]
+    near = f" <span class='warn'>rotate が近い</span>" if ratio >= CONTEXT_NEAR else ""
+    return f"{e(k)} / {e(str(ctx['limit'] // 1000))}k ({int(ratio * 100)}%){near}"
+
+
+def _extras(g: dict) -> str:
+    """艦の枠の 2 段目: 前回の日報・孤児・memory の棚卸しの目安・文脈量 (上部の判断待ちには足さない)。"""
+    out = []
+    r = g.get("report")
+    if r:
+        rows = [f"<b>{e(r['date'])}</b>"]
+        if r["word"]:
+            rows.append(f"一言: {e(r['word'])}")
+        if r["tomorrow"]:
+            rows.append(f"明日: {e(r['tomorrow'])}")
+        out.append("<h3>前回の日報</h3><p style='white-space:pre-wrap'>" + "<br>".join(rows) + "</p>")
+    else:
+        out.append("<h3>前回の日報</h3><p class='dim'>まだ無い</p>")
+    orph = [f"<b>{e(str(o['id']))}</b> {e(str(o['title']))} <span class='dim'>{e(o['why'])}</span>" for o in g["orphans"]]
+    out.append("<h3>孤児 (担当が落ちて active のまま)</h3>" + (_ul(orph) or "<p class='ok'>無い</p>"))
+    mem = []
+    for m in g["memory"]:
+        since = "前回の反映なし" if m["days"] is None else f"前回の反映から {m['days']} 日"
+        due = " <span class='warn'>棚卸しの目安に達した</span>" if m["due"] else ""
+        mem.append(f"{e(m['role'] or 'knowledge')}: 候補 {m['count']} 件 / {e(since)}{due}")
+    out.append("<h3>memory の棚卸し</h3>" + _ul(mem))
+    ctx = [f"<b>{e(s['name'])}</b> {_ctx_cell(s.get('context'))}" for s in g["seats"]]
+    out.append("<h3>席の文脈量 (rotate の閾値に対して)</h3>" + _ul(ctx))
+    return "".join(out)
+
+
 def _ship_card(name: str, g: dict | None, err: str | None, now: float) -> str:
     if g is None:
         return f'<section class="card"><h2>{e(name)}</h2><p class="red">読めない: {e(err or "?")}</p></section>'
@@ -214,6 +290,7 @@ def _ship_card(name: str, g: dict | None, err: str | None, now: float) -> str:
             f"{e(str(b['assignee'] or '-'))}" + (f" / blocked_on {e(', '.join(map(str, b['blocked_on'])))}" if b["blocked_on"] else "")
             + "</span>" for b in g["board"]]
     parts.append(_ul(rows))
+    parts.append(_extras(g))
     if g["prs"]:
         rows = []
         for p in g["prs"]:
