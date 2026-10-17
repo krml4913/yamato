@@ -68,7 +68,7 @@ def all_ships() -> dict[str, Path]:
 
 
 def find_ship(name: str) -> Path | None:
-    """The one way to look a ship up by name (CLI, dashboard, config / files / edit APIs)."""
+    """The one way to look a ship up by name for the dashboard's config / files / edit APIs (the CLI resolves via ``resolve_ship`` / ``all_ships``)."""
     return all_ships().get(name)
 
 
