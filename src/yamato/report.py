@@ -274,7 +274,7 @@ def anomaly_lines(shipdir: Path, team: dict, since: float, until: float, live: b
             lines.append(f"- {e.get('item')} の判断を decider ({d.get('decider') or '?'}) 以外の "
                          f"{d.get('closed_by') or e.get('by') or '?'} が {_hm(e['ts'])} に閉じた{on}")
         elif kind == PR_CONFLICT:
-            to = f"。{d['notified']} に rebase を頼んだ" if d.get("notified") else ""
+            to = f"。{d['notified']} に base の取り込みを頼んだ" if d.get("notified") else ""
             lines.append(f"- {e.get('item')} の PR #{d.get('pr')} が {_hm(e['ts'])} に衝突 "
                          f"({d.get('mergedItem')} の PR #{d.get('mergedPr')} を merge){to}")
     denied: dict = {}
