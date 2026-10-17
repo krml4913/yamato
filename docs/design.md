@@ -520,6 +520,16 @@ zellij セッション
 - **API のスキーマ (T-106, D-118)**: web コンソールの JSON API の正本は `docs/api/openapi.yaml` (OpenAPI 3.1)。M1 は `GET /api/v1/overview` (dashboard の gather 相当)・`/api/v1/fleet` (ships.json と `_admiral`)・`/api/v1/ships/{name}/config` (team.yaml の項目ごとの値 + schema の description + 生の yaml + 「次の up で効く変更あり」)・`/api/v1/ships/{name}/files/{file}` (roles/*.md・charter.md・knowledge.md)。エラーは全 path 共通で `{"error": {"code", "message", "detail"}}`。TS の型はここから生成する。Python 側は `tests/api_schema.py` の小さな検査器 (type・nullable・properties・required・additionalProperties・items・enum・const・文書内の `$ref`。jsonschema は vendor しない。知らないキーワードは黙って通さずエラー) で応答をスキーマに照らす。API の実装は別 task
 - 範囲外: 操作 (判断を閉じる・返事・席を止める)・ローカル以外からの閲覧・認証・トークンのドル換算・1 日の費用の合計や超過の警告
 
+### 10.2 yaml の部分置き換え (T-110, web コンソールの土台)
+
+`src/yamato/yamlpatch.py` は、team.yaml のコメントと並びを保ったまま値を変える部品 (CLI のコマンドは無い)。PyYAML の `compose` が返すノードの位置 (`start_mark` / `end_mark`) を使い、**変えた所の文字範囲だけを元のテキストで置き換える。dump はしない**。
+
+- 操作: `set_value` (scalar の変更)・`add_key` / `remove_key` (map)・`insert_item` / `remove_item` (list)。パスは `("roles", "pm", "model")` のようなキー (str) と添字 (int) の並び。何も変えなければバイト一致、触った所の外は一文字も変わらない
+- block 形式も flow 形式 (`{a: 1}` `[a, b]`) も扱う。元が `|` `>` の scalar は block scalar のまま差し替える。引用符は元の書き方に寄せ、必要なときだけ引用符を付ける (`yes` `123` `a: b` など)
+- 削除は、キー (要素) の行だけを消し、直前のコメント行は残す
+- **安全網**: 組み立てた結果を `yaml.safe_load` で読み直し、元の値に操作を当てた期待値と一致しなければ `YamlPatchError`。一致しないテキストは返さない
+- 扱えない形は `YamlPatchError` (呼ぶ側は生の yaml 欄に回す): anchor / alias / merge key・複数文書・scalar と collection の取り替え・最後の 1 キー / 1 要素の削除・`- - x` のような入れ子の block list・空の block collection への追加
+
 ## 11. admiral (窓口)
 
 - 人間の窓口。仕事は**チームの作成・構成の変更、出撃と帰投、全チームの状況を一望し、owner の判断を代筆すること**
