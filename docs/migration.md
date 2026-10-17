@@ -21,6 +21,13 @@ v1.0.0 以降の変更のうち、**既存の艦・利用者が何かをしな�
 
 ## 未リリース
 
+### pr merge の衝突通知は「base を merge して push」を案内する
+- 何が変わったか: `pr merge` が衝突した PR の担当に送る定型文が「rebase して push してください」から「origin/<git.base> を merge して push してください (rebase はしない)」になった。ひな形の impl.md・reviewer.md の同じ言い回しも合わせた。board の列名 `rebase` は記録の形式なので変えていない
+- 既存の艦がやること: 何も要らない。艦の `roles/impl.md`・`roles/reviewer.md` の写しに「rebase して push」とあれば、「base を merge して push」に書き換えるとよい (任意)
+- やらないと: 写しの役割プロンプトの言い回しが古いままになるだけ。定型文は yamato が出す
+
+版を出す手順: tag を打つ前に `cd frontend && npm ci && npm run build` で `src/yamato/web/dist/` を作り直して commit する (develop 向けの PR は dist を変えず、main 向けの CI がこの鮮度を見る)。
+
 ## v1.2.0 → v1.3.0
 
 ### 全体の手順

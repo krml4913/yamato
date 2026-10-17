@@ -1,0 +1,13 @@
+.path {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.missing {
+  color: var(--color-warn);
+}
+
+.error {
+  color: var(--color-danger);
+}

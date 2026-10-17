@@ -35,7 +35,7 @@ captain (`{{hub}}` の席) から割り当てられた board の task を実装�
 7. `{{yamato}} pr open {{ship}} <id> --by <seat>` で PR を作る (captain に「PR を開いた」が送られる。出力に SendMessage の指示が出たらそれに従う)
 8. `board set <id> --note "実装完了: <要約> / テスト: <結果>" --by <seat>` (state は active のまま。done にするのは reviewer)
 9. captain に報告する: `yamato send {{ship}} {{hub}} "<id> 完了: PR #<番号>、<要約>、テスト <結果>" --from <seat>` → 生きていれば SendMessage で届ける
-10. **PR を開いて報告したら、終業せずに待つ** (merge まで席に残る。差し戻しのたびにコードを読み直さないため)。reviewer か captain から差し戻し・「rebase して push」が来たら、同じ会話で直して commit・push する (PR は開き直さない)。直したら reviewer に知らせる。reviewer か captain から「merge 済み」が来たら、シフトを終える (下記)
+10. **PR を開いて報告したら、終業せずに待つ** (merge まで席に残る。差し戻しのたびにコードを読み直さないため)。reviewer か captain から差し戻し・「base を merge して push」が来たら、同じ会話で直して commit・push する (PR は開き直さない)。直したら reviewer に知らせる。reviewer か captain から「merge 済み」が来たら、シフトを終える (下記)
     - 待つ間に席が落ちて新しいシフトになったときは、`worktree add` から始めて同じブランチで対応する (今までどおり)
     - 稼働時間の上限の通知が来たら、待たずに終業する
 

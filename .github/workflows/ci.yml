@@ -1,0 +1,73 @@
+name: ci
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # develop 向けの PR は dist を変えない (build の生成物が PR ごとに衝突するため)。
+      # dist は版を出すときに build して commit する。build の前に PR の差分で見る
+      - name: develop 向けの PR は dist を変えない
+        if: github.event_name == 'pull_request' && github.base_ref == 'develop'
+        working-directory: .
+        run: git diff --exit-code ${{ github.event.pull_request.base.sha }}...HEAD -- src/yamato/web/dist
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm run gen-api
+      # 生成した型が commit と一致するか (全 PR)
+      - name: 型の鮮度
+        working-directory: .
+        run: |
+          git add -N frontend/src/api
+          git diff --exit-code -- frontend/src/api
+      # dist が commit と一致するか (main 向けだけ。develop では dist を commit しない)
+      - name: dist の鮮度
+        if: github.event_name == 'push' && github.ref_name == 'main' || github.event_name == 'pull_request' && github.base_ref == 'main'
+        working-directory: .
+        run: |
+          git add -N src/yamato/web/dist
+          git diff --exit-code -- src/yamato/web/dist
+
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+    steps:
+      # upgrade のテストが git の tag (v1.0.0 など) を引くので、履歴と tag を全部取る
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: git の設定 (テストが一時 repo で commit する)
+        run: |
+          git config --global user.name ci
+          git config --global user.email ci@example.invalid
+          git config --global init.defaultBranch main
+      - run: python -m unittest discover
