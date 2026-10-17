@@ -105,7 +105,7 @@ class HeadlessTest(_Base):
         [call] = self.p_calls()
         a = call["argv"]
         self.assertEqual(call["cwd"], str(self.workspace))
-        self.assertEqual(call["GH_TOKEN"], "x")  # D-003: env_unset の既定は空。gh の権限はトークン側で絞る
+        self.assertEqual(call["GH_TOKEN"], "x")  # env_unset の既定は空。gh の権限はトークン側で絞る
         self.assertIsNone(call["CLAUDE_CODE_CHILD_SESSION"])  # the caller's markers (transcript saving)
         self.assertTrue(call["stdin_is_devnull"])            # < /dev/null (V1)
         self.assertNotIn("--bare", a)                        # bare = Not logged in (V1)
@@ -257,7 +257,7 @@ class HeadlessTest(_Base):
         self.assertEqual(roster.seat(self.shipdir, "researcher")["endReason"], "down-force")
 
     def test_windows_soft_stop_without_the_group_mark_is_a_hard_kill(self):
-        # CTRL_BREAK は同じコンソール全体に届く。group の印が無い pid には送らず taskkill /T /F に回す (T-053)
+        # CTRL_BREAK は同じコンソール全体に届く。group の印が無い pid には送らず taskkill /T /F に回す
         with mock.patch.object(procs, "is_windows", return_value=True), \
                 mock.patch.object(procs, "hard_kill") as hk, mock.patch.object(procs.os, "kill") as kill:
             procs.soft_stop(123, group=False)

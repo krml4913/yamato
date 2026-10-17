@@ -174,7 +174,7 @@ class ShowTest(ShipTestCase):
         self.assertIn(f"{self.team()['time_limit'] // 3600}h00m", plain(out.getvalue()))
 
     def test_time_limit_none_shows_no_limit_instead_of_crashing(self):
-        # T-020 / D-013: banner.show never raises even for the admiral's time_limit: none
+        # banner.show never raises even for the admiral's time_limit: none
         ty = self.shipdir / "team.yaml"
         ty.write_text(ty.read_text(encoding="utf-8").replace("time_limit: 3h", "time_limit: none"), encoding="utf-8")
         out = FakeTTY()

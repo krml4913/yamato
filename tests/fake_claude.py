@@ -144,7 +144,7 @@ def _handle(argv, st, path, cwd, alive_pid, out, err) -> int:
 
 
 if __name__ == "__main__":
-    # 本物の claude は UTF-8 で出す。cp932 のロケールでは "·" が書けず落ちる (T-050)
+    # 本物の claude は UTF-8 で出す。cp932 のロケールでは "·" が書けず落ちる
     for _f in (sys.stdout, sys.stderr):
         _f.reconfigure(encoding="utf-8")
     sys.exit(main(sys.argv[1:]))

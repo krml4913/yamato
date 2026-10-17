@@ -69,7 +69,7 @@ class ConfTest(_Base):
         self.assertEqual(c["applier"], "pm")
         self.assertEqual(c["curate_every"], 7 * 86400)
         self.assertEqual(c["curate_at"], 30)
-        self.assertNotIn("limits", c)   # moved to inject.limits (T-076)
+        self.assertNotIn("limits", c)   # moved to inject.limits
         self.assertEqual(self.t["inject"]["limits"]["memory"], (80, 4000))
         self.assertEqual(self.t["inject"]["limits"]["knowledge"], (120, 5000))
         self.assertEqual(self.t["warnings"], [])   # the template spells the new way
@@ -91,7 +91,7 @@ class ConfTest(_Base):
                 validate(d, Path("/ship"))
 
     def test_old_memory_limits_are_refused(self):
-        """T-095: `memory.limits` (read for v1.2.0) is an error that names inject.limits.memory / knowledge."""
+        """`memory.limits` (read for v1.2.0) is an error that names inject.limits.memory / knowledge."""
         for limits in ({"memory_lines": 10, "knowledge_chars": 700}, {"memory_bytes": 8192}, {}):
             d = {"name": "dev", "hub": "pm", "workspace": "/tmp", "roles": {"pm": {}}, "memory": {"limits": limits}}
             with self.assertRaisesRegex(YamatoError, "memory.limits は無くなった。inject.limits.memory / inject.limits.knowledge"):

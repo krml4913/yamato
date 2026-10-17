@@ -1,4 +1,4 @@
-"""yamato dashboard (T-079): HTTP なしの描画関数で確かめる。実時間では待たない。"""
+"""yamato dashboard: HTTP なしの描画関数で確かめる。実時間では待たない。"""
 import http.client
 import json
 import os

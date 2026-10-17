@@ -1,4 +1,4 @@
-"""T-090: the claude command line stays under the Windows limits (or fails with a clear error)."""
+"""the claude command line stays under the Windows limits (or fails with a clear error)."""
 import json
 import os
 import tempfile

@@ -801,7 +801,7 @@ class TeamGitTest(ShipTestCase):
         self.assertEqual(git_conf({})["base"], "main")   # a .runtime/team.json from before P1
 
     def test_merge_decision_is_dropped_but_not_rejected(self):
-        # D-021 案 b (#5): merge_decision は外れた。古い team.yaml に残っていても落とさず、
+        # 案 b (#5): merge_decision は外れた。古い team.yaml に残っていても落とさず、
         # 警告 1 行を出して無視する (git の項目には出さない)。
         from yamato.team import validate
 

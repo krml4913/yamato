@@ -1,4 +1,4 @@
-"""docs/api/openapi.yaml と応答検査器 (tests/api_schema.py) の単体テスト (T-106)。"""
+"""docs/api/openapi.yaml と応答検査器 (tests/api_schema.py) の単体テスト。"""
 import copy
 import unittest
 

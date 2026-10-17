@@ -3,7 +3,7 @@
 Windows itself is never available on this machine, so its branch is exercised by
 patching ``os.name`` to ``"nt"`` and putting a small fake in ``sys.modules["msvcrt"]``
 (the real module does not exist here either) -- the documented way this ship tests an
-OS branch it cannot run for real (board T-028)."""
+OS branch it cannot run for real (an earlier board item)."""
 import os
 import sys
 import tempfile
