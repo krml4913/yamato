@@ -1,4 +1,5 @@
 import { NavLink, Route, Routes } from "react-router-dom";
+import { ConfigPage } from "./pages/ConfigPage";
 import { FleetPage } from "./pages/FleetPage";
 import { OverviewPage } from "./pages/OverviewPage";
 import { ShipFilePage } from "./pages/ShipFilePage";
@@ -20,6 +21,7 @@ export function App() {
           <Route path="/" element={<OverviewPage />} />
           <Route path="/fleet" element={<FleetPage />} />
           <Route path="/ship" element={<ShipIndexPage />} />
+          <Route path="/ship/:name/config" element={<ConfigPage />} />
           <Route path="/ship/:name" element={<ShipPage />} />
           <Route path="/ship/:name/files/:file" element={<ShipFilePage />} />
           <Route path="*" element={<p>ページが見つからない</p>} />
