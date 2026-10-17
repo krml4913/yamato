@@ -159,26 +159,16 @@ class TeamTest(unittest.TestCase):
         ok = validate(inj(parts=["file:a"]), Path("/ship"))
         self.assertEqual(ok["inject"]["parts"], ["file:a"])
 
-    def test_old_charter_spellings_are_read_with_a_warning(self):
-        """T-075: the part `charter`, the top-level `charter:` and `limits.charter` work for one version."""
-        t = validate(base(charter="doc/c.md", inject={"parts": ["handoff", "charter"], "limits": {"charter": [7, 70]}},
-                          roles={"pm": {"shift": "persistent", "inject": ["charter", "memory"]}, "impl": {}}),
-                     Path("/ship"))
-        self.assertEqual(t["inject"]["parts"], ["handoff", "file:charter"])
-        self.assertEqual(t["roles"]["pm"]["inject"], ["file:charter", "memory"])
-        self.assertEqual(t["inject"]["files"]["charter"]["path"], "doc/c.md")   # the top-level value fills it
-        self.assertEqual(t["inject"]["limits"]["files"], {"charter": (7, 70)})
-        for what in ("inject.parts", "roles.pm.inject", "inject.limits.charter", "トップの charter:"):
-            self.assertTrue(any(what in w and "書き換えろ" in w for w in t["warnings"]), what)
-        # no top-level value: charter.md; an explicit inject.files.charter wins over the old keys
-        t = validate(base(inject={"parts": ["charter"]}), Path("/ship"))
-        self.assertEqual(t["inject"]["files"]["charter"]["path"], "charter.md")
-        t = validate(base(charter="old.md", inject={"files": {"charter": "new.md"}, "limits": {"charter": [7, 70], "files": {"charter": [9, 90]}}}),
-                     Path("/ship"))
-        self.assertEqual(t["inject"]["files"]["charter"]["path"], "new.md")
-        self.assertEqual(t["inject"]["limits"]["files"]["charter"], (9, 90))
-        with self.assertRaisesRegex(YamatoError, "inject.limits.files.charter は"):
-            validate(base(inject={"limits": {"charter": 500}}), Path("/ship"))
+    def test_old_charter_spellings_are_refused(self):
+        """T-095: the part `charter`, the top-level `charter:` and `limits.charter` (read for v1.2.0) are errors now."""
+        for what, kw, msg in (
+                ("top", {"charter": "doc/c.md"}, "トップの charter: は無くなった。inject.files.charter"),
+                ("parts", {"inject": {"parts": ["handoff", "charter"]}}, "inject.parts の charter は無くなった。file:charter"),
+                ("role", {"roles": {"pm": {"shift": "persistent", "inject": ["charter", "memory"]}, "impl": {}}},
+                 "roles.pm.inject の charter は無くなった。file:charter"),
+                ("limit", {"inject": {"limits": {"charter": [7, 70]}}}, "inject.limits.charter は無くなった。inject.limits.files.charter")):
+            with self.assertRaisesRegex(YamatoError, msg, msg=what):
+                validate(base(**kw), Path("/ship"))
 
     def test_inject_fleet_part_and_limit(self):
         """T-022: `fleet` (admiral の全艦の要約) is a selectable part with its own limit key."""

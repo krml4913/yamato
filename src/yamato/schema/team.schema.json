@@ -44,11 +44,6 @@
         }
       ]
     },
-    "charter": {
-      "description": "(古い書き方。次の版で消える) inject.files.charter に書く。今は inject.files.charter が無ければこの値で補う。",
-      "type": "string",
-      "deprecated": true
-    },
     "talk_default": {
       "description": "yamato talk で席を省いたときに attach する席 (省略時は hub)。",
       "type": "string"
@@ -203,11 +198,6 @@
                 {
                   "type": "string",
                   "pattern": "^file:.+$"
-                },
-                {
-                  "const": "charter",
-                  "deprecated": true,
-                  "description": "(古い書き方。次の版で消える) file:charter に書く。"
                 }
               ]
             }
@@ -561,11 +551,6 @@
               {
                 "type": "string",
                 "pattern": "^file:.+$"
-              },
-              {
-                "const": "charter",
-                "deprecated": true,
-                "description": "(古い書き方。次の版で消える) file:charter に書く。"
               }
             ]
           }
@@ -679,17 +664,6 @@
                 },
                 "description": "このファイルの上限。[行数, 文字数] (正の整数 2 個)。名前は inject.files にあるもの。"
               }
-            },
-            "charter": {
-              "type": "array",
-              "minItems": 2,
-              "maxItems": 2,
-              "items": {
-                "type": "integer",
-                "minimum": 1
-              },
-              "deprecated": true,
-              "description": "(古い書き方。次の版で消える) inject.limits.files.charter に書く。[行数, 文字数]。"
             }
           },
           "additionalProperties": false
@@ -733,34 +707,6 @@
               "minimum": 1
             }
           ]
-        },
-        "limits": {
-          "type": "object",
-          "deprecated": true,
-          "description": "(古い書き方。次の版で消える) inject.limits.memory / knowledge に [行数, 文字数] で書く。両方に書いてあれば inject.limits が勝つ。",
-          "properties": {
-            "memory_lines": {
-              "description": "役割の memory の行数。",
-              "type": "integer",
-              "minimum": 1
-            },
-            "memory_chars": {
-              "description": "役割の memory の文字数。",
-              "type": "integer",
-              "minimum": 1
-            },
-            "knowledge_lines": {
-              "description": "knowledge.md の行数。",
-              "type": "integer",
-              "minimum": 1
-            },
-            "knowledge_chars": {
-              "description": "knowledge.md の文字数。",
-              "type": "integer",
-              "minimum": 1
-            }
-          },
-          "additionalProperties": false
         }
       },
       "additionalProperties": false
