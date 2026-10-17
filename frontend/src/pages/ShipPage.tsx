@@ -1,8 +1,24 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { editToken } from "../api/client";
+import { editToken, getShipConfig, type ShipConfig } from "../api/client";
 import { OpPanel, type OpSpec } from "../ops/OpPanel";
 import styles from "./ship.module.css";
+
+// team.yaml の roles から席名を作る (count: 1 は役割名、n なら <役割>-1..n)。
+// 取れない・読めないときは null を返し、呼び出し側が自由入力に戻す。
+export function seatNames(config: ShipConfig): string[] | null {
+  const roles = (config.fields ?? []).find((f) => f.key === "roles")?.value;
+  if (typeof roles !== "object" || roles === null || Array.isArray(roles)) return null;
+  const names: string[] = [];
+  for (const [role, spec] of Object.entries(roles as Record<string, unknown>)) {
+    const raw = typeof spec === "object" && spec !== null ? (spec as { count?: unknown }).count : undefined;
+    const count = raw === undefined ? 1 : raw;
+    if (typeof count !== "number" || !Number.isInteger(count) || count < 1) return null;
+    if (count === 1) names.push(role);
+    else for (let i = 1; i <= count; i++) names.push(`${role}-${i}`);
+  }
+  return names.length > 0 ? names : null;
+}
 
 // 艦の操作。--edit で起動したとき (index.html にトークンがあるとき) だけ入口を出す。
 // どれも確認画面 (OpPanel) を経てから yamato の CLI を呼ぶ。
@@ -13,6 +29,18 @@ function ShipOps({ ship }: { ship: string }) {
   const [span, setSpan] = useState("");
   const [seat, setSeat] = useState("");
   const [message, setMessage] = useState("");
+  const [seatList, setSeatList] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    getShipConfig(ship).then(
+      (c) => live && setSeatList(seatNames(c)),
+      () => live && setSeatList(null),
+    );
+    return () => {
+      live = false;
+    };
+  }, [ship]);
 
   const ask = (spec: Omit<OpSpec, "ship">) => setPending({ ship, ...spec });
   return (
@@ -49,7 +77,14 @@ function ShipOps({ ship }: { ship: string }) {
       </div>
       <h2>席に送る</h2>
       <div className={styles.row}>
-        <label>席 <input value={seat} onChange={(e) => setSeat(e.target.value)} placeholder="例 pm" /></label>
+        <label>席 {seatList ? (
+          <select value={seat} onChange={(e) => setSeat(e.target.value)}>
+            <option value="">(選ぶ)</option>
+            {seatList.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        ) : (
+          <input value={seat} onChange={(e) => setSeat(e.target.value)} placeholder="例 pm" />
+        )}</label>
         <label>本文 <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={3} cols={48} /></label>
         <button onClick={() => ask({
           op: "send", params: { seat, message }, title: `席 ${seat || "(未入力)"} に送る`, confirmLabel: "送る",
@@ -68,7 +103,7 @@ export function ShipPage() {
     <>
       <h1>艦: {name}</h1>
       <p><Link to={`/ship/${encodeURIComponent(ship)}/config`}>設定</Link></p>
-      {editToken() !== null && <ShipOps ship={ship} />}
+      {editToken() !== null && <ShipOps key={ship} ship={ship} />}
     </>
   );
 }
