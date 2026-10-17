@@ -42,9 +42,7 @@ MEMORY_CURATE = "memory_curate"
 MEMORY_APPLY = "memory_apply"
 
 SCOPES = ("role", "ship")
-MEMORY_KEYS = {"applier", "curate_every", "curate_at", "max_duration", "limits"}
-LIMIT_KEYS = ("memory_lines", "memory_chars", "knowledge_lines", "knowledge_chars")
-RENAMED_LIMITS = {"memory_bytes": "memory_chars", "knowledge_bytes": "knowledge_chars"}   # before #26
+MEMORY_KEYS = {"applier", "curate_every", "curate_at", "max_duration"}
 # `inject.limits.memory` / `knowledge` ([lines, chars], T-076): what `memory apply` refuses over and
 # where the SessionStart injection cuts, in characters as Claude Code counts them: both fit the
 # 10,000 characters of the knowledge hook (verify-p0-c Q1). Only what a ship that names none gets
@@ -79,6 +77,10 @@ def validate_conf(raw, roles: dict) -> dict:
     """``memory:`` of team.yaml (design-p1 §0.4, §3.4, §3.5)."""
     raw = raw or {}
     keys = MEMORY_KEYS
+    if isinstance(raw, dict) and "limits" in raw:   # moved in v1.2.0 (T-076); the compatibility went in v1.3.0
+        raise YamatoError("team.yaml: memory.limits は無くなった。inject.limits.memory / inject.limits.knowledge に "
+                          "[行数, 文字数] で書く (memory_lines + memory_chars → inject.limits.memory、"
+                          "knowledge_lines + knowledge_chars → inject.limits.knowledge。docs/migration.md)")
     if not isinstance(raw, dict) or set(raw) - keys:
         raise YamatoError(f"team.yaml: memory の項目は {', '.join(sorted(keys))}")
     applier = raw.get("applier")
@@ -92,28 +94,8 @@ def validate_conf(raw, roles: dict) -> dict:
     dur = parse_duration(raw["max_duration"]) if raw.get("max_duration") is not None else FALLBACK["max_duration"]
     if every <= 0 or dur <= 0:
         raise YamatoError("team.yaml: memory.curate_every と memory.max_duration は 0 より長くする")
-    # OLD spelling (T-076, for one version: remove with the next): ``memory.limits`` moved to
-    # ``inject.limits.memory`` / ``knowledge``. Validated here, mapped by team.validate
-    limits = raw.get("limits") or {}
-    renamed = [k for k in RENAMED_LIMITS if k in limits] if isinstance(limits, dict) else []
-    if renamed:
-        raise YamatoError("team.yaml: memory.limits の " + " / ".join(f"{k} は {RENAMED_LIMITS[k]}" for k in renamed)
-                          + " に改名した (単位もバイトから文字数に変わった。注入を Claude Code の文字数で切るため)")
-    if not isinstance(limits, dict) or set(limits) - set(LIMIT_KEYS) or \
-            not all(isinstance(v, int) and not isinstance(v, bool) and v > 0 for v in limits.values()):
-        raise YamatoError(f"team.yaml: memory.limits は {', '.join(LIMIT_KEYS)} を正の整数で")
     return {"applier": None if applier is None else str(applier), "curate_every": every, "curate_at": at,
-            "max_duration": dur, "legacy_limits": dict(limits)}
-
-
-def legacy_pairs(legacy: dict) -> dict:
-    """The old ``memory.limits`` (four flat keys) as ``{memory|knowledge: (lines, chars)}``; a kind
-    that names only one of the two keeps the default for the other."""
-    out = {}
-    for kind, (lines, chars) in LIMIT_DEFAULTS.items():
-        if f"{kind}_lines" in legacy or f"{kind}_chars" in legacy:
-            out[kind] = (legacy.get(f"{kind}_lines", lines), legacy.get(f"{kind}_chars", chars))
-    return out
+            "max_duration": dur}
 
 
 def limit(team: dict, kind: str) -> tuple[int, int]:

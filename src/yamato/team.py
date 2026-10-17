@@ -13,7 +13,7 @@ from .util import YamatoError, check_name, parse_duration, read_json
 SETTING_SOURCES = ("user", "project", "local")   # Claude Code's --setting-sources values
 SHIFTS = ("per_task", "persistent", "headless")
 STATES = ("open", "active", "blocked", "done")
-TOP_KEYS = {"name", "hub", "workspace", "charter", "roles", "time_limit", "grace", "deny", "board",
+TOP_KEYS = {"name", "hub", "workspace", "roles", "time_limit", "grace", "deny", "board",
             "settings", "setting_sources", "seat_stop", "env_unset", "inject", "notify", "git", "report", "decisions",
             "watch", "talk_default", "up_seats", "profiles", "memory", "last_call", "context_windows", "template"}
 # what SessionStart can inject (design §8.2); the header is always there
@@ -119,13 +119,15 @@ def _template(raw) -> dict | None:
 
 
 def validate(data: dict, shipdir: Path) -> dict:
+    if "charter" in data:   # moved in v1.2.0 (T-075); the compatibility went in v1.3.0
+        raise YamatoError("team.yaml: トップの charter: は無くなった。inject.files.charter に書く "
+                          "(例 inject.files: {charter: charter.md}。docs/migration.md)")
     unknown = set(data) - TOP_KEYS
     if unknown:
         raise YamatoError(f"team.yaml に知らない項目があります: {', '.join(sorted(unknown))}")
     name = check_name("艦", str(data.get("name") or ""))
 
     warnings: list[str] = []
-    legacy: dict = {}   # the old `charter` spellings met on the way (T-075: read for one version, with a warning)
     # `0` must not silently become the default (review N4)
     raw_time_limit = data.get("time_limit")
     if isinstance(raw_time_limit, str) and raw_time_limit.strip().lower() == NO_TIME_LIMIT:
@@ -167,7 +169,7 @@ def validate(data: dict, shipdir: Path) -> dict:
         count = spec.get("count", 1)
         if not isinstance(count, int) or count < 1:
             raise YamatoError(f"team.yaml: roles.{role}.count は 1 以上の整数 (今: {count!r})")
-        parts = _legacy_parts(spec.get("inject"), f"roles.{role}.inject", warnings, legacy)
+        parts = _no_old_charter_part(spec.get("inject"), f"roles.{role}.inject")
         max_duration = spec.get("max_duration")
         if max_duration is not None:
             max_duration = parse_duration(max_duration)
@@ -250,21 +252,19 @@ def validate(data: dict, shipdir: Path) -> dict:
     inject = data.get("inject") or {}
     if not isinstance(inject, dict) or set(inject) - {"parts", "limits", "files"}:
         raise YamatoError("team.yaml: inject は {files: {...}, parts: [...], limits: {...}}")
-    inject_parts_in = _legacy_parts(inject.get("parts"), "inject.parts", warnings, legacy)
+    inject_parts_in = _no_old_charter_part(inject.get("parts"), "inject.parts")
     limits = inject.get("limits") or {}
     if not isinstance(limits, dict):
         raise YamatoError(f"team.yaml: inject.limits の項目は {', '.join(INJECT_LIMIT_KEYS)}, files")
     limits = dict(limits)
-    if "charter" in limits:   # old spelling (T-072): becomes limits.files.charter
-        legacy["limit"] = limits.pop("charter")
-        warnings.append("team.yaml: inject.limits.charter は inject.limits.files.charter に書き換えろ (読み替えて動かす。次の版で消える)")
+    if "charter" in limits:   # moved in v1.2.0 (T-075); the compatibility went in v1.3.0
+        raise YamatoError("team.yaml: inject.limits.charter は無くなった。inject.limits.files.charter に書く "
+                          "(docs/migration.md)")
     if set(limits) - {*INJECT_LIMIT_KEYS, "files"}:
         raise YamatoError(f"team.yaml: inject.limits の項目は {', '.join(INJECT_LIMIT_KEYS)}, files")
-    files, files_limits = _inject_files(inject.get("files"), limits.pop("files", None), data.get("charter"),
-                                        legacy, workspaces, shipdir, warnings)
+    files, files_limits = _inject_files(inject.get("files"), limits.pop("files", None), workspaces, shipdir, warnings)
     memory_conf = _memory(data.get("memory"), roles)
     limits = _limits(limits)
-    _legacy_memory_limits(memory_conf.pop("legacy_limits"), limits, warnings)
     if inject_parts_in is not None:
         _check_parts(inject_parts_in, "inject.parts", files)
     for role, spec in roles.items():
@@ -601,32 +601,11 @@ def _decisions(table, seats: dict) -> dict:
     return out
 
 
-def _legacy_memory_limits(old: dict, limits: dict, warnings: list[str]) -> None:
-    """The four keys of ``memory.limits`` are ``inject.limits.memory`` / ``knowledge`` now (T-076, D-089).
-    Read as those for one version, with a warning; the compatibility goes in the next version.
-    ``limits`` is the validated ``inject.limits`` (changed in place); when both are written,
-    ``inject.limits`` wins."""
-    from .memory import legacy_pairs
-
-    if not old:
-        return
-    warnings.append("team.yaml: memory.limits は inject.limits.memory / knowledge に書き換えろ "
-                    "([行数, 文字数]。読み替えて動かす。次の版で消える)")
-    for kind, pair in legacy_pairs(old).items():
-        if kind in limits:
-            warnings.append(f"team.yaml: memory.limits と inject.limits.{kind} の両方がある。inject.limits.{kind} を使う")
-        else:
-            limits[kind] = pair
-
-
-def _legacy_parts(parts, where: str, warnings: list[str], legacy: dict):
-    """The part `charter` (T-072) is `file:charter` now (T-075, D-089). Read as that for one version,
-    with a warning; the compatibility goes in the next version."""
-    if not isinstance(parts, list) or "charter" not in parts:
-        return parts
-    warnings.append(f"team.yaml: {where} の charter は file:charter に書き換えろ (読み替えて動かす。次の版で消える)")
-    legacy["part"] = True
-    return [FILE_PREFIX + "charter" if p == "charter" else p for p in parts]
+def _no_old_charter_part(parts, where: str):
+    """The part `charter` (T-072) is `file:charter` since v1.2.0 (T-075); the compatibility went in v1.3.0."""
+    if isinstance(parts, list) and "charter" in parts:
+        raise YamatoError(f"team.yaml: {where} の charter は無くなった。file:charter に書く (docs/migration.md)")
+    return parts
 
 
 def _check_parts(parts, where: str, files: dict) -> None:
@@ -644,13 +623,12 @@ def _check_parts(parts, where: str, files: dict) -> None:
             raise YamatoError(f"team.yaml: {where} は {', '.join(INJECT_PARTS)}, file:<名前> から選んだリスト (知らない部品: {p})")
 
 
-def _inject_files(raw, raw_limits, top_charter, legacy: dict, workspaces: list, shipdir: Path,
+def _inject_files(raw, raw_limits, workspaces: list, shipdir: Path,
                   warnings: list[str]) -> tuple[dict, dict]:
     """``inject.files`` (T-075, D-089): name -> path, and ``inject.limits.files`` (name or ``default`` -> [lines, chars]).
 
     Paths: relative = from the ship folder, ``~`` and absolute as is, ``@<workspace 名>/<path>`` inside a repo.
-    Returns ({name: {"path": as written, "abs": resolved}}, {name: (lines, chars)}).
-    The old `charter` spellings are mapped here: top-level ``charter:`` / the part / the limit."""
+    Returns ({name: {"path": as written, "abs": resolved}}, {name: (lines, chars)})."""
     raw = {} if raw is None else raw
     if not isinstance(raw, dict):
         raise YamatoError("team.yaml: inject.files は {名前: パス} の mapping")
@@ -663,10 +641,6 @@ def _inject_files(raw, raw_limits, top_charter, legacy: dict, workspaces: list, 
         if not isinstance(path, str) or not path.strip():
             raise YamatoError(f"team.yaml: inject.files.{name} はパスの文字列 (今: {path!r})")
         paths[name] = path
-    if top_charter is not None:
-        warnings.append("team.yaml: トップの charter: は inject.files.charter に書き換えろ (読み替えて動かす。次の版で消える)")
-    if (legacy or top_charter) and "charter" not in paths:
-        paths["charter"] = str(top_charter or "charter.md")
     files = {}
     for name, path in paths.items():
         resolved = _file_path(name, path, workspaces, shipdir)
@@ -676,8 +650,6 @@ def _inject_files(raw, raw_limits, top_charter, legacy: dict, workspaces: list, 
     limits = {} if raw_limits is None else raw_limits
     if not isinstance(limits, dict):
         raise YamatoError("team.yaml: inject.limits.files は {名前: [行数, 文字数]} (default も可)")
-    if "limit" in legacy:
-        limits = {"charter": legacy["limit"], **limits}   # an explicit limits.files.charter wins
     out = {}
     for name, v in limits.items():
         if name != FILES_RESERVED and name not in files:

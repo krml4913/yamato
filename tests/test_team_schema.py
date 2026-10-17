@@ -102,9 +102,8 @@ class TeamSchemaTest(ShipTestCase):
         self.assertEqual(self.keys("profiles", "*"), team.PROFILE_KEYS)
         self.assertEqual(self.keys("git"), team.GIT_KEYS | team.GIT_REMOVED_KEYS)
         self.assertEqual(self.keys("inject"), {"parts", "limits", "files"})
-        self.assertEqual(self.keys("inject", "limits"), {*team.INJECT_LIMIT_KEYS, "files", "charter"})   # charter: 古い書き方 (deprecated)
+        self.assertEqual(self.keys("inject", "limits"), {*team.INJECT_LIMIT_KEYS, "files"})
         self.assertEqual(self.keys("memory"), memory.MEMORY_KEYS)
-        self.assertEqual(self.keys("memory", "limits"), set(memory.LIMIT_KEYS))
         self.assertEqual(self.keys("seat_stop"), set(team.SEAT_STOP_DEFAULTS))
         self.assertEqual(self.keys("last_call"), set(team.LAST_CALL_FALLBACK))
         self.assertEqual(self.keys("watch"), {*team.WATCH_FALLBACK, *team.WATCH_LIFECYCLE_FALLBACK})
@@ -132,7 +131,7 @@ class TeamSchemaTest(ShipTestCase):
         for node in (find(self.schema, "inject")["properties"]["parts"],
                      find(self.schema, "roles", "*")["properties"]["inject"]):
             self.assertIsNone(check(["handoff", "file:charter"], node))
-            self.assertIsNone(check(["charter"], node))   # the old spelling stays valid for one version (deprecated)
+            self.assertIsNotNone(check(["charter"], node))   # the old spelling (v1.2.0) is refused
             self.assertIsNotNone(check(["file:"], node))
         files = find(self.schema, "inject")["properties"]["files"]
         self.assertIsNone(check({"charter": "charter.md"}, files))
@@ -156,12 +155,11 @@ class TeamSchemaTest(ShipTestCase):
                             f"{path} に description がない")
         self.assertTrue(self.schema["description"])
 
-    def test_the_old_memory_limits_is_deprecated_but_still_valid(self):
-        """T-076: the four flat keys stay valid for one version (read over to inject.limits), marked deprecated."""
-        node = find(self.schema, "memory", "limits")
-        self.assertTrue(node["deprecated"])
-        self.assertIsNone(check({"memory_lines": 80, "knowledge_chars": 5000}, node))
-        self.assertIsNotNone(check({"memory_lines": 0}, node))
+    def test_the_old_charter_and_memory_limits_are_gone(self):
+        """T-095: the v1.2.0 compatibility keys left the schema."""
+        self.assertNotIn("charter", self.schema["properties"])
+        self.assertNotIn("limits", find(self.schema, "memory")["properties"])
+        self.assertNotIn("charter", find(self.schema, "inject", "limits")["properties"])
 
     def test_the_removed_git_key_is_deprecated(self):
         self.assertIn("deprecationMessage", self.schema["properties"]["git"]["properties"]["merge_decision"])
