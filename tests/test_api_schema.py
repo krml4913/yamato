@@ -88,7 +88,7 @@ class ValidatorTest(unittest.TestCase):
 
 class OpenApiDocTest(unittest.TestCase):
     PATHS = ["/api/v1/overview", "/api/v1/fleet", "/api/v1/ships/{name}/config", "/api/v1/ships/{name}/files/{file}",
-             "/api/v1/edit/preview", "/api/v1/edit/commit"]
+             "/api/v1/edit/preview", "/api/v1/edit/commit", "/api/v1/ops/{op}"]
 
     def test_version_and_paths(self):
         self.assertTrue(DOC["openapi"].startswith("3.1"))
@@ -96,7 +96,7 @@ class OpenApiDocTest(unittest.TestCase):
 
     def test_every_operation_has_200_json_and_shared_error(self):
         for p, item in DOC["paths"].items():
-            method = "post" if p.startswith("/api/v1/edit/") else "get"   # 書くのは edit だけ。ほかは読むだけ
+            method = "post" if p.startswith(("/api/v1/edit/", "/api/v1/ops/")) else "get"   # 書くのは edit と ops だけ。ほかは読むだけ
             self.assertEqual(list(k for k in item if k != "parameters"), [method], p)
             op = item[method]
             self.assertIn("operationId", op)
@@ -104,7 +104,7 @@ class OpenApiDocTest(unittest.TestCase):
             self.assertEqual(op["responses"]["default"], {"$ref": "#/components/responses/Error"}, p)
             names = [x["name"] for x in op.get("parameters", [])
                      if "$ref" not in x] + [A.resolve(DOC, x["$ref"])["name"] for x in op.get("parameters", []) if "$ref" in x]
-            for seg in ("name", "file"):
+            for seg in ("name", "file", "op"):
                 self.assertEqual("{%s}" % seg in p, seg in names, (p, seg))
 
     def test_all_refs_resolve_and_only_supported_keywords(self):

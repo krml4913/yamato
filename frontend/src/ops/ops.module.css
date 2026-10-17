@@ -1,0 +1,6 @@
+.panel { border: 1px solid var(--color-line-strong); border-radius: 6px; padding: 0.75rem; margin: 0.5rem 0; background: var(--color-card); }
+.cmd { color: var(--color-line-strong); font-family: ui-monospace, monospace; font-size: 12px; }
+.output { background: var(--color-chip); padding: 0.75rem; border-radius: 4px; white-space: pre-wrap; max-height: 20rem; overflow: auto; }
+.actions { display: flex; gap: 0.5rem; }
+.error { color: var(--color-danger); }
+.ok { color: var(--color-ok); }
