@@ -104,6 +104,31 @@ class DashboardTest(ShipTestCase):
         self.assertIn("12k", self.render())
         self.assertNotIn("99k", self.render())
 
+    def _budget_page(self, shift, rows, budget=2):
+        team = self.team()
+        team["seats"]["impl"]["shift"] = shift
+        team["roles"][team["seats"]["impl"]["role"]]["max_budget_usd"] = budget
+        with open(self.shipdir / "usage.jsonl", "a", encoding="utf-8") as f:
+            for r in rows:
+                f.write(json.dumps({"ts": time.time(), "seat": "impl", "total_tokens": 1, **r}) + "\n")
+        with mock.patch.object(seat, "current_team", return_value=team):
+            return self.render()
+
+    def test_budget_headless_shows_last_cost_and_limit(self):
+        page = self._budget_page("headless", [{"shift": "headless", "total_cost_usd": 0.9},
+                                              {"shift": "headless", "total_cost_usd": 0.42}])
+        self.assertIn("前回 $0.42 / 上限 $2", page)
+
+    def test_budget_headless_null_cost_is_dash(self):
+        page = self._budget_page("headless", [{"shift": "headless", "total_cost_usd": None}])
+        self.assertIn("前回 - / 上限 $2", page)
+        self.assertIn("前回 - / 上限 $2", self._budget_page("headless", []))
+
+    def test_budget_not_shown_for_other_shifts(self):
+        page = self._budget_page("per_task", [{"shift": "headless", "total_cost_usd": 0.42}])
+        self.assertNotIn("上限", page)
+        self.assertNotIn("前回 $", page)
+
     def test_prs_listed_with_link(self):
         board.Board(self.shipdir, self.team()).add("T-001", {"assignee": "impl", "state": "active", "pr": "12"}, by="pm")
         with mock.patch.object(dashboard, "_repo_url", return_value="https://github.com/o/r"):
