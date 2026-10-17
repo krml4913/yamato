@@ -44,6 +44,7 @@ export class EditApiError extends Error {
     public status: number,
     public code: string,
     message: string,
+    public detail: string | null = null,
   ) {
     super(message);
   }
@@ -60,7 +61,7 @@ async function postEdit<T>(op: "preview" | "commit", body: object): Promise<T> {
   const data = await res.json().catch(() => null);
   if (!res.ok) {
     const e = data?.error;
-    throw new EditApiError(res.status, e?.code ?? "internal", e?.message ?? `POST ${op}: ${res.status}`);
+    throw new EditApiError(res.status, e?.code ?? "internal", e?.message ?? `POST ${op}: ${res.status}`, e?.detail ?? null);
   }
   return data as T;
 }

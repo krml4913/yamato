@@ -39,11 +39,12 @@ def fields(data: dict, schema: dict) -> list[dict]:
             "value": _jsonable(data[key]) if key in data else None,
             "type": _type_of(spec), "description": spec.get("description"),
             "enum": spec.get("enum") if isinstance(spec.get("enum"), list) else None,
+            "schema": spec or None,
         })
     for key in data:
         if key not in props:
             out.append({"key": str(key), "set": True, "required": False, "value": _jsonable(data[key]),
-                        "type": None, "description": None, "enum": None})
+                        "type": None, "description": None, "enum": None, "schema": None})
     return out
 
 
