@@ -39,7 +39,7 @@ v1.3.0 は **v1.2.0 が警告つきで読み替えていた古い書き方を消
 
 **既存の艦の写しに反映するもの**: T-093 の `roles/pm.md` の手順 (reviewer 欄を書く一行。下の項目)。
 
-**移行不要**: #111・#112・#114・#117・#118・#119 は表示・docs・内部の変更で、艦がやることはない。
+**移行不要**: #111・#112・#114・#117・#118・#119・#121 は表示・docs・内部の変更で、艦がやることはない。
 
 手順:
 1. 艦を止める: `yamato down <艦>`
@@ -163,7 +163,7 @@ v1.1.0 の項目は**すべて opt-in**。何もしなくても、艦は今の�
 
 ### team.yaml に `setting_sources` を足した: 席に user の設定を opt-in で読ませる (T-061)
 - 何が変わったか: team.yaml のトップに `setting_sources` (`user` / `project` / `local` のリスト) が増えた。席の起動の `--setting-sources` に渡す (bg・headless・memory 棚卸しの `-p`)。既定は今と同じ `[project, local]`
-- 既存の艦がやること: なし。書かなければ挙動は変わらない。席に `~/.claude/CLAUDE.md` を読ませたい艦だけ、team.yaml に `setting_sources: [project, local, user]` を足し、次の `yamato up` と新しいシフトから効く (resume の席は保存済みのオプションのまま)
+- 既存の艦がやること: なし。書かなければ挙動は変わらない。席に `~/.claude/CLAUDE.md` を読ませたい艦だけ、team.yaml に `setting_sources: [project, local, user]` を足し、次の `yamato up` と新しいシフトから効く (resume した席には `--setting-sources` が引き継がれず user 設定が戻る。止めたい値は team.yaml の `settings:` に書く。`--settings` は resume でも効き user 設定に勝つ)
 - やらないと: 動作は変わらない
 - 注意 (足す艦): user の hooks・plugin hooks・env・`remoteControlAtStartup` も席に入る。design.md §4.1 を読むこと
 - PR: #88 (T-061)
