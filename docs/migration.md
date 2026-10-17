@@ -21,6 +21,35 @@ v1.0.0 以降の変更のうち、**既存の艦・利用者が何かをしな�
 
 ## 未リリース
 
+版を出す手順: tag を打つ前に `cd frontend && npm ci && npm run build` で `src/yamato/web/dist/` を作り直して commit する (develop 向けの PR は dist を変えず、main 向けの CI がこの鮮度を見る)。
+
+## v1.3.0 → v1.4.0
+
+### 全体の手順
+v1.4.0 は **web console (dashboard の SPA 化と、画面からの書き込み・操作) を足す版**。team.yaml・艦フォルダの記録の形式・コマンドの名前は変わらない。既存の艦が必ずやることはない。
+
+**既存の艦の写しに反映するもの (任意)**: `roles/impl.md`・`roles/reviewer.md` の「rebase して push」の言い回しと、ひな形の文の番号の除去。`yamato ship upgrade` で写せる。
+
+**移行不要**: #122〜#129・#131〜#136・#138〜#146・#148〜#151 は web console の中身 (API・画面・書き込みの部品)・CI・テスト・docs の変更で、艦がやることはない。#147〜#149 は番号の除去 (下の項目)、#137 は pr merge の通知文 (下の項目)。
+
+手順:
+1. 艦を止める: `yamato down <艦>`
+2. yamato を更新する: `git -C ~/dev/yamato pull` (tag を使うなら `git -C ~/dev/yamato checkout v1.4.0`)
+3. 写したいなら `yamato ship upgrade <艦>` (任意)
+4. 艦を起こす: `yamato up <艦>`
+
+### dashboard は SPA になった (node は不要、dist は同梱)
+- 何が変わったか: `yamato dashboard` の画面が、サーバーが HTML を組む形から、React の SPA (一覧・艦ごとの設定・markdown・艦隊) に変わった。API は `/api/v1/` の JSON。SPA の build 済みの成果物 (`src/yamato/web/dist/`) はリポジトリに同梱している
+- 既存の艦・利用者がやること: なし。node や npm は要らない (build が要るのは frontend を開発する人だけ)。`yamato dashboard` をこれまでどおり起動する
+- やらないと: 何も起きない。古い HTML の画面は無くなった
+- PR: #129・#130・#131・#132・#134
+
+### `yamato dashboard --edit` で画面から書き込みと操作ができる
+- 何が変わったか: `--edit` を付けて起動すると、画面から team.yaml (フォームと生の編集)・`roles/*.md`・charter の編集 (差分を見てから確定)、席への send、判断を閉じる、席の seat-stop・rotate、艦の up・down・extend・halt ができる。付けなければ今までどおり読むだけ。書き込みはトークン・Host・Origin を検査し、ハッシュで競合を見て、1 世代退避してから原子的に書く
+- 既存の艦・利用者がやること: 画面から編集・操作したいときだけ `yamato dashboard --edit` で起動する。ローカルでの利用が前提 (外へ公開しない)
+- やらないと: 読むだけの画面のまま。動作は壊れない
+- PR: #133・#139・#140・#141・#144・#145・#146・#151
+
 ### docs と README から task・判断の番号を除いた
 - 何が変わったか: docs と README の説明から、艦の board の項目番号 (T-数字) と判断の番号 (D-数字) を除いた。判断の出典は「owner の決定 (日付)」の形に直した。挙動は変わらない。ひな形の文も同じ趣旨で変わる
 - 既存の艦がやること: 移行は要らない。ひな形の文を写したい艦は `yamato ship upgrade` で写せば足りる (任意)
@@ -31,8 +60,6 @@ v1.0.0 以降の変更のうち、**既存の艦・利用者が何かをしな�
 - 何が変わったか: `pr merge` が衝突した PR の担当に送る定型文が「rebase して push してください」から「origin/<git.base> を merge して push してください (rebase はしない)」になった。ひな形の impl.md・reviewer.md の同じ言い回しも合わせた。board の列名 `rebase` は記録の形式なので変えていない
 - 既存の艦がやること: 何も要らない。艦の `roles/impl.md`・`roles/reviewer.md` の写しに「rebase して push」とあれば、「base を merge して push」に書き換えるとよい (任意)
 - やらないと: 写しの役割プロンプトの言い回しが古いままになるだけ。定型文は yamato が出す
-
-版を出す手順: tag を打つ前に `cd frontend && npm ci && npm run build` で `src/yamato/web/dist/` を作り直して commit する (develop 向けの PR は dist を変えず、main 向けの CI がこの鮮度を見る)。
 
 ## v1.2.0 → v1.3.0
 
