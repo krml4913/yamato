@@ -4,11 +4,28 @@ body { margin: 0; }
 .nav a { text-decoration: none; }
 .nav a.active { font-weight: bold; }
 main { padding: 0 1rem; }
-.muted { opacity: 0.7; }
-.config-field { border-top: 1px solid #8884; }
+
+/* 一覧 */
+.card { background: #fff; border-radius: 8px; padding: 12px 16px; margin: 12px 0; box-shadow: 0 1px 2px #0002; }
+.card.top { border-left: 6px solid #dc2626; }
+.card.quiet { border-left: 6px solid #16a34a; }
+@media (prefers-color-scheme: dark) { .card { background: #292524; } a { color: #7dd3fc; } }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 3px 8px; border-bottom: 1px solid #7773; vertical-align: top; }
+th { font-weight: 600; font-size: 12px; opacity: 0.75; }
+h1 { font-size: 20px; margin: 12px 0 4px; }
+h2 { font-size: 16px; margin: 0 0 8px; }
+h3 { font-size: 13px; margin: 12px 0 4px; opacity: 0.7; }
+.red { color: #dc2626; font-weight: 600; }
+.warn { color: #d97706; }
+.ok { color: #16a34a; }
+.dim { opacity: 0.65; }
+.tag { display: inline-block; border-radius: 4px; padding: 0 6px; background: #7772; margin-right: 4px; }
+.tag.urgent { background: #dc2626; color: #fff; }
+
+/* 設定画面 (表の見た目は上の table・th・td の全体指定) */
+.config-field { border-top: 1px solid #7773; }
 .config-field h2 small { font-size: 0.7em; font-weight: normal; opacity: 0.7; }
-.config-table { border-collapse: collapse; }
-.config-table th, .config-table td { border: 1px solid #8884; padding: 0.2rem 0.5rem; text-align: left; vertical-align: top; }
-.config-pending { padding: 0.5rem; border: 1px solid #c80; }
-.config-error { color: #c33; }
+.config-pending { padding: 0.5rem; border: 1px solid #d97706; }
+.config-error { color: #dc2626; }
 pre { overflow-x: auto; }

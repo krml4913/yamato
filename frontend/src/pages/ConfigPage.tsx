@@ -19,7 +19,7 @@ function show(v: unknown): string {
 function Table({ rows }: { rows: Record<string, Record<string, unknown>> }) {
   const columns = [...new Set(Object.values(rows).flatMap((r) => Object.keys(r)))];
   return (
-    <table className="config-table">
+    <table>
       <thead>
         <tr>
           <th>名前</th>
@@ -39,7 +39,7 @@ function Table({ rows }: { rows: Record<string, Record<string, unknown>> }) {
 }
 
 function Value({ field }: { field: Field }) {
-  if (!field.set) return <p className="muted">未設定</p>;
+  if (!field.set) return <p className="dim">未設定</p>;
   if (isTable(field.value)) return <Table rows={field.value} />;
   if (typeof field.value === "object" && field.value !== null) {
     return <pre>{JSON.stringify(field.value, null, 2)}</pre>;
@@ -55,8 +55,8 @@ function Section({ field }: { field: Field }) {
         {field.required && <small> 必須</small>}
         {field.type && <small> {field.type}</small>}
       </h2>
-      {field.description && <p className="muted">{field.description}</p>}
-      {field.enum && <p className="muted">選べる値: {field.enum.map(show).join(" / ")}</p>}
+      {field.description && <p className="dim">{field.description}</p>}
+      {field.enum && <p className="dim">選べる値: {field.enum.map(show).join(" / ")}</p>}
       <Value field={field} />
     </section>
   );
@@ -90,7 +90,7 @@ export function ConfigPage() {
       {!config && !error && <p>読み込み中</p>}
       {config && (
         <>
-          <p className="muted">{config.path}</p>
+          <p className="dim">{config.path}</p>
           {config.pending.changed && (
             <p role="status" className="config-pending">
               次の yamato up で効く変更がある
