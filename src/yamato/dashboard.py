@@ -1,41 +1,36 @@
 """yamato dashboard (D-093, T-079): ローカルのブラウザで全艦の「owner の判断待ち」と席の状況を見る。
 
+サーバーは ``/api/v1/*`` の JSON (応答の形の正本は docs/api/openapi.yaml) と ``web/dist/`` の配信だけ
+(HTML は組まない。画面は web/ のフロントが API を読んで描く)。
+
 読むだけ: 艦フォルダに何も書かない。``seat.status`` は呼ばない (reconcile・enforce・
 restop_stuck で roster を書き換え、席を止めるため)。roster・board・inbox・events・usage・
 作業ログを読み、``claude agents --json`` は 1 回の描画で 1 回だけ呼ぶ。
-サーバーは 127.0.0.1 だけ・GET だけ。bind 先を変えるオプションは作らない。標準ライブラリだけ
-(http.server)、テンプレートエンジンも CDN も使わず、HTML は ``html.escape`` を通して組み立てる。
+サーバーは 127.0.0.1 だけ・GET だけ。bind 先を変えるオプションは作らない。標準ライブラリだけ (http.server)。
 """
 from __future__ import annotations
 
-import html
+import json
 import re
 import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from . import admiral, claude, deadline, feed, inbox, memory, monitor, procs, report, roster, rotate, seat
 from . import board as board_mod
 from .decide import _epoch
-from .web import frame, router
+from .web import static
 from .util import YamatoError, fmt_span, fmt_time, today
 from .worktree import field_map
 
 HOST = "127.0.0.1"          # bind 先は固定 (オプションにしない)
 DEFAULT_PORT = 8765
 PORT_TRIES = 10             # --port を書かないとき、使用中なら次の番号を試す回数
-REFRESH = 60                # 秒。ページの自動再読み込み
 ANOMALIES = 8               # 艦ごとに出す直近の異常の件数
 ANOMALY_WINDOW = 3 * 86400  # 異常を拾う期間 (秒)
 CONTEXT_NEAR = 0.8          # 文脈量が rotate の閾値のこの割合を超えたら「近い」と出す
-
-e = html.escape
-
-
-def _q(s) -> str:
-    return e(str(s), quote=True)
-
 
 # --- 読み取り (艦ごと。書かない) --------------------------------------------------
 
@@ -63,8 +58,6 @@ def _repo_url(team: dict) -> str | None:
 
 def _today_usage(shipdir: Path, now: float) -> dict[str, int]:
     """席ごとの今日のトークン (``report.usage_lines`` と同じ usage.jsonl の total_tokens の合計)。"""
-    import json
-
     since = time.mktime(time.strptime(today(), "%Y-%m-%d"))
     out: dict[str, int] = {}
     try:
@@ -84,8 +77,6 @@ def _today_usage(shipdir: Path, now: float) -> dict[str, int]:
 
 def _last_cost(shipdir: Path) -> dict[str, float | None]:
     """席ごとの最新の headless の記録の total_cost_usd (無い・null・数でなければ None)。"""
-    import json
-
     out: dict[str, float | None] = {}
     try:
         text = (Path(shipdir) / "usage.jsonl").read_text(encoding="utf-8")
@@ -129,7 +120,8 @@ def _context_of(team: dict, shipdir: Path, seat_name: str, rec: dict) -> dict | 
 
 
 def gather(name: str, shipdir: Path, by: dict, now: float) -> dict:
-    """1 艦ぶんの事実。壊れていれば例外 (呼び側が枠にエラーを出す)。"""
+    """1 艦ぶんの事実 (openapi.yaml の ShipOverview.state の形。ただし ``waits`` は全艦の一覧に
+    集めるため同居させている。呼び側 (``overview``) が取り出す)。壊れていれば例外。"""
     team = seat.current_team(shipdir)
     dl = deadline.read(shipdir)
     items = board_mod.Board(shipdir, team).items()
@@ -147,12 +139,13 @@ def gather(name: str, shipdir: Path, by: dict, now: float) -> dict:
         seats.append({
             "name": s, "role": spec.get("role"), "shift": spec["shift"], "alive": alive,
             "pid": (live or {}).get("pid"), "status": (live or {}).get("status"),
-            "waitingFor": (live or {}).get("waitingFor"), "last": last,
+            "waiting_for": (live or {}).get("waitingFor"), "last": last,
             "active": [m["id"] for m in items if m.get("state") == "active" and m.get("assignee") == s],
             "reviewing": [m["id"] for m in items if m.get("state") == "active" and m.get("reviewer") == s
                           and m.get("assignee") != s],
             "unread": len(inbox.unread(shipdir, s)),
-            "red": admiral.red_flags(team, s, rec, live, now, has_active=s in active_assignees),
+            "flags": [{"level": f.level, "text": f.text, "detail": f.detail}
+                      for f in admiral.red_flags(team, s, rec, live, now, has_active=s in active_assignees)],
             "log": _last_log_line(shipdir, s), "tokens": usage.get(s, 0),
             "budget": (team["roles"].get(spec.get("role")) or {}).get("max_budget_usd") if spec["shift"] == "headless" else None,
             "last_cost": costs.get(s),
@@ -160,9 +153,10 @@ def gather(name: str, shipdir: Path, by: dict, now: float) -> dict:
     waits = []
     for meta, body in report.pending_decisions(shipdir, team, lambda d: report.is_human(team, d)):
         opened = _epoch(meta.get("opened_at"))
-        waits.append({"id": meta.get("id"), "title": meta.get("title"), "urgent": bool(meta.get("urgent")),
-                      "age": fmt_span(now - opened) if opened else "", "rec": report._recommendation(body)})
-    waits.sort(key=lambda w: (not w["urgent"], str(w["id"])))
+        waits.append({"ship": name, "id": str(meta.get("id")), "title": str(meta.get("title") or ""), "urgent": bool(meta.get("urgent")),
+                      "age": fmt_span(now - opened) if opened else "",
+                      "recommendation": report._recommendation(body) or None})
+    waits.sort(key=lambda w: (not w["urgent"], w["id"]))
     counts: dict[str, int] = {}
     for m in items:
         if m.get("kind") != "decision":
@@ -174,9 +168,9 @@ def gather(name: str, shipdir: Path, by: dict, now: float) -> dict:
             contexts[s] = ctx
     for x in seats:
         x["context"] = contexts.get(x["name"])
-    orphans = [{"id": m.get("id"), "title": m.get("title"), "seat": m.get("assignee"), "why": why}
+    orphans = [{"id": str(m.get("id")), "title": str(m.get("title") or ""), "seat": m.get("assignee"), "why": why}
                for m, why in monitor.orphans(shipdir, team, now)]
-    mem = [{"role": r["role"], "count": r["count"], "days": r["days"], "due": r["due"]}
+    mem = [{"role": r["role"], "count": r["count"], "days": r["days"], "due": bool(r["due"])}
            for r in memory.status(shipdir, team, now)]
     url = _repo_url(team)
     prs = []
@@ -185,14 +179,15 @@ def gather(name: str, shipdir: Path, by: dict, now: float) -> dict:
             continue
         for repo, num in field_map(team, m, "pr").items():
             link = f"{url}/pull/{num.lstrip('#')}" if url and num.lstrip("#").isdigit() else None
-            prs.append({"item": m["id"], "title": m.get("title"), "state": m.get("state"), "repo": repo,
-                        "pr": num, "link": link})
-    anomalies = [ev for ev in events_read(shipdir, now) if ev.get("kind") in feed.ABNORMAL_KINDS][-ANOMALIES:]
+            prs.append({"item": m["id"], "title": str(m.get("title") or ""), "state": m.get("state"), "repo": repo,
+                        "number": num.lstrip("#"), "link": link})
+    anomalies = [{"kind": ev["kind"], "ts": ev.get("ts") or 0, "summary": str(ev.get("summary") or "")}
+                 for ev in events_read(shipdir, now) if ev.get("kind") in feed.ABNORMAL_KINDS][-ANOMALIES:][::-1]
     return {
-        "name": name, "team": team["name"], "deadline": deadline.describe(dl, now), "seats": seats,
+        "team": team["name"], "deadline": deadline.describe(dl, now), "seats": seats,
         "waits": waits, "owner_unread": len(inbox.unread(shipdir, inbox.OWNER)),
         "counts": counts,
-        "board": [{"id": m["id"], "title": m.get("title"), "state": m.get("state"), "assignee": m.get("assignee"),
+        "board": [{"id": m["id"], "title": str(m.get("title") or ""), "state": m.get("state"), "assignee": m.get("assignee"),
                    "blocked_on": m.get("blocked_on") or []}
                   for m in items if m.get("state") in ("active", "blocked") and m.get("kind") != "decision"],
         "report": _report_summary(shipdir), "orphans": orphans, "memory": mem,
@@ -207,143 +202,49 @@ def events_read(shipdir: Path, now: float) -> list[dict]:
     return events.read(shipdir, since=now - ANOMALY_WINDOW)
 
 
-# --- HTML ---------------------------------------------------------------------
+# --- API ----------------------------------------------------------------------
+
+API_OVERVIEW = "/api/v1/overview"
 
 
-def _ul(rows: list[str]) -> str:
-    return "<ul>" + "".join(f"<li>{r}</li>" for r in rows) + "</ul>" if rows else ""
-
-
-def _waiting_section(data: list[tuple[str, dict | None, str | None]]) -> str:
-    rows = []
-    for name, g, err in data:
-        if g is None:
-            continue
-        for w in g["waits"]:
-            tag = '<span class="tag urgent">急ぎ</span>' if w["urgent"] else ""
-            rows.append(f"{tag}<b>{e(name)}</b> 判断 {e(str(w['id']))}: {e(str(w['title']))}"
-                        f" <span class='dim'>({e(w['age'] or '?')} 待ち)</span>"
-                        + (f"<br><span class='dim'>推し: {e(w['rec'])}</span>" if w["rec"] else ""))
-    cls = "top" if rows else "quiet"
-    body = _ul(rows) or '<p class="ok">owner の判断待ちは無い</p>'
-    return f'<section class="card {cls}"><h2>owner の判断待ち ({len(rows)})</h2>{body}</section>'
-
-
-def _seat_table(g: dict, now: float) -> str:
-    out = ["<p class='dim'>要対応の列: <span class='red'>赤</span> = すぐ手が要る (詰まり・API エラー) / "
-           "<span class='warn'>黄</span> = 様子見 (動いていない・担当が無い)。内部の言葉は文に重ねたとき (hover) に出る</p>"
-           "<table><tr><th>席</th><th>生存</th><th>status</th><th>最終</th><th>担当 (active)</th>"
-           "<th>未読</th><th title='赤 = すぐ手が要る (詰まり・API エラー) / 黄 = 様子見 (動いていない・担当が無い)'>要対応</th><th>今日 tok</th><th>作業ログの最後</th></tr>"]
-    for s in g["seats"]:
-        alive = f"<span class='ok'>pid {e(str(s['pid']))}</span>" if s["alive"] else "<span class='dim'>止</span>"
-        last = f"{e(fmt_time(s['last']))} <span class='dim'>({e(fmt_span(now - s['last']))}前)</span>" if s["last"] else "-"
-        red = "<br>".join(f"<span class='{'red' if f.level == admiral.RED else 'warn'}' title='{e(f.detail)}'>"
-                          f"{e(f.text)}</span>" for f in s["red"])
-        status = e(str(s["status"] or "-")) + (f" <span class='warn'>{e(str(s['waitingFor']))}</span>" if s["waitingFor"] else "")
-        budget = ""
-        if s["shift"] == "headless":   # max_budget_usd は -p の 1 回ごとの上限。他の席には出さない
-            prev = "-" if s["last_cost"] is None else f"${s['last_cost']:.2f}"
-            limit = f"${s['budget']}" if s["budget"] else "-"
-            budget = f"<br><span class='dim'>前回 {e(prev)} / 上限 {e(limit)}</span>"
-        out.append(f"<tr><td><b>{e(s['name'])}</b> <span class='dim'>{e(str(s['shift']))}</span></td><td>{alive}</td>"
-                   f"<td>{status}</td><td>{last}</td><td>{e(', '.join(s['active'] + [f'{i} (レビュー)' for i in s['reviewing']]) or '-')}</td>"
-                   f"<td>{s['unread'] or '-'}</td><td>{red}</td>"
-                   f"<td>{e(report._tokens(s['tokens']))}{budget}</td><td class='dim'>{e(s['log'][:160])}</td></tr>")
-    return "".join(out) + "</table>"
-
-
-def _ctx_cell(ctx: dict | None) -> str:
-    if not ctx:
-        return "-"
-    k = f"{ctx['tokens'] // 1000}k"
-    if not ctx["limit"]:
-        return e(k)
-    ratio = ctx["tokens"] / ctx["limit"]
-    near = f" <span class='warn'>rotate が近い</span>" if ratio >= CONTEXT_NEAR else ""
-    return f"{e(k)} / {e(str(ctx['limit'] // 1000))}k ({int(ratio * 100)}%){near}"
-
-
-def _extras(g: dict) -> str:
-    """艦の枠の 2 段目: 前回の日報・孤児・memory の棚卸しの目安・文脈量 (上部の判断待ちには足さない)。"""
-    out = []
-    r = g.get("report")
-    if r:
-        rows = [f"<b>{e(r['date'])}</b>"]
-        if r["word"]:
-            rows.append(f"一言: {e(r['word'])}")
-        if r["tomorrow"]:
-            rows.append(f"明日: {e(r['tomorrow'])}")
-        out.append("<h3>前回の日報</h3><p style='white-space:pre-wrap'>" + "<br>".join(rows) + "</p>")
-    else:
-        out.append("<h3>前回の日報</h3><p class='dim'>まだ無い</p>")
-    orph = [f"<b>{e(str(o['id']))}</b> {e(str(o['title']))} <span class='dim'>{e(o['why'])}</span>" for o in g["orphans"]]
-    out.append("<h3>孤児 (担当が落ちて active のまま)</h3>" + (_ul(orph) or "<p class='ok'>無い</p>"))
-    mem = []
-    for m in g["memory"]:
-        since = "前回の反映なし" if m["days"] is None else f"前回の反映から {m['days']} 日"
-        due = " <span class='warn'>棚卸しの目安に達した</span>" if m["due"] else ""
-        mem.append(f"{e(m['role'] or 'knowledge')}: 候補 {m['count']} 件 / {e(since)}{due}")
-    out.append("<h3>memory の棚卸し</h3>" + _ul(mem))
-    ctx = [f"<b>{e(s['name'])}</b> {_ctx_cell(s.get('context'))}" for s in g["seats"]]
-    out.append("<h3>席の文脈量 (rotate の閾値に対して)</h3>" + _ul(ctx))
-    return "".join(out)
-
-
-def _ship_card(name: str, g: dict | None, err: str | None, now: float) -> str:
-    if g is None:
-        return f'<section class="card"><h2>{e(name)}</h2><p class="red">読めない: {e(err or "?")}</p></section>'
-    hub_last = f" / captain {e(g['hub'])} の最終 {e(fmt_time(g['hub_last']))}" if g["hub_last"] else ""
-    counts = " ".join(f"<span class='tag'>{e(k)} {n}</span>" for k, n in sorted(g["counts"].items()))
-    unread = f" / owner 宛て未読 {g['owner_unread']} 件" if g["owner_unread"] else ""
-    parts = [f'<section class="card"><h2>{e(name)}</h2><p class="dim">{e(g["deadline"])}{hub_last}'
-             f" / 今日 {e(report._tokens(g['tokens']))} tok{unread}</p>", _seat_table(g, now),
-             f"<h3>board</h3><p>{counts or '-'}</p>"]
-    rows = [f"<b>{e(b['id'])}</b> [{e(str(b['state']))}] {e(str(b['title']))} <span class='dim'>"
-            f"{e(str(b['assignee'] or '-'))}" + (f" / blocked_on {e(', '.join(map(str, b['blocked_on'])))}" if b["blocked_on"] else "")
-            + "</span>" for b in g["board"]]
-    parts.append(_ul(rows))
-    parts.append(_extras(g))
-    if g["prs"]:
-        rows = []
-        for p in g["prs"]:
-            label = f"#{e(p['pr'].lstrip('#'))}"
-            ref = f'<a href="{_q(p["link"])}">{label}</a>' if p["link"] else label
-            repo = f" [{e(p['repo'])}]" if g["multi_repo"] else ""
-            rows.append(f"{ref}{repo} <b>{e(p['item'])}</b> {e(str(p['title']))} <span class='dim'>({e(str(p['state']))})</span>")
-        parts.append("<h3>PR</h3>" + _ul(rows))
-    if g["anomalies"]:
-        parts.append("<h3>直近の異常</h3>" + _ul(
-            f"<span class='red'>{e(str(a.get('kind')))}</span> {e(fmt_time(a.get('ts')))} {e(str(a.get('summary') or ''))}"
-            for a in reversed(g["anomalies"])))
-    return "".join(parts) + "</section>"
-
-
-def render(ships: dict[str, Path], by: dict, now: float, note: str = "") -> str:
-    """ページ全体の HTML 文字列 (HTTP なし)。1 艦の読み取りが落ちても、その艦の枠にエラーを出して他を描く。"""
-    data = []
+def overview(ships: dict[str, Path], by: dict, now: float, agents_error: str | None = None) -> dict:
+    """``GET /api/v1/overview`` の応答 (HTTP なし)。1 艦の読み取りが落ちても、その艦の error に
+    理由を入れて state を null にし、他の艦は返す。"""
+    out, waits = [], []
     for name, path in ships.items():
         try:
-            data.append((name, gather(name, path, by, now), None))
-        except Exception as ex:  # noqa: BLE001 — 壊れた艦 1 つでページ全体を落とさない
-            data.append((name, None, f"{type(ex).__name__}: {ex}"))
-    body = [_waiting_section(data)]
-    if not data:
-        body.append('<p class="dim">艦がありません (yamato ship create で作る)</p>')
-    body += [_ship_card(n, g, err, now) for n, g, err in data]
-    head = (f'<h1>yamato dashboard</h1><p class="dim">最終更新 {e(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(now)))} '
-            f"({REFRESH} 秒ごとに自動更新・読むだけ){e(note)}</p>")
-    return frame.page("yamato dashboard", head + "".join(body), ships, current="/", refresh=REFRESH)
+            state = gather(name, path, by, now)
+        except Exception as ex:  # noqa: BLE001 — 壊れた艦 1 つで全体を落とさない
+            out.append({"name": name, "error": f"{type(ex).__name__}: {ex}", "state": None})
+            continue
+        waits += state.pop("waits")
+        out.append({"name": name, "error": None, "state": state})
+    waits.sort(key=lambda w: (not w["urgent"], w["ship"], w["id"]))
+    return {"generated_at": now, "agents_error": agents_error, "waits": waits, "ships": out}
 
 
-def render_page(now: float | None = None) -> str:
-    """全艦を読んで HTML を返す。``claude agents --json`` は 1 回の描画で 1 回。"""
+def overview_now(now: float | None = None) -> dict:
+    """全艦を読む。``claude agents --json`` は 1 回の応答で 1 回。"""
     now = time.time() if now is None else now
-    note = ""
     try:
-        by = claude.by_session(claude.agents())
+        by, err = claude.by_session(claude.agents()), None
     except YamatoError as ex:
-        by, note = {}, f" / claude agents を読めなかった (生存は不明): {ex}"
-    return render(admiral.all_ships(), by, now, note)
+        by, err = {}, str(ex)
+    return overview(admiral.all_ships(), by, now, err)
+
+
+def _error(code: str, message: str, detail: str | None = None) -> dict:
+    return {"error": {"code": code, "message": message, "detail": detail}}
+
+
+def api_get(path: str) -> tuple[int, dict]:
+    """``/api/v1/`` 以下の GET を (status, JSON にする値) にする。HTTP なし。"""
+    if path == API_OVERVIEW:
+        try:
+            return 200, overview_now()
+        except Exception as ex:  # noqa: BLE001
+            return 500, _error("internal", "全艦の読み取りに失敗した", type(ex).__name__)
+    return 404, _error("not_found", "その API は無い")
 
 
 # --- server -------------------------------------------------------------------
@@ -351,22 +252,22 @@ def render_page(now: float | None = None) -> str:
 class Handler(BaseHTTPRequestHandler):
     """GET だけ。ほかのメソッドは 501 (do_* を定義しない)。"""
 
-    def do_GET(self):  # noqa: N802
-        try:
-            status, data = router.dispatch(self.path, admiral.all_ships(), render_page)
-        except Exception as ex:  # noqa: BLE001
-            self.send_error(500, f"描画に失敗: {type(ex).__name__}")
-            return
-        if status != 200:
-            self.send_error(status)
-            return
-        data = data.encode("utf-8")
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
+    def _send(self, status: int, data: bytes, ctype: str) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(data)
+
+    def do_GET(self):  # noqa: N802
+        path = urlsplit(self.path).path
+        if path == "/api" or path.startswith("/api/"):
+            status, body = api_get(path)
+            self._send(status, json.dumps(body, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
+            return
+        status, data, ctype = self.server.dist.get(path)
+        self._send(status, data, ctype)
 
     def log_message(self, *a):  # noqa: D401 — アクセスログは出さない
         pass
@@ -378,7 +279,9 @@ def make_server(port: int | None) -> ThreadingHTTPServer:
     last = None
     for p in tries:
         try:
-            return ThreadingHTTPServer((HOST, p), Handler)
+            srv = ThreadingHTTPServer((HOST, p), Handler)
+            srv.dist = static.Dist(static.DIST)   # 起動時に dist の実在ファイルの一覧を作る
+            return srv
         except OSError as ex:
             last = ex
     hint = " (--port で別の番号を指定する)" if port is None else ""
