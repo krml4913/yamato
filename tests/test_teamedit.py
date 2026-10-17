@@ -134,6 +134,13 @@ class TeamEditTest(ShipTestCase):
             edit.handle("commit", {"ship": "t1", "file": "team.yaml", "content": text + "\n# メモ\n",
                                    "base_hash": p["base_hash"]})
         self.assertEqual(cm.exception.status, 409)
+        self.assertEqual(self.path.read_text(encoding="utf-8"), text + "# 別の変更\n")  # 衝突では書かない
+        # 最新の内容で preview し直せば、commit でファイルが実際に書き換わる
+        fresh = self.path.read_text(encoding="utf-8")
+        new = fresh + "# 確定\n"
+        p2 = self.raw(new)
+        edit.handle("commit", {"ship": "t1", "file": "team.yaml", "content": new, "base_hash": p2["base_hash"]})
+        self.assertEqual(self.path.read_text(encoding="utf-8"), new)
 
     def test_only_registered_ships_and_team_yaml(self):
         for ship, file in (("nope", "team.yaml"), ("t1", "knowledge.md"), ("t1", "../team.yaml"), ("_admiral", "team.yaml")):
