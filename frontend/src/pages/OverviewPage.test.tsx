@@ -1,6 +1,7 @@
 import { act, render, screen } from "@testing-library/react";
 import { REFRESH_MS, OverviewPage } from "./OverviewPage";
 import type { Overview } from "../api/client";
+import status from "../status.module.css";
 
 const seat = (over: Record<string, unknown>) => ({
   name: "impl", role: "impl", shift: "per_task", alive: true, pid: 42, status: "busy", waiting_for: null,
@@ -42,8 +43,8 @@ describe("OverviewPage", () => {
     expect(await screen.findByText("owner の判断待ち (1)")).toBeInTheDocument();
     expect(screen.getByText("急ぎ")).toBeInTheDocument();
     expect(screen.getByText("推し: 案A")).toBeInTheDocument();
-    expect(screen.getByText("詰まり")).toHaveClass("red");
-    expect(screen.getByText("止まってる")).toHaveClass("warn");
+    expect(screen.getByText("詰まり")).toHaveClass(status.red);
+    expect(screen.getByText("止まってる")).toHaveClass(status.warn);
     expect(screen.getAllByText("T-1, T-2 (レビュー)").length).toBeGreaterThan(0);
     expect(screen.getByText(/前回 \$0\.50 \/ 上限 \$2/)).toBeInTheDocument();
     expect(screen.getByText("rotate が近い")).toBeInTheDocument();
@@ -53,7 +54,7 @@ describe("OverviewPage", () => {
     expect(screen.getByText("席が落ちた")).toBeInTheDocument();
     expect(screen.getByText("棚卸しの目安に達した")).toBeInTheDocument();
     expect(screen.getByText("#7")).toHaveAttribute("href", "https://github.com/o/r/pull/7");
-    expect(screen.getByText("crash")).toHaveClass("red");
+    expect(screen.getByText("crash")).toHaveClass(status.red);
     expect(screen.getByText(/読めない: ValueError/)).toBeInTheDocument();
   });
 

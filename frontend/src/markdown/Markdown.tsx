@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { parseBlocks, safeHref, type Block, type Inline } from "./parse";
-import "./markdown.css";
+import styles from "./markdown.module.css";
 
 // markdown を React の要素にして出す。本文は必ず text node になる (HTML を文字列のまま挿す API は使わない)。
 function inline(nodes: Inline[]): ReactNode[] {
@@ -40,5 +40,5 @@ function block(b: Block, key: number): ReactNode {
 }
 
 export function Markdown({ text }: { text: string }) {
-  return <div className="md">{parseBlocks(text).map(block)}</div>;
+  return <div className={styles.md}>{parseBlocks(text).map(block)}</div>;
 }

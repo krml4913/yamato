@@ -1,5 +1,6 @@
 import { CONTEXT_NEAR } from "./format";
 import type { Seat, ShipState } from "./types";
+import status from "../status.module.css";
 
 function Ctx({ ctx }: { ctx: Seat["context"] }) {
   if (!ctx) return <>-</>;
@@ -9,7 +10,7 @@ function Ctx({ ctx }: { ctx: Seat["context"] }) {
   return (
     <>
       {k} / {Math.floor(ctx.limit / 1000)}k ({Math.floor(ratio * 100)}%)
-      {ratio >= CONTEXT_NEAR && <> <span className="warn">rotate が近い</span></>}
+      {ratio >= CONTEXT_NEAR && <> <span className={status.warn}>rotate が近い</span></>}
     </>
   );
 }
@@ -27,17 +28,17 @@ export function Extras({ g }: { g: ShipState }) {
           {r.tomorrow && <><br />明日: {r.tomorrow}</>}
         </p>
       ) : (
-        <p className="dim">まだ無い</p>
+        <p className={status.dim}>まだ無い</p>
       )}
       <h3>孤児 (担当が落ちて active のまま)</h3>
       {g.orphans.length ? (
         <ul>
           {g.orphans.map((o) => (
-            <li key={o.id}><b>{o.id}</b> {o.title} <span className="dim">{o.why}</span></li>
+            <li key={o.id}><b>{o.id}</b> {o.title} <span className={status.dim}>{o.why}</span></li>
           ))}
         </ul>
       ) : (
-        <p className="ok">無い</p>
+        <p className={status.ok}>無い</p>
       )}
       <h3>memory の棚卸し</h3>
       <ul>
@@ -45,7 +46,7 @@ export function Extras({ g }: { g: ShipState }) {
           <li key={m.role ?? "knowledge"}>
             {m.role ?? "knowledge"}: 候補 {m.count} 件 /{" "}
             {m.days == null ? "前回の反映なし" : `前回の反映から ${m.days} 日`}
-            {m.due && <> <span className="warn">棚卸しの目安に達した</span></>}
+            {m.due && <> <span className={status.warn}>棚卸しの目安に達した</span></>}
           </li>
         ))}
       </ul>
