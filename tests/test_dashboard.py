@@ -296,7 +296,7 @@ class ServerTest(unittest.TestCase):
         p = argparse.ArgumentParser()
         dashboard.register(p.add_subparsers())
         flags = {a for act in p._subparsers._group_actions[0].choices["dashboard"]._actions for a in act.option_strings}
-        self.assertEqual(flags - {"-h", "--help"}, {"--port", "--no-open"})
+        self.assertEqual(flags - {"-h", "--help"}, {"--port", "--no-open", "--edit"})
 
 
 if __name__ == "__main__":

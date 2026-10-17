@@ -509,10 +509,11 @@ zellij セッション
 
 ### 10.1 dashboard (D-093, T-079)
 
-`yamato dashboard [--port N] [--no-open]` は、全艦 (`admiral.all_ships()` と同じ範囲) を 1 ページに並べてブラウザで見せる。owner が「自分待ち」と各席の様子を一目で見るためのもの。
+`yamato dashboard [--port N] [--no-open] [--edit]` は、全艦 (`admiral.all_ships()` と同じ範囲) を 1 ページに並べてブラウザで見せる。owner が「自分待ち」と各席の様子を一目で見るためのもの。
 
-- **読むだけ**: GET だけ、艦フォルダに何も書かない。`seat.status` は呼ばない (reconcile・enforce・restop_stuck が roster を書き換え席を止めるため)。roster・board・inbox・events・usage・作業ログ・日報 (`report.latest`)・transcript (`rotate.last_usage`。末尾だけ)・memory の候補と反映の記録 (`memory.status`) を読み、`claude agents --json` は 1 回の描画で 1 回
+- **読むだけ** (`--edit` を付けないとき): GET だけ、艦フォルダに何も書かない (POST は 501)。`seat.status` は呼ばない (reconcile・enforce・restop_stuck が roster を書き換え席を止めるため)。roster・board・inbox・events・usage・作業ログ・日報 (`report.latest`)・transcript (`rotate.last_usage`。末尾だけ)・memory の候補と反映の記録 (`memory.status`) を読み、`claude agents --json` は 1 回の描画で 1 回
 - **ローカルだけ**: `127.0.0.1` に bind。bind 先を変えるオプションは作らない。認証なし。既定 port は 8765 (`--port` を書かなければ使用中なら 8766… と 10 個まで試す。書いたのに使用中ならエラー)
+- **書き込み (`--edit`)** (`src/yamato/web/edit.py`、`dashboard.Handler.do_POST`): 付けて起動したときだけ `POST /api/v1/edit/preview` と `/commit` を受ける。起動ごとに乱数トークン (`secrets.token_urlsafe`) を作り、サーバーが `index.html` を返すときに `<meta name="yamato-token">` として埋める (SPA が `X-Yamato-Token` ヘッダで返す。`frontend/src/api/client.ts` の `previewEdit` / `commitEdit`)。POST は、トークン・`Host: 127.0.0.1:<port>`・`Origin: http://127.0.0.1:<port>` が**全部**合い、`Content-Type: application/json` で本文 1 MiB 以下のときだけ通す (どれかが違えば 403 `forbidden`、Origin が無いのも拒む)。`--edit` のときは GET も Host を見る (DNS rebinding でトークン入りのページを読ませない)。`--edit` が無ければ POST は今までどおり 501、PUT・DELETE は常に 501。書き込みは 2 段: `preview` は検証して unified diff と今のファイルの sha256 (`base_hash`。ファイルが無ければ `-`) を返し、何も書かない。`commit` は検証をやり直し (通らなければ 422)、今のハッシュが `base_hash` と違えば 409 `conflict` で何も書かず、書くときは上書き前の版を `<艦>/.runtime/edit-backup/` に 1 世代だけ残し、同じ dir の一時ファイル + `os.replace` で置き換える (権限は元のまま)。書ける対象は `edit.RESOLVERS` に足した (艦, ファイル) → `Target(path, shipdir, key, validate)` の関数だけで、何も足さなければどれも 404 (対象と検証は個別の機能が決める)
 - **載せるもの**: ページの一番上に owner の判断待ち (decider が人間の open な判断 + 急ぎ・経過・推しだけ。owner 宛て inbox の未読は上部に並べず、艦の枠に件数だけ出す。`status=waiting` の席の waitingFor は席の表の status 列で見る)。艦ごとに deadline・席の表 (生存 pid・status・最終・active の項目・未読数・要対応 (`admiral.red_flags` の `Flag(重さ, 文, 詳細)`。赤 = 詰まり・API エラー、黄 = 動いていない・担当が無い。文は「何が起きた → 何をする」で、内部の言葉は title 属性。列名は赤と黄が並ぶので「要対応」、凡例は表の上)・今日のトークン・作業ログの最後の 1 行。`shift: headless` の席だけ今日のトークンの下に「前回 $x / 上限 $y」: 前回 = usage.jsonl のその席の最新の headless の記録の `total_cost_usd`、無い・null は「-」、上限 = 役割の `max_budget_usd` (-p 1 回ごとの上限)、無ければ「-」。他の席は予算を出さない)・board の state 別の件数と active / blocked の項目・PR (board の `pr` 欄がある done 以外。workspace の origin が GitHub ならリンク)・直近 3 日の異常 (feed が赤くする種類と同じ集合 `feed.ABNORMAL_KINDS` を共有)。艦の枠の 2 段目: 前回の日報の一言・明日 / 孤児 (`monitor.orphans`) / memory の候補数と前回の反映からの日数・棚卸しの目安 / 席の文脈量と rotate の閾値に対する割合 (80% 以上で「rotate が近い」、取れない席は「-」)。上部は判断待ちだけのまま
 - **壊れた艦**: 1 艦の読み取りで例外が出ても、その艦の `error` に理由を入れ `state` を null にして他の艦は返す
 - **サーバーは JSON と dist の配信だけ**: HTML は組まない。`/api/v1/*` の JSON と `src/yamato/web/dist/` (フロントの build 出力) を返す。画面はフロントが API を読んで描く。一覧 (`/`) は 60 秒ごとに `GET /api/v1/overview` を取り直し、上の「載せるもの」(判断待ち・艦の枠・席の表・要対応の赤黄・予算・2 段目・PR・異常) を出す (`frontend/src/pages/OverviewPage.tsx` と `frontend/src/overview/`。取得に失敗しても前の表示を残してエラーを上に出す)。載せるものの値はすべて `GET /api/v1/overview` の応答 (`dashboard.overview`) にあり、文字列は生のまま返す (エスケープは画面の仕事)
@@ -520,7 +521,7 @@ zellij セッション
 - **フロントの土台**: repo 直下の `frontend/` (React + TypeScript + Vite + react-router、Node 24 固定、npm の lockfile を commit)。ビルド出力は `src/yamato/web/dist/` に commit し、利用者は node 不要。API の正本は `docs/api/openapi.yaml`、TS の型は `npm run gen-api` で生成して commit する。ナビは 一覧 / 艦隊 / 艦ごと。一覧は実装済み、艦隊・艦ごとは枠だけ。手順は README の「開発者向け」。Python 側は dist の配信と `/api/v1` の JSON だけを持つ
 - **CI**: `.github/workflows/ci.yml`。push と PR (main・develop) で、frontend (npm ci → lint → typecheck → test → build → gen-api → `git diff --exit-code` で dist・型の鮮度) と python (unittest discover を 3.11・3.13)。secrets なし。`git.merge_requires` の `ci` はこれ
 - **API のスキーマ**: web コンソールの JSON API の正本は `docs/api/openapi.yaml` (OpenAPI 3.1)。M1 は `GET /api/v1/overview` (dashboard の gather 相当)・`/api/v1/fleet` (ships.json と `_admiral`)・`/api/v1/ships/{name}/config` (team.yaml の項目ごとの値 + schema の description + 生の yaml + 「次の up で効く変更あり」)・`/api/v1/ships/{name}/files/{file}` (roles/*.md・charter.md・knowledge.md)。エラーは全 path 共通で `{"error": {"code", "message", "detail"}}`。TS の型はここから生成する。Python 側は `tests/api_schema.py` の小さな検査器 (type・nullable・properties・required・additionalProperties・items・enum・const・文書内の `$ref`。jsonschema は vendor しない。知らないキーワードは黙って通さずエラー) で応答をスキーマに照らす。実装済みは `GET /api/v1/overview` だけ (応答は `tests/test_dashboard.py` が検査器で確かめる)。ほかの path は 404
-- 範囲外: 操作 (判断を閉じる・返事・席を止める)・ローカル以外からの閲覧・認証・トークンのドル換算・1 日の費用の合計や超過の警告
+- 範囲外: 操作 (判断を閉じる・返事・席を止める)・ローカル以外からの閲覧・ログイン型の認証 (書き込みはトークンだけ)・トークンのドル換算・1 日の費用の合計や超過の警告
 
 ### 10.2 yaml の部分置き換え (T-110, web コンソールの土台)
 
@@ -604,7 +605,7 @@ grace: 20m            # 終了時刻のあと、キリのいいところまで�
 | `status [<ship>]` | 席ごとの状態 (生存、最後に動いた時刻、権限の確認で止まっている「詰まり」)、deadline までの残り、未読 inbox |
 | `send <ship> <seat\|owner> "<msg>" [--from <seat>]` | メッセージを送る (§7) |
 | `inbox <ship> <seat\|owner> [--all]` | 未読を全文で表示して既読にする |
-| `dashboard [--port N] [--no-open]` | 全艦の owner の判断待ちと席の状況をローカルのブラウザで見る (§10.1) |
+| `dashboard [--port N] [--no-open] [--edit]` | 全艦の owner の判断待ちと席の状況をローカルのブラウザで見る (§10.1) |
 | `board add / set / show / list / mine / archive` | board の操作と表示 (§6.2) |
 | `log <ship> <seat> "<text>"` | 席の作業ログに 1 行追記する |
 | `seat-stop <ship> <seat> [--delivered]` | 席が使う。終業処理 (引き継ぎの確認と遅延 stop。§8.3) |

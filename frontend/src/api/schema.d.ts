@@ -84,6 +84,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/edit/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 書き込みの 1 段目 (検証して差分を返す。何も書かない)
+         * @description --edit のときだけ。要求ヘッダに X-Yamato-Token (起動ごとの乱数。index.html の
+         *     <meta name="yamato-token"> に埋まる)・Host は 127.0.0.1:<port>・Origin は http://127.0.0.1:<port>・
+         *     Content-Type は application/json が要る。どれかが違えば 403 (forbidden)。--edit が無ければ 501。
+         *     書き換えられるファイルは (ship, file) で決まり、書ける対象でなければ 404。
+         */
+        post: operations["previewEdit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/edit/commit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 書き込みの 2 段目 (preview のときと同じ内容なら書く)
+         * @description preview と同じ検査ヘッダが要る。検証をやり直し、通らなければ 422 (invalid)。今のファイルのハッシュが
+         *     base_hash と違えば 409 (conflict) で何も書かない。書くときは上書き前の版を <艦>/.runtime/edit-backup/ に
+         *     1 世代残し、一時ファイル + rename で置き換える。
+         */
+        post: operations["commitEdit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -92,14 +137,45 @@ export interface components {
         Error: {
             error: {
                 /**
-                 * @description not_found (艦・ファイルが無い) / bad_request / unreadable (読めない・壊れている) / internal。
+                 * @description not_found (艦・ファイルが無い) / bad_request / unreadable (読めない・壊れている) / internal / forbidden (書き込みのトークン・Host・Origin が合わない) / conflict (preview のあとにファイルが変わった) / invalid (検証に通らない)。
                  * @enum {string}
                  */
-                code: "not_found" | "bad_request" | "unreadable" | "internal";
+                code: "not_found" | "bad_request" | "unreadable" | "internal" | "forbidden" | "conflict" | "invalid";
                 message: string;
                 /** @description 例外名など補足。無ければ null または省略。 */
                 detail?: string | null;
             };
+        };
+        EditRequest: {
+            /** @description 艦の名前。 */
+            ship: string;
+            /** @description 書き換える対象 (艦フォルダからの相対 path)。 */
+            file: string;
+            /** @description 新しい中身の全文。 */
+            content: string;
+        };
+        EditCommitRequest: {
+            ship: string;
+            file: string;
+            content: string;
+            /** @description preview が返した base_hash。 */
+            base_hash: string;
+        };
+        EditPreview: {
+            /** @description 検証に通ったか。false なら commit は 422。 */
+            valid: boolean;
+            errors: string[];
+            /** @description 今の中身と違うか。 */
+            changed: boolean;
+            /** @description 今の中身から新しい中身への unified diff。 */
+            diff: string;
+            /** @description 今のファイルの sha256 (16 進)。ファイルが無ければ - 1 文字。 */
+            base_hash: string;
+        };
+        EditCommit: {
+            written: boolean;
+            /** @description 書いたあとのファイルの sha256 (16 進)。 */
+            hash: string;
         };
         Overview: {
             /** @description 組み立てた時刻 (epoch 秒)。 */
@@ -410,6 +486,56 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ShipFile"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    previewEdit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditRequest"];
+            };
+        };
+        responses: {
+            /** @description 検証の結果と差分。base_hash を commit に渡す。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EditPreview"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    commitEdit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditCommitRequest"];
+            };
+        };
+        responses: {
+            /** @description 書いた。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EditCommit"];
                 };
             };
             default: components["responses"]["Error"];
