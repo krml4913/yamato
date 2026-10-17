@@ -107,7 +107,7 @@ class TeamEditTest(ShipTestCase):
         self.assertFalse(p["changed"])
 
     def test_only_registered_ships_and_team_yaml(self):
-        for ship, file in (("nope", "team.yaml"), ("t1", "charter.md"), ("t1", "../team.yaml"), ("_admiral", "team.yaml")):
+        for ship, file in (("nope", "team.yaml"), ("t1", "knowledge.md"), ("t1", "../team.yaml"), ("_admiral", "team.yaml")):
             with self.assertRaises(edit.EditError) as cm:
                 edit.handle("preview", {"ship": ship, "file": file, "content": "x"})
             self.assertEqual(cm.exception.status, 404, (ship, file))
