@@ -30,11 +30,32 @@ describe("SeatTable の操作", () => {
     expect(screen.queryByText("操作")).toBeNull();
   });
 
-  it("止まっている persistent の席にだけ入れ替えを出す (席を止める入口は無い)", () => {
+  it("止まっている persistent の席に入れ替え、生きている席に終業を出す (強制停止は出さない)", () => {
     setToken(true);
     render(<SeatTable ship="dev" seats={seats} now={0} />);
     expect(screen.getByRole("button", { name: "pm に入れ替えの印" })).toBeTruthy();
-    expect(screen.getAllByRole("button")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "impl に終業を頼む" })).toBeTruthy();
+    expect(screen.getAllByRole("button")).toHaveLength(2);
+  });
+
+  it("終業は確認を経て send に頼みの文を載せるだけ。CLI の出力をそのまま見せる", async () => {
+    setToken(true);
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      argv: ["yamato", "send", "/s", "impl"], exit_code: 0, timed_out: false, truncated: false, output: "記録した",
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<SeatTable ship="dev" seats={seats} now={0} />);
+    fireEvent.click(screen.getByRole("button", { name: "impl に終業を頼む" }));
+    expect(fetchMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "頼む" }));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toBe("exit code 0"));
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/v1/ops/send");
+    const body = JSON.parse(init.body);
+    expect(body.params.seat).toBe("impl");
+    expect(body.params.message).toContain("seat-stop");
+    expect(body.confirmed).toBe(true);
+    expect(screen.getByLabelText("出力").textContent).toBe("記録した");
   });
 
   it("確認画面を経てから POST し、出力 (text として) と exit code を出す。alert は使わない", async () => {

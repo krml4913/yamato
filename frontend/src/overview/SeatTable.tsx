@@ -16,6 +16,16 @@ function seatOp(ship: string, s: Seat): OpSpec {
   };
 }
 
+// 生きている席への終業の依頼。席を直接止めるのではなく、席に send で頼む (止めるかは席が引き継ぎを書いてから決める)
+const STOP_REQUEST = "owner から終業の依頼。今の作業を区切り、引き継ぎ (handoff.md) を書いて、seat-stop を実行して終業して。";
+
+function stopOp(ship: string, s: Seat): OpSpec {
+  return {
+    op: "send", ship, params: { seat: s.name, message: STOP_REQUEST }, title: `席 ${s.name} に終業を頼む`, confirmLabel: "頼む",
+    detail: "席に「引き継ぎを書いて seat-stop しろ」と send (owner から) を送るだけ。席は引き継ぎを書いてから自分で止まる。すぐには止まらず、席が応じなければ止まらない。",
+  };
+}
+
 export function SeatTable({ ship, seats, now }: { ship: string; seats: Seat[]; now: number }) {
   const [pending, setPending] = useState<OpSpec | null>(null);
   const canOp = editToken() !== null;
@@ -34,7 +44,9 @@ export function SeatTable({ ship, seats, now }: { ship: string; seats: Seat[]; n
         </thead>
         <tbody>
           {seats.map((s) => (
-            <SeatRow key={s.name} s={s} now={now} onOp={canOp ? () => setPending(seatOp(ship, s)) : null} />
+            <SeatRow key={s.name} s={s} now={now}
+              onOp={canOp ? () => setPending(seatOp(ship, s)) : null}
+              onStop={canOp ? () => setPending(stopOp(ship, s)) : null} />
           ))}
         </tbody>
       </table>
@@ -43,7 +55,7 @@ export function SeatTable({ ship, seats, now }: { ship: string; seats: Seat[]; n
   );
 }
 
-function SeatRow({ s, now, onOp }: { s: Seat; now: number; onOp: (() => void) | null }) {
+function SeatRow({ s, now, onOp, onStop }: { s: Seat; now: number; onOp: (() => void) | null; onStop: (() => void) | null }) {
   const active = [...s.active, ...s.reviewing.map((i) => `${i} (レビュー)`)].join(", ") || "-";
   return (
     <tr>
@@ -72,6 +84,9 @@ function SeatRow({ s, now, onOp }: { s: Seat; now: number; onOp: (() => void) | 
       <td className={status.dim}>{s.log.slice(0, 160)}</td>
       {onOp && (
         <td>
+          {s.alive && onStop && (
+            <button onClick={() => onStop()} aria-label={`${s.name} に終業を頼む`}>終業を頼む</button>
+          )}
           {!s.alive && s.shift === "persistent" && (
             <button onClick={() => onOp()} aria-label={`${s.name} に入れ替えの印`}>入れ替え</button>
           )}
