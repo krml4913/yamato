@@ -11,8 +11,7 @@ Both only read; the answer is a nudge or the choice between resume and a new
 shift. Nothing here stops a seat (only the time limit does, §0 B4). Imported by
 the per-turn hooks, so standard library and small modules only.
 
-A third place *writes* the same mark: ``yamato rotate <ship> <seat>...`` (T-024,
-design-drift D). A stopped persistent seat has no session to run ``seat-stop
+A third place *writes* the same mark: ``yamato rotate <ship> <seat>...`` (design-drift D). A stopped persistent seat has no session to run ``seat-stop
 --rotate`` from (a team-composition change means its next shift should start
 fresh, but nobody is there to ask for that) -- this command sets
 ``rotateRequested`` from outside, the same mark ``resume_reasons`` already reads.
@@ -168,14 +167,14 @@ def take_notice(shipdir: Path, seat: str, shift_no) -> bool:
         return True
 
 
-# --- `yamato rotate` (T-024): mark a *stopped* persistent seat from outside -----------
+# --- `yamato rotate`: mark a *stopped* persistent seat from outside -----------
 
 def persistent_seats(team: dict) -> list[str]:
     return [name for name, spec in team["seats"].items() if spec["shift"] == "persistent"]
 
 
 def request(shipdir: Path, team: dict, seats: list[str], *, by: str | None = None) -> dict[str, str | None]:
-    """Set ``rotateRequested`` on each of ``seats`` (design-p1 §5.4, T-024): the same mark
+    """Set ``rotateRequested`` on each of ``seats`` (design-p1 §5.4): the same mark
     ``resume_reasons`` reads, but written from outside the seat's own session -- for a
     *stopped* persistent seat, so its next ``send`` starts a fresh shift (new ``--agents``,
     say, after a team-composition change) instead of a resume.

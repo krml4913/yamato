@@ -1,4 +1,4 @@
-"""プロセスの OS 差分 (Windows W3, T-042)。
+"""プロセスの OS 差分 (Windows W3)。
 
 生死の判定・切り離しての起動・停止・前面での attach を 1 か所に閉じ込める。ほかのモジュールは
 ``os.kill(pid, 0)`` / ``signal.SIGKILL`` / ``nohup`` を直接使わず、ここを呼ぶ。

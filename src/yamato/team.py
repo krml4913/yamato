@@ -19,20 +19,20 @@ TOP_KEYS = {"name", "hub", "workspace", "roles", "time_limit", "grace", "deny", 
 # what SessionStart can inject (design §8.2); the header is always there
 INJECT_PARTS = ("handoff", "log_tail", "mine", "inbox", "memory", "knowledge", "last_report", "orphans", "board",
                 "fleet")
-# plus `file:<名前>` for each name under `inject.files` (T-075, D-089): any file the ship wants read at start
+# plus `file:<名前>` for each name under `inject.files`: any file the ship wants read at start
 FILE_PREFIX = "file:"
 FILES_RESERVED = "default"   # `inject.limits.files.default` is the limit for a file without its own
 # what a ship that names no parts gets: the captain's report excerpt (design-p1 §2.3) is opt-in,
-# the orphaned items (§5.6) go to the captain only, the board overview (T-030) is opt-in too, and
-# the fleet-wide summary (T-022, admiral's `ships` 相当) is opt-in since only admiral wants it.
-# `file:<名前>` parts (the charter among them, T-072 → T-075) are never default
+# the orphaned items (§5.6) go to the captain only, the board overview is opt-in too, and
+# the fleet-wide summary (admiral's `ships` 相当) is opt-in since only admiral wants it.
+# `file:<名前>` parts (the charter among them) are never default
 DEFAULT_INJECT_PARTS = tuple(p for p in INJECT_PARTS
                              if p not in ("last_report", "orphans", "board", "fleet"))
 # `memory` / `knowledge`: the role's memory and knowledge.md are cut here, and `memory apply` refuses
-# a proposal over it (T-076; used to be `memory.limits`)
+# a proposal over it (used to be `memory.limits`)
 INJECT_LIMIT_KEYS = ("handoff", "log_tail", "mine_items", "inbox_messages", "inbox_chars", "total_chars",
                      "last_report", "board_items", "fleet_items", "memory", "knowledge")
-# [lines, chars] limits (two positive ints); the others are one positive int (T-073)
+# [lines, chars] limits (two positive ints); the others are one positive int
 INJECT_PAIR_LIMIT_KEYS = ("handoff", "log_tail", "last_report", "memory", "knowledge")
 RESERVED_SEATS = ("owner",)   # the human's inbox; not a seat
 SEAT_STOP_DEFAULTS = {"require_handoff": True, "require_delivery": True}
@@ -45,7 +45,7 @@ PROFILE_KEYS = {"mode", "tools", "allow", "deny", "send"}
 DEFAULT_MODE = "auto"   # what a seat without a profile mode runs in (P0)
 # `git:` (design-p1 §8.3). The values a ship runs with live in the template's
 # team.yaml; these are only what a ship without a `git:` section gets.
-# merge_decision was removed (D-021 案 b, #5): nothing read it, and whether to open a merge
+# merge_decision was removed (#5): nothing read it, and whether to open a merge
 # decision at all is now the reviewer/pm role prompt's call (mechanism-not-policy). An old
 # team.yaml that still sets it is not rejected, only warned and ignored.
 GIT_KEYS = {"base", "strategy", "merge_requires", "conflict"}
@@ -77,7 +77,7 @@ LAST_CALL_FALLBACK = {"at_most": 1800, "ratio": 0.2}
 NOTIFY_DECISIONS = ("digest", "each")   # human deciders: gather into the daily report / one by one
 DEFAULT_TIME_LIMIT = "3h"
 DEFAULT_GRACE = "20m"
-NO_TIME_LIMIT = "none"   # team.yaml: time_limit: none — the admiral-only exception (D-013, §0 B4)
+NO_TIME_LIMIT = "none"   # team.yaml: time_limit: none — the admiral-only exception (§0 B4)
 
 
 def load_yaml(path: Path) -> dict:
@@ -109,7 +109,7 @@ def expand_seats(roles: dict) -> dict:
 
 def _template(raw) -> dict | None:
     """`template: {name: dev, version: 1.1.0}`: which template (and yamato version) the ship's copy came from.
-    `ship create` writes it and `ship upgrade` moves it; nothing at run time reads it (D-081)."""
+    `ship create` writes it and `ship upgrade` moves it; nothing at run time reads it."""
     if raw is None:
         return None
     if (not isinstance(raw, dict) or set(raw) != {"name", "version"}
@@ -119,7 +119,7 @@ def _template(raw) -> dict | None:
 
 
 def validate(data: dict, shipdir: Path) -> dict:
-    if "charter" in data:   # moved in v1.2.0 (T-075); the compatibility went in v1.3.0
+    if "charter" in data:   # moved in v1.2.0; the compatibility went in v1.3.0
         raise YamatoError("team.yaml: トップの charter: は無くなった。inject.files.charter に書く "
                           "(例 inject.files: {charter: charter.md}。docs/migration.md)")
     unknown = set(data) - TOP_KEYS
@@ -131,7 +131,7 @@ def validate(data: dict, shipdir: Path) -> dict:
     # `0` must not silently become the default (review N4)
     raw_time_limit = data.get("time_limit")
     if isinstance(raw_time_limit, str) and raw_time_limit.strip().lower() == NO_TIME_LIMIT:
-        time_limit = None   # D-013: 上限を持たない艦 (admiral の土台。T-020)
+        time_limit = None   # 上限を持たない艦 (admiral の土台)
     else:
         time_limit = parse_duration(DEFAULT_TIME_LIMIT if raw_time_limit is None else raw_time_limit)
         if time_limit <= 0:
@@ -209,7 +209,7 @@ def validate(data: dict, shipdir: Path) -> dict:
             raise YamatoError(f"team.yaml: roles.{role}.report_to={spec['report_to']!r} は席の名前か owner")
 
     ws = data.get("workspace")
-    # a string (one repo, as ever) or a flat list of paths (D-071); the seat cwd is the first one
+    # a string (one repo, as ever) or a flat list of paths; the seat cwd is the first one
     raw_ws = ws if isinstance(ws, list) else [ws]
     if not ws or not all(isinstance(x, str) and x for x in raw_ws):
         raise YamatoError("team.yaml: workspace がありません (パスの文字列か、パスのリスト)")
@@ -257,7 +257,7 @@ def validate(data: dict, shipdir: Path) -> dict:
     if not isinstance(limits, dict):
         raise YamatoError(f"team.yaml: inject.limits の項目は {', '.join(INJECT_LIMIT_KEYS)}, files")
     limits = dict(limits)
-    if "charter" in limits:   # moved in v1.2.0 (T-075); the compatibility went in v1.3.0
+    if "charter" in limits:   # moved in v1.2.0; the compatibility went in v1.3.0
         raise YamatoError("team.yaml: inject.limits.charter は無くなった。inject.limits.files.charter に書く "
                           "(docs/migration.md)")
     if set(limits) - {*INJECT_LIMIT_KEYS, "files"}:
@@ -333,7 +333,7 @@ def validate(data: dict, shipdir: Path) -> dict:
 
     return {
         "name": name,
-        "template": _template(data.get("template")),   # {name, version} the ship was made from (D-081), or None
+        "template": _template(data.get("template")),   # {name, version} the ship was made from, or None
         "hub": hub,
         "workspace": workspaces[0]["path"],   # the seat cwd = the first repo
         "workspaces": workspaces,             # [{name: basename, path}]; one entry for a string workspace
@@ -373,7 +373,7 @@ def _git(git, warnings: list[str]) -> dict:
         raise YamatoError(f"team.yaml: git の項目は {', '.join(sorted(GIT_KEYS))}")
     removed = set(git) & GIT_REMOVED_KEYS
     for k in sorted(removed):
-        warnings.append(f"team.yaml: git.{k} は外れた (D-021)。無視する")
+        warnings.append(f"team.yaml: git.{k} は外れた。無視する")
     unknown = set(git) - GIT_KEYS - GIT_REMOVED_KEYS
     if unknown:
         raise YamatoError(f"team.yaml: git の項目は {', '.join(sorted(GIT_KEYS))}")
@@ -602,7 +602,7 @@ def _decisions(table, seats: dict) -> dict:
 
 
 def _no_old_charter_part(parts, where: str):
-    """The part `charter` (T-072) is `file:charter` since v1.2.0 (T-075); the compatibility went in v1.3.0."""
+    """The part `charter` is `file:charter` since v1.2.0; the compatibility went in v1.3.0."""
     if isinstance(parts, list) and "charter" in parts:
         raise YamatoError(f"team.yaml: {where} の charter は無くなった。file:charter に書く (docs/migration.md)")
     return parts
@@ -625,7 +625,7 @@ def _check_parts(parts, where: str, files: dict) -> None:
 
 def _inject_files(raw, raw_limits, workspaces: list, shipdir: Path,
                   warnings: list[str]) -> tuple[dict, dict]:
-    """``inject.files`` (T-075, D-089): name -> path, and ``inject.limits.files`` (name or ``default`` -> [lines, chars]).
+    """``inject.files``: name -> path, and ``inject.limits.files`` (name or ``default`` -> [lines, chars]).
 
     Paths: relative = from the ship folder, ``~`` and absolute as is, ``@<workspace 名>/<path>`` inside a repo.
     Returns ({name: {"path": as written, "abs": resolved}}, {name: (lines, chars)})."""

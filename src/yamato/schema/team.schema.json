@@ -814,8 +814,8 @@
           "type": "string"
         },
         "merge_decision": {
-          "description": "外れた項目 (D-021)。無視される。消す。",
-          "deprecationMessage": "git.merge_decision は外れた (D-021)。無視されるので消す。"
+          "description": "外れた項目。無視される。消す。",
+          "deprecationMessage": "git.merge_decision は外れた。無視されるので消す。"
         }
       },
       "additionalProperties": false

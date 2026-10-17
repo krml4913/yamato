@@ -391,14 +391,14 @@ def wait_deadline(shipdir: Path, seat: str) -> int:
     Exit 2 with the message on stderr wakes the seat (verify-p0-a Q4). A
     pidfile keeps one watcher per seat, since every turn end spawns another.
 
-    A ship with ``time_limit: none`` (D-013, the admiral only, T-020) never has a
+    A ship with ``time_limit: none`` (the admiral only) never has a
     deadline to read. This used to make the watcher return at once and never look at
     the inbox either, so an idle admiral could not be woken by ``yamato send`` /
-    ``yamato admiral --stop`` (T-021). It now keeps polling for an outside sender's
+    ``yamato admiral --stop``. It now keeps polling for an outside sender's
     unread message forever when there is no deadline at all (nothing here ever force-stops
     such a ship: only a normal deadline does that).
 
-    A watcher also leaves when it is stale (T-038): the seat's ``shiftNo`` moved on
+    A watcher also leaves when it is stale: the seat's ``shiftNo`` moved on
     (the next shift has its own watcher) or the pidfile now names another watcher.
     With no deadline nothing else ends it, so it also checks every
     ``LIVENESS_EVERY`` polls that its own session is still in ``claude agents`` (a
@@ -423,7 +423,7 @@ def wait_deadline(shipdir: Path, seat: str) -> int:
     try:
         other, _, other_shift = pidfile.read_text(encoding="utf-8").strip().partition(" ")
         # a live watcher of an older shift does not count: it leaves by itself at its next poll
-        # (a pidfile without a shift, from before T-038, still counts)
+        # (a pidfile without a shift, from before the shift was recorded, still counts)
         if int(other) != os.getpid() and _pid_alive(int(other)) and other_shift in ("", str(shift0)):
             return 0
     except (FileNotFoundError, ValueError):

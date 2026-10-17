@@ -14,7 +14,7 @@ function setToken(on: boolean) {
 
 const w = (ship: string, id: string, title: string): Wait =>
   ({ ship, id, title, urgent: false, age: "1h", recommendation: null });
-const waits = [w("dev", "D-002", "<b>一番上</b>"), w("dev", "D-005", "二番目")];
+const waits = [w("dev", "X-002", "<b>一番上</b>"), w("dev", "X-005", "二番目")];
 
 describe("判断待ちを閉じる", () => {
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); setToken(false); });
@@ -34,7 +34,7 @@ describe("判断待ちを閉じる", () => {
   it("一番上の判断だけを、決定と理由を添えて確認のあとに閉じる", async () => {
     setToken(true);
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      argv: ["yamato", "decide"], exit_code: 0, timed_out: false, truncated: false, output: "閉じた: D-002",
+      argv: ["yamato", "decide"], exit_code: 0, timed_out: false, truncated: false, output: "閉じた: X-002",
     }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     render(<Waits waits={waits} />);
@@ -47,7 +47,7 @@ describe("判断待ちを閉じる", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(String(fetchMock.mock.calls[0][0])).toBe("/api/v1/ops/decide-close");
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
-      ship: "dev", params: { id: "D-002", choice: "A", reason: "-x 安いから" }, confirmed: true });
-    expect((await screen.findByLabelText("出力")).textContent).toBe("閉じた: D-002");
+      ship: "dev", params: { id: "X-002", choice: "A", reason: "-x 安いから" }, confirmed: true });
+    expect((await screen.findByLabelText("出力")).textContent).toBe("閉じた: X-002");
   });
 });
