@@ -18,6 +18,7 @@ from pathlib import Path
 from . import admiral, claude, deadline, feed, inbox, memory, monitor, procs, report, roster, rotate, seat
 from . import board as board_mod
 from .decide import _epoch
+from .web import frame, router
 from .util import YamatoError, fmt_span, fmt_time, today
 from .worktree import field_map
 
@@ -208,21 +209,6 @@ def events_read(shipdir: Path, now: float) -> list[dict]:
 
 # --- HTML ---------------------------------------------------------------------
 
-CSS = """
-body{font:14px/1.5 -apple-system,BlinkMacSystemFont,sans-serif;margin:0;background:#f5f5f4;color:#1c1917}
-@media(prefers-color-scheme:dark){body{background:#1c1917;color:#e7e5e4}.card{background:#292524!important}
-th{color:#a8a29e!important}a{color:#7dd3fc!important}}
-main{max-width:1200px;margin:0 auto;padding:16px}
-h1{font-size:20px;margin:0 0 4px}h2{font-size:16px;margin:0 0 8px}h3{font-size:13px;margin:12px 0 4px;color:#78716c}
-.card{background:#fff;border-radius:8px;padding:12px 16px;margin:12px 0;box-shadow:0 1px 2px #0002}
-.top{border-left:6px solid #dc2626}.quiet{border-left:6px solid #16a34a}
-table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:3px 8px;border-bottom:1px solid #7773;vertical-align:top}
-th{font-weight:600;color:#57534e;font-size:12px}
-.red{color:#dc2626;font-weight:600}.dim{color:#78716c}.ok{color:#16a34a}.warn{color:#d97706}
-.tag{display:inline-block;border-radius:4px;padding:0 6px;background:#7772;margin-right:4px}
-.urgent{background:#dc2626;color:#fff}
-"""
-
 
 def _ul(rows: list[str]) -> str:
     return "<ul>" + "".join(f"<li>{r}</li>" for r in rows) + "</ul>" if rows else ""
@@ -344,11 +330,9 @@ def render(ships: dict[str, Path], by: dict, now: float, note: str = "") -> str:
     if not data:
         body.append('<p class="dim">艦がありません (yamato ship create で作る)</p>')
     body += [_ship_card(n, g, err, now) for n, g, err in data]
-    return (f'<!doctype html><html lang="ja"><head><meta charset="utf-8">'
-            f'<meta http-equiv="refresh" content="{REFRESH}"><title>yamato dashboard</title>'
-            f"<style>{CSS}</style></head><body><main><h1>yamato dashboard</h1>"
-            f'<p class="dim">最終更新 {e(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(now)))} '
-            f"({REFRESH} 秒ごとに自動更新・読むだけ){e(note)}</p>{''.join(body)}</main></body></html>")
+    head = (f'<h1>yamato dashboard</h1><p class="dim">最終更新 {e(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(now)))} '
+            f"({REFRESH} 秒ごとに自動更新・読むだけ){e(note)}</p>")
+    return frame.page("yamato dashboard", head + "".join(body), ships, current="/", refresh=REFRESH)
 
 
 def render_page(now: float | None = None) -> str:
@@ -368,14 +352,15 @@ class Handler(BaseHTTPRequestHandler):
     """GET だけ。ほかのメソッドは 501 (do_* を定義しない)。"""
 
     def do_GET(self):  # noqa: N802
-        if self.path.split("?")[0] not in ("/", "/index.html"):
-            self.send_error(404)
-            return
         try:
-            data = render_page().encode("utf-8")
+            status, data = router.dispatch(self.path, admiral.all_ships(), render_page)
         except Exception as ex:  # noqa: BLE001
             self.send_error(500, f"描画に失敗: {type(ex).__name__}")
             return
+        if status != 200:
+            self.send_error(status)
+            return
+        data = data.encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))

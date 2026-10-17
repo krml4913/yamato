@@ -516,7 +516,20 @@ zellij セッション
 - **載せるもの**: ページの一番上に owner の判断待ち (decider が人間の open な判断 + 急ぎ・経過・推しだけ。owner 宛て inbox の未読は上部に並べず、艦の枠に件数だけ出す。`status=waiting` の席の waitingFor は席の表の status 列で見る)。艦ごとに deadline・席の表 (生存 pid・status・最終・active の項目・未読数・要対応 (`admiral.red_flags` の `Flag(重さ, 文, 詳細)`。赤 = 詰まり・API エラー、黄 = 動いていない・担当が無い。文は「何が起きた → 何をする」で、内部の言葉は title 属性。列名は赤と黄が並ぶので「要対応」、凡例は表の上)・今日のトークン・作業ログの最後の 1 行。`shift: headless` の席だけ今日のトークンの下に「前回 $x / 上限 $y」: 前回 = usage.jsonl のその席の最新の headless の記録の `total_cost_usd`、無い・null は「-」、上限 = 役割の `max_budget_usd` (-p 1 回ごとの上限)、無ければ「-」。他の席は予算を出さない)・board の state 別の件数と active / blocked の項目・PR (board の `pr` 欄がある done 以外。workspace の origin が GitHub ならリンク)・直近 3 日の異常 (feed が赤くする種類と同じ集合 `feed.ABNORMAL_KINDS` を共有)。艦の枠の 2 段目 (T-096): 前回の日報の一言・明日 / 孤児 (`monitor.orphans`) / memory の候補数と前回の反映からの日数・棚卸しの目安 / 席の文脈量と rotate の閾値に対する割合 (80% 以上で「rotate が近い」、取れない席は「-」)。上部は判断待ちだけのまま
 - **壊れた艦**: 1 艦の読み取りで例外が出ても、その艦の枠にエラーを出して他の艦は描く
 - HTML はモジュール内で組み立てる (テンプレートエンジン・外部 CDN なし。値は必ず `html.escape` を通す)。60 秒ごとに meta refresh
+- **ページの分け方 (T-105, web コンソールの土台)**: `src/yamato/web/` に置く。`frame.py` = 共通の枠 (上のナビ「一覧 / 艦ごと」と CSS)、`router.py` = path から (status, html) を返す routing (HTTP なし)、`ship.py` = `/ship/<艦名>` (今は空ページ)。`/` は dashboard.py の一覧。ページは 1 ページ = 1 モジュールで、`SEGMENT` と `render(name, shipdir)` を持たせ `router.PAGES` に足す。艦名は `admiral.all_ships()` にあるものだけ (dict 引きで、path を組み立てない)。無ければ 404。GET だけ・127.0.0.1 固定・`html.escape` は変えない
+- **フロントの土台 (T-107, D-118)**: repo 直下の `frontend/` (React + TypeScript + Vite + react-router、Node 24 固定、npm の lockfile を commit)。ビルド出力は `src/yamato/web/dist/` に commit し、利用者は node 不要。API の正本は `docs/api/openapi.yaml`、TS の型は `npm run gen-api` で生成して commit する。画面はナビ (一覧 / 艦隊 / 艦ごと) の枠だけで、中身は後続の task。手順は README の「開発者向け」。Python 側は dist の配信と `/api/v1` の JSON だけを持つ方向 (配信への切り替えは別 task)
+- **API のスキーマ (T-106, D-118)**: web コンソールの JSON API の正本は `docs/api/openapi.yaml` (OpenAPI 3.1)。M1 は `GET /api/v1/overview` (dashboard の gather 相当)・`/api/v1/fleet` (ships.json と `_admiral`)・`/api/v1/ships/{name}/config` (team.yaml の項目ごとの値 + schema の description + 生の yaml + 「次の up で効く変更あり」)・`/api/v1/ships/{name}/files/{file}` (roles/*.md・charter.md・knowledge.md)。エラーは全 path 共通で `{"error": {"code", "message", "detail"}}`。TS の型はここから生成する。Python 側は `tests/api_schema.py` の小さな検査器 (type・nullable・properties・required・additionalProperties・items・enum・const・文書内の `$ref`。jsonschema は vendor しない。知らないキーワードは黙って通さずエラー) で応答をスキーマに照らす。API の実装は別 task
 - 範囲外: 操作 (判断を閉じる・返事・席を止める)・ローカル以外からの閲覧・認証・トークンのドル換算・1 日の費用の合計や超過の警告
+
+### 10.2 yaml の部分置き換え (T-110, web コンソールの土台)
+
+`src/yamato/yamlpatch.py` は、team.yaml のコメントと並びを保ったまま値を変える部品 (CLI のコマンドは無い)。PyYAML の `compose` が返すノードの位置 (`start_mark` / `end_mark`) を使い、**変えた所の文字範囲だけを元のテキストで置き換える。dump はしない**。
+
+- 操作: `set_value` (scalar の変更)・`add_key` / `remove_key` (map)・`insert_item` / `remove_item` (list)。パスは `("roles", "pm", "model")` のようなキー (str) と添字 (int) の並び。何も変えなければバイト一致、触った所の外は一文字も変わらない
+- block 形式も flow 形式 (`{a: 1}` `[a, b]`) も扱う。元が `|` `>` の scalar は block scalar のまま差し替える。引用符は元の書き方に寄せ、必要なときだけ引用符を付ける (`yes` `123` `a: b` など)
+- 削除は、キー (要素) の行だけを消し、直前のコメント行は残す
+- **安全網**: 組み立てた結果を `yaml.safe_load` で読み直し、元の値に操作を当てた期待値と一致しなければ `YamlPatchError`。一致しないテキストは返さない
+- 扱えない形は `YamlPatchError` (呼ぶ側は生の yaml 欄に回す): anchor / alias / merge key・複数文書・scalar と collection の取り替え・最後の 1 キー / 1 要素の削除・`- - x` のような入れ子の block list・空の block collection への追加
 
 ## 11. admiral (窓口)
 
