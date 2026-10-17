@@ -327,7 +327,7 @@ class WorktreeTest(GitShipTestCase):
         self.assertFalse((self.workspace / "new.txt").exists())
 
     def test_item_branch_equal_to_the_base_is_not_checked_out(self):
-        # T-122: an item whose branch is the base itself (`branch: develop`) used to get the
+        # an item whose branch is the base itself (`branch: develop`) used to get the
         # local develop checked out as is, and the next commit landed on it
         from yamato import worktree
 

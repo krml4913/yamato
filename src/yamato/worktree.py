@@ -214,7 +214,7 @@ def _add(shipdir: Path, team: dict, item_id: str, branch: str | None, base: str 
         raise YamatoError(f"ブランチ {branch!r} は起点 (base) です。task 用のブランチを指定してください")
     recorded_branch = field_get(team, meta, "branch", r)
     if not branch and recorded_branch in protected:
-        recorded_branch = None   # `branch: develop` on the item: cut the task branch instead (T-122)
+        recorded_branch = None   # `branch: develop` on the item: cut the task branch instead, never check out the base
     branch = branch or recorded_branch or default_branch(team, item_id)
     # a value starting with `-` would be read as an option by `git worktree add`
     if branch.startswith("-") or git(["check-ref-format", "--branch", branch], root, check=False).returncode:
