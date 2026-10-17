@@ -9,16 +9,11 @@ import table from "../table.module.css";
 const HELP = "赤 = すぐ手が要る (詰まり・API エラー) / 黄 = 様子見 (動いていない・担当が無い)";
 
 // 席の操作。--edit で起動したとき (index.html にトークンがあるとき) だけ入口を出す
-function seatOp(ship: string, s: Seat, kind: "seat-stop" | "rotate"): OpSpec {
-  return kind === "seat-stop"
-    ? {
-        op: "seat-stop", ship, params: { seat: s.name }, title: `席 ${s.name} の終業を指示する`, confirmLabel: "終業を指示する",
-        detail: "席の終業を受け付ける。引き継ぎ (handoff.md) が今回のシフトで書かれていなければ断られる。受け付ければ数秒後にセッションが止まる。",
-      }
-    : {
-        op: "rotate", ship, params: { seat: s.name }, title: `席 ${s.name} に入れ替えの印を立てる`, confirmLabel: "印を立てる",
-        detail: "止まっている persistent の席の次のシフトを、resume でなく新しいシフトにする。生きている席・persistent でない席は断られる。",
-      };
+function seatOp(ship: string, s: Seat): OpSpec {
+  return {
+    op: "rotate", ship, params: { seat: s.name }, title: `席 ${s.name} に入れ替えの印を立てる`, confirmLabel: "印を立てる",
+    detail: "止まっている persistent の席の次のシフトを、resume でなく新しいシフトにする。生きている席・persistent でない席は断られる。",
+  };
 }
 
 export function SeatTable({ ship, seats, now }: { ship: string; seats: Seat[]; now: number }) {
@@ -39,7 +34,7 @@ export function SeatTable({ ship, seats, now }: { ship: string; seats: Seat[]; n
         </thead>
         <tbody>
           {seats.map((s) => (
-            <SeatRow key={s.name} s={s} now={now} onOp={canOp ? (k) => setPending(seatOp(ship, s, k)) : null} />
+            <SeatRow key={s.name} s={s} now={now} onOp={canOp ? () => setPending(seatOp(ship, s)) : null} />
           ))}
         </tbody>
       </table>
@@ -48,7 +43,7 @@ export function SeatTable({ ship, seats, now }: { ship: string; seats: Seat[]; n
   );
 }
 
-function SeatRow({ s, now, onOp }: { s: Seat; now: number; onOp: ((k: "seat-stop" | "rotate") => void) | null }) {
+function SeatRow({ s, now, onOp }: { s: Seat; now: number; onOp: (() => void) | null }) {
   const active = [...s.active, ...s.reviewing.map((i) => `${i} (レビュー)`)].join(", ") || "-";
   return (
     <tr>
@@ -77,9 +72,8 @@ function SeatRow({ s, now, onOp }: { s: Seat; now: number; onOp: ((k: "seat-stop
       <td className={status.dim}>{s.log.slice(0, 160)}</td>
       {onOp && (
         <td>
-          {s.alive && <button onClick={() => onOp("seat-stop")} aria-label={`${s.name} の終業を指示`}>終業</button>}
           {!s.alive && s.shift === "persistent" && (
-            <button onClick={() => onOp("rotate")} aria-label={`${s.name} に入れ替えの印`}>入れ替え</button>
+            <button onClick={() => onOp()} aria-label={`${s.name} に入れ替えの印`}>入れ替え</button>
           )}
         </td>
       )}

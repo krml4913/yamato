@@ -1,4 +1,4 @@
-"""web コンソールの操作の共通部品と席の操作 (seat-stop・rotate): CLI を subprocess で呼ぶだけ。"""
+"""web コンソールの操作の共通部品と席の操作 (rotate): CLI を subprocess で呼ぶだけ。"""
 import http.client
 import json
 import subprocess
@@ -48,12 +48,6 @@ class OpsCommonTest(ShipTestCase):
         api_schema.assert_valid(self, body, PATH, method="post")
         self.assertEqual((body["exit_code"], body["output"], body["timed_out"]), (0, "ok\n", False))
 
-    def test_seat_stop_passes_the_seats_session_id_in_env(self):
-        with mock.patch.object(ops.subprocess, "run", return_value=completed()) as run:
-            self.call("seat-stop", self.req())
-        self.assertEqual(run.call_args.args[0][2:], ["seat-stop", str(self.shipdir), self.seat])
-        self.assertEqual(run.call_args.kwargs["env"]["CLAUDE_CODE_SESSION_ID"], "sid-1234-abcd")
-
     def test_a_seat_name_with_shell_characters_is_one_argument(self):
         status, body = self.call("rotate", self.req(params={"seat": "x; rm -rf /"}))
         self.assertEqual((status, body["error"]["code"]), (400, "bad_request"))
@@ -89,24 +83,20 @@ class OpsCommonTest(ShipTestCase):
     def test_needs_confirmation(self):
         with mock.patch.object(ops.subprocess, "run") as run:
             for b in (self.req(confirmed=False), {k: v for k, v in self.req().items() if k != "confirmed"}):
-                status, body = self.call("seat-stop", b)
+                status, body = self.call("rotate", b)
                 self.assertEqual((status, body["error"]["code"]), (400, "bad_request"))
         run.assert_not_called()
 
     def test_unknown_op_ship_seat_and_bad_body(self):
         with mock.patch.object(ops.subprocess, "run") as run:
             self.assertEqual(self.call("nope", self.req())[0], 404)
+            self.assertEqual(self.call("seat-stop", self.req())[0], 404)   # 外から席を止める入口は無い
             self.assertEqual(self.call("rotate", self.req(ship="zz"))[0], 404)
             self.assertEqual(self.call("rotate", self.req(params={"seat": "ghost"}))[0], 400)
             self.assertEqual(self.call("rotate", self.req(params={}))[0], 400)
             self.assertEqual(self.call("rotate", self.req(params={"seat": 1}))[0], 400)
             self.assertEqual(self.call("rotate", {"params": {}, "confirmed": True})[0], 400)
         run.assert_not_called()
-
-    def test_seat_stop_for_a_never_started_seat_is_400(self):
-        roster.update(self.shipdir, self.seat, sessionId=None)
-        status, body = self.call("seat-stop", self.req())
-        self.assertEqual(status, 400, body)
 
     def test_a_failing_launch_is_500_json(self):
         with mock.patch.object(ops.subprocess, "run", side_effect=OSError("boom")):
@@ -119,12 +109,6 @@ class OpsCommonTest(ShipTestCase):
         status, body = self.call("rotate", self.req())
         self.assertEqual((status, body["exit_code"]), (200, 0), body)
         self.assertTrue(roster.seat(self.shipdir, self.seat).get("rotateRequested"))
-
-    def test_real_cli_seat_stop_failure_is_shown_with_exit_code(self):
-        status, body = self.call("seat-stop", self.req())
-        self.assertEqual(status, 200, body)
-        self.assertNotEqual(body["exit_code"], 0)
-        self.assertIn("handoff.md", body["output"])
 
 
 class OpsHttpTest(unittest.TestCase):
@@ -164,7 +148,7 @@ class OpsHttpTest(unittest.TestCase):
 
 class OperationRegistryTest(unittest.TestCase):
     def test_only_registered_operations_exist(self):
-        self.assertEqual(sorted(ops.OPERATIONS), ["rotate", "seat-stop"])
+        self.assertEqual(sorted(ops.OPERATIONS), ["rotate"])
         with self.assertRaises(edit.EditError) as cm:
             ops.handle("up", {"ship": "x", "params": {}, "confirmed": True})
         self.assertEqual(cm.exception.status, 404)

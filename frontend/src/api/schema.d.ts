@@ -145,9 +145,7 @@ export interface paths {
          *     タイムアウト 30 秒・stdout と stderr をまとめて返す)。CLI が失敗しても (exit_code が 0 でなくても)
          *     応答は 200 で、画面は出力と exit code をそのまま見せる。op は OpName の値。知らない op は 404。
          *     確認が要る操作は、画面の確認を経た印 confirmed=true が無ければ実行せず 400 (bad_request)。
-         *     seat-stop は席のセッションの中から呼ぶコマンドなので、席の今のシフトの sessionId を環境変数で渡して呼ぶ
-         *     (引き継ぎが今回のシフトで書かれていなければ CLI が断る)。rotate は止まっている persistent の席に
-         *     入れ替えの印を立てる (生きている席は CLI が断る)。
+         *     今ある操作は rotate (止まっている persistent の席に入れ替えの印を立てる。生きている席は CLI が断る)。
          */
         post: operations["runOp"];
         delete?: never;
@@ -227,7 +225,7 @@ export interface components {
         OpRequest: {
             /** @description 艦の名前 (fleet の ships[].name)。 */
             ship: string;
-            /** @description 操作ごとの引数 (seat-stop・rotate は seat に席の名前)。値は文字列だけ。 */
+            /** @description 操作ごとの引数 (rotate は seat に席の名前)。値は文字列だけ。 */
             params: {
                 [key: string]: string;
             };
@@ -624,7 +622,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description 操作の名前 (seat-stop・rotate)。 */
+                /** @description 操作の名前 (今は rotate)。 */
                 op: string;
             };
             cookie?: never;

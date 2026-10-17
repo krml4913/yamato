@@ -30,32 +30,31 @@ describe("SeatTable の操作", () => {
     expect(screen.queryByText("操作")).toBeNull();
   });
 
-  it("生きている席に終業、止まっている persistent の席に入れ替え。それ以外は出さない", () => {
+  it("止まっている persistent の席にだけ入れ替えを出す (席を止める入口は無い)", () => {
     setToken(true);
     render(<SeatTable ship="dev" seats={seats} now={0} />);
-    expect(screen.getByRole("button", { name: "impl の終業を指示" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "pm に入れ替えの印" })).toBeTruthy();
-    expect(screen.getAllByRole("button")).toHaveLength(2);
+    expect(screen.getAllByRole("button")).toHaveLength(1);
   });
 
   it("確認画面を経てから POST し、出力 (text として) と exit code を出す。alert は使わない", async () => {
     setToken(true);
     const alert = vi.spyOn(window, "alert").mockImplementation(() => {});
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      argv: ["yamato", "seat-stop", "/s", "impl"], exit_code: 1, timed_out: false, truncated: false,
-      output: "<b>handoff.md が更新されていません</b>",
+      argv: ["yamato", "rotate", "/s", "pm"], exit_code: 1, timed_out: false, truncated: false,
+      output: "<b>生きている席には立てられない</b>",
     }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     render(<SeatTable ship="dev" seats={seats} now={0} />);
-    fireEvent.click(screen.getByRole("button", { name: "impl の終業を指示" }));
+    fireEvent.click(screen.getByRole("button", { name: "pm に入れ替えの印" }));
     expect(fetchMock).not.toHaveBeenCalled();   // 確認画面が先
-    fireEvent.click(screen.getByRole("button", { name: "終業を指示する" }));
+    fireEvent.click(screen.getByRole("button", { name: "印を立てる" }));
     await waitFor(() => expect(screen.getByRole("status").textContent).toBe("exit code 1"));
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe("/api/v1/ops/seat-stop");
+    expect(url).toBe("/api/v1/ops/rotate");
     expect(init.headers["X-Yamato-Token"]).toBe("tok");
-    expect(JSON.parse(init.body)).toEqual({ ship: "dev", params: { seat: "impl" }, confirmed: true });
-    expect(screen.getByLabelText("出力").textContent).toBe("<b>handoff.md が更新されていません</b>");
+    expect(JSON.parse(init.body)).toEqual({ ship: "dev", params: { seat: "pm" }, confirmed: true });
+    expect(screen.getByLabelText("出力").textContent).toBe("<b>生きている席には立てられない</b>");
     expect(screen.getByLabelText("出力").querySelector("b")).toBeNull();
     expect(alert).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "閉じる" }));
