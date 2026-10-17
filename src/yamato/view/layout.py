@@ -101,14 +101,14 @@ def build(ships: list[tuple[str, str, list[str]]], command: str) -> str:
     return assemble([tab_block(t, ref, seats, command) for t, ref, seats in ships])
 
 
-ADMIRAL_TAB = "admiral"   # the name that stands for ``$YAMATO_HOME/_admiral`` (D-011) in ``yamato view``
+ADMIRAL_TAB = "admiral"   # the name that stands for ``$YAMATO_HOME/_admiral`` in ``yamato view``
 
 
 SHIP_TAB_PREFIX = "ship:"   # a ship's tab is ``ship:<name>``, so a ship called "admiral" does not clash with ADMIRAL_TAB
 
 
 def legacy_tab_name(tab: str) -> str | None:
-    """The pre-T-046 name (no prefix) of a ship tab, or None (not a ship tab / would be the admiral's)."""
+    """The old name (no prefix) of a ship tab, or None (not a ship tab / would be the admiral's)."""
     if tab.startswith(SHIP_TAB_PREFIX) and tab[len(SHIP_TAB_PREFIX):] != ADMIRAL_TAB:
         return tab[len(SHIP_TAB_PREFIX):]
     return None

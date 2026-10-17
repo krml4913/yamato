@@ -1,4 +1,4 @@
-"""``yamato feed``: events.jsonl を流し見する (owner 依頼、inbox #14 / T-007)。
+"""``yamato feed``: events.jsonl を流し見する (owner 依頼、inbox #14)。
 
 直近 N 件 (既定 ``DEFAULT_LINES``) を出したあと、新しい行が来るたびに 1 行ずつ
 流す (``tail -f`` の要領)。叩き台は ``~/.config/yamato/feed.py`` (leader 作、

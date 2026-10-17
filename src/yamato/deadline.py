@@ -74,7 +74,7 @@ def write_raw(shipdir: Path, data: dict) -> None:
 
 
 def clear(shipdir: Path) -> None:
-    """Remove the deadline file, if any (T-020: a ``time_limit: none`` ship's ``up`` must
+    """Remove the deadline file, if any (a ``time_limit: none`` ship's ``up`` must
     not leave behind a stale deadline from an earlier ``--for``; without this, ``phase``
     would keep reading that old, possibly-expired deadline instead of ``NOT_UP``)."""
     with ship_lock(shipdir):

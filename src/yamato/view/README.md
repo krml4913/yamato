@@ -28,7 +28,7 @@ layout の各ペインは `<yamato> view attach <艦フォルダの絶対パス>
 - zellij の中: 艦ごとに 1 タブ分の layout を作って一時ファイルに書き、艦ごとに `zellij action new-tab --layout <file>` を呼ぶ (今のセッションにタブを足すだけで、attach し直さない)
 - zellij バイナリは `YAMATO_ZELLIJ` 環境変数で差し替えられる (既定 `zellij`。`claude.py` の `YAMATO_CLAUDE` に倣う)
 
-### 固まったとき・取り合うとき (T-089)
+### 固まったとき・取り合うとき
 
 - **原因 (推測を含む)**: ペインの `view attach` は子に `claude attach` を持つ。zellij がペインを閉じる (タブの作り直し、`delete-session`、サーバの終了) と、ペインの親プロセスに SIGHUP / SIGTERM が届く。以前はこれで `view attach` が即死し、子の `claude attach` が親なし (ppid 1) で席のセッションに繋がったまま残った。次の `view` で新しいペインが同じ席に attach すると、2 つの attach が互いを追い出し、追い出された側は「attach が終わった」で 1 秒後に付け直す、を繰り返す。固まる方は、サーバが生きているのに応答しない zellij へ `list-sessions` / `action` を投げて待ち続けるのが 1 つの形 (実機で再現はできていない)
 - **直したもの**: `view attach` は SIGHUP / SIGTERM を受けたら子の `claude attach` を止めて抜ける。zellij への非対話の呼び出しは 15 秒で打ち切る (固まったサーバを待ち続けない)。attach がすぐ (10 秒未満) 終わるのが 3 回続いたら 30 秒待ち、取り合いの疑いを表示する。同じ席に別の `view attach` があれば起動時に警告する。セッションを作り直すときは標準エラーに書く

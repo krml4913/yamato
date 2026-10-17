@@ -7,13 +7,13 @@ from .team import load_team
 from .util import YamatoError, check_name, register_ship, yamato_home
 
 TEMPLATES = Path(__file__).resolve().parent / "templates"
-SCHEMA = Path(__file__).resolve().parent / "schema" / "team.schema.json"   # team.yaml's JSON Schema (T-057)
+SCHEMA = Path(__file__).resolve().parent / "schema" / "team.schema.json"   # team.yaml's JSON Schema
 
 
 def _fill_workspace(text: str, wss: list[Path]) -> str:
     """Fill `{{workspace}}`. Both spots sit in YAML "..." strings, so `\\` and `"` need escaping (W5);
     `/{{workspace}}/` is a permission rule (Windows: `//c/Users/x`). With several repos the `workspace:`
-    line becomes a list and every rule line is repeated per repo (D-071)."""
+    line becomes a list and every rule line is repeated per repo."""
     from .runtime import rule_path
 
     def esc(v: str) -> str:
@@ -40,7 +40,7 @@ def _fill_workspace(text: str, wss: list[Path]) -> str:
 def create(name: str, workspace: str | list[str] | None, path: str | None, template: str, *,
            register: bool = True) -> tuple[Path, list[str]]:
     """``register=False``: build the folder (same shape as any ship) without adding it to
-    ``ships.json`` (T-020: the admiral's ``_admiral/`` stays out of ``ships`` / the registry;
+    ``ships.json`` (the admiral's ``_admiral/`` stays out of ``ships`` / the registry;
     it is still found by ``resolve_ship`` through the plain ``$YAMATO_HOME/<name>`` fallback)."""
     check_name("艦", name)
     tdir = TEMPLATES / template
@@ -53,7 +53,7 @@ def create(name: str, workspace: str | list[str] | None, path: str | None, templ
             raise YamatoError(f"ひな形 {template} は --workspace (席の作業ディレクトリ) が要る")
         wss: list[Path] = []
     else:
-        # one --workspace stays a string in team.yaml; several become a flat list (D-071)
+        # one --workspace stays a string in team.yaml; several become a flat list
         wss = [Path(w).expanduser().resolve() for w in ([workspace] if isinstance(workspace, str) else workspace)]
         for w in wss:
             if not w.is_dir():
@@ -84,7 +84,7 @@ def create(name: str, workspace: str | list[str] | None, path: str | None, templ
     from . import __version__
     from .upgrade import set_template
 
-    set_template(shipdir, template, __version__)   # which template/version this copy is from (D-081)
+    set_template(shipdir, template, __version__)   # which template/version this copy is from
     team = load_team(shipdir)  # the template must validate as written
     from .seat import ensure_seat_dirs
 
@@ -96,7 +96,7 @@ def create(name: str, workspace: str | list[str] | None, path: str | None, templ
 
     if ws is not None and ws != Path(team["workspace"]):
         warnings.append(f"ひな形 {template} は --workspace を使わない (席の作業ディレクトリは {team['workspace']})")
-    for w in team["workspaces"]:   # trust is checked for every repo (D-071)
+    for w in team["workspaces"]:   # trust is checked for every repo
         wp = Path(w["path"])
         trusted = is_trusted(wp)
         if not trusted:

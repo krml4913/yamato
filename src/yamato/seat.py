@@ -26,7 +26,7 @@ SEAT_FILES = ("memory-inbox.md",)   # the memory itself is the role's: roles/<ro
 OWNER = inbox.OWNER
 WATCHDOG_POLL = 30
 WATCHDOG_MIN_SLEEP = 1.0   # the shortest watchdog sleep (tests shorten it)
-# T-012: a seat still `stopping` this long after seat-stop accepted it almost certainly means
+# a seat still `stopping` this long after seat-stop accepted it almost certainly means
 # its delayed stop never ran (its cwd was a worktree that got removed, say) -- status/watchdog
 # force it again past this age, and do not retry more often than this either
 STOPPING_STUCK_AFTER = 5 * 60
@@ -140,7 +140,7 @@ def add_dirs(shipdir: Path, team: dict, cwd: str | None = None) -> list[str]:
 
 
 def check_workspaces(team: dict, first: Path | None = None) -> None:
-    """Existence and trust for every repo of the ship (D-071). ``first``: the seat's cwd when it is
+    """Existence and trust for every repo of the ship. ``first``: the seat's cwd when it is
     not the first repo (``send --cwd``): that one is checked in place of the first."""
     paths = [first or Path(team["workspaces"][0]["path"]), *(Path(w["path"]) for w in team["workspaces"][1:])]
     for i, p in enumerate(paths):
@@ -312,7 +312,7 @@ def reconcile(shipdir: Path, team: dict, listing: list[dict]) -> None:
 
 
 def restop_stuck(shipdir: Path, team: dict, listing: list[dict], now: float | None = None) -> list[str]:
-    """T-012: a seat that has been ``stopping`` for longer than ``STOPPING_STUCK_AFTER`` is
+    """A seat that has been ``stopping`` for longer than ``STOPPING_STUCK_AFTER`` is
     still alive (call this after ``reconcile``, which already closes a stopping seat whose
     process died) -- its delayed stop almost certainly never ran. Force it again, at most
     once per ``STOPPING_STUCK_AFTER`` window, and record why. Returns the seats acted on."""
@@ -333,7 +333,7 @@ def restop_stuck(shipdir: Path, team: dict, listing: list[dict], now: float | No
         sid = rec["sessionId"]
         minutes = int((now - started) / 60)
         roster.update(shipdir, seat, restopAttemptAt=now)
-        append_log(shipdir, seat, f"stopping のまま {minutes} 分: 止め直した (T-012)")
+        append_log(shipdir, seat, f"stopping のまま {minutes} 分: 止め直した")
         events.emit(shipdir, events.STOPPING_STUCK, seat=seat, now=now,
                     summary=f"stopping のまま {minutes} 分。止め直した",
                     data={"stopRequestedAt": started, "sessionId": sid})
@@ -407,7 +407,7 @@ def spawn_watchdog(shipdir: Path, token: str) -> None:
 
 
 def retired_seats(shipdir: Path, team: dict) -> list[dict]:
-    """T-014 (design-drift E): seats the roster knows that team.yaml no longer has -- ``count``
+    """design-drift E: seats the roster knows that team.yaml no longer has -- ``count``
     moved between 1 and 2+ renames a role's seats (``impl`` -> ``impl-1``..``impl-n``). What is
     left behind: the seat's board items (not ``done``) and unread inbox mail. Detection only;
     moving them is the captain's call (mechanism-not-policy)."""
@@ -471,7 +471,7 @@ def up(shipdir: Path, for_: str | None) -> int:
     now = time.time()
     limit = parse_duration(for_) if for_ else team["time_limit"]
     if for_ is None and limit is not None:
-        # D-015: 艦がすでに稼働中なら、--for なしの up (よくあるのは up --seats で席を
+        # 艦がすでに稼働中なら、--for なしの up (よくあるのは up --seats で席を
         # 足すためだけの呼び出し) で締切を縮めない。--for を明示したときは今までどおり
         # その値で上書きする (縮める意図を尊重)。
         current = deadline.read(shipdir)
@@ -479,7 +479,7 @@ def up(shipdir: Path, for_: str | None) -> int:
             limit = max(limit, current["deadline"] - now)
     listing = claude.agents()
     reconcile(shipdir, team, listing)
-    # time_limit: none は admiral だけの例外 (D-013, §0 B4): deadline を書かず、watchdog も
+    # time_limit: none は admiral だけの例外 (§0 B4): deadline を書かず、watchdog も
     # 立てない。deadline ファイルが無いままなので、hooks 側の終業の促し・強制停止は働かない
     # (deadline.phase(None) は NOT_UP のまま; hooks.py / seat.enforce はそれを「上限にまだ
     # 掛かっていない」として扱う)。--for を明示すればその艦にも一時的に上限を掛けられる。
@@ -538,12 +538,12 @@ def _unwatched_deadline(shipdir: Path, team: dict, token: str) -> None:
 
 
 def _warn_if_per_task_orphan(shipdir: Path, team: dict, seat: str) -> None:
-    """design-drift #11 / D-019: a live ``per_task`` seat should have been ``seat-stop``'d
+    """design-drift #11: a live ``per_task`` seat should have been ``seat-stop``'d
     when its task ended, so ``send`` finding one still alive is always worth a word --
     whether or not it still has an ``active`` board item (the same task's continuation is
     fine; nothing assigned means the previous task's conversation may leak into this one).
 
-    D-019's decision was to close such an orphan and start a fresh shift when it has no
+    The decision was to close such an orphan and start a fresh shift when it has no
     active item -- *if* an ``attach``'d (owner at the terminal) seat could be told apart
     from an idle one first. It cannot: ``claude agents --json`` carries no such field, and
     ``/status`` (which does show it) is a slash command inside the session, unreachable from
@@ -602,10 +602,10 @@ def send(shipdir: Path, seat: str, text: str, sender: str | None, cwd: str | Non
         out(f"次のシフトは {cwd} を cwd にして起動する (bgIsolation: none)")
     y = yamato_invocation()
     ph = deadline.phase(dl)
-    # a ship with no time limit at all (time_limit: none, D-013, the admiral only, T-020)
+    # a ship with no time limit at all (time_limit: none, the admiral only)
     # never has a deadline to read, so `phase` always reads NOT_UP -- but unlike a normal
     # ship that simply has not been `up`'d yet, it has no "up" step to wait for at all
-    # (T-021): the gate below does not apply to it.
+    # the gate below does not apply to it.
     if team["time_limit"] is not None and ph == deadline.NOT_UP:
         out(f"艦は起動していないので宛先は起こさない。`{y} up {ship_arg(shipdir)}` で起動すると、宛先の席が起きたときに読まれる。")
         return 0
@@ -757,7 +757,7 @@ def spawn_delayed_stop(shipdir: Path, seat: str, sid: str, after: int, forced: b
     (verify-p0-a Q3 b: the current turn and its Stop hook finish first). ``forced``: the
     seat's hooks past the grace period (§0 B4), not a ``seat-stop``.
 
-    T-012: run with the ship folder as ``cwd``, never the caller's (a worktree that a
+    Run with the ship folder as ``cwd``, never the caller's (a worktree that a
     `worktree rm` can remove out from under the sleeping shell before it wakes -- the whole
     script then fails to even start, and the seat never actually stops). The ship folder
     only goes away with the ship itself, unlike ``worktrees/<item>/`` inside it."""
@@ -819,7 +819,7 @@ def watchdog(shipdir: Path, token: str) -> int:
                 return 0
             now = time.time()
             if any(r.get("state") == roster.STOPPING for r in roster.load(shipdir)["seats"].values()):
-                restop_stuck(shipdir, current_team(shipdir), claude.agents(), now=now)   # T-012
+                restop_stuck(shipdir, current_team(shipdir), claude.agents(), now=now)
             if now >= dl["graceUntil"]:
                 team = current_team(shipdir)
                 stopped = enforce(shipdir, team)
@@ -886,7 +886,7 @@ def status(shipdir: Path) -> int:
     stopped = enforce(shipdir, team)
     if stopped:
         listing = claude.agents()
-    restopped = restop_stuck(shipdir, team, listing)   # T-012
+    restopped = restop_stuck(shipdir, team, listing)
     by = claude.by_session(listing)
     dl = deadline.read(shipdir)
     now = time.time()
@@ -918,7 +918,7 @@ def status(shipdir: Path) -> int:
             cols.append(f"waitingFor={waiting}")
         if rec.get("note"):
             cols.append(f"[{rec['note']}]")
-        if rec.get("rotateRequested"):   # T-024: seat-stop --rotate か `yamato rotate` の印
+        if rec.get("rotateRequested"):   # seat-stop --rotate か `yamato rotate` の印
             cols.append("[次は新しいシフト (入れ替えの印)]")
         failed = rec.get("launchFailed")
         if failed:

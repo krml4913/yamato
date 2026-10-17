@@ -79,7 +79,7 @@ def _reset_tty(out) -> None:
 @contextlib.contextmanager
 def _sigterm_as_interrupt():
     """zellij closes a pane with SIGHUP (or SIGTERM). Without this the pane process dies at once
-    and leaves its ``claude attach`` child orphaned and still attached (T-089). Turn both into
+    and leaves its ``claude attach`` child orphaned and still attached. Turn both into
     KeyboardInterrupt so ``run`` stops the child. No-op off the main thread."""
     def handler(signum, frame):
         raise KeyboardInterrupt
