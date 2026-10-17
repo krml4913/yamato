@@ -1,7 +1,7 @@
 """web コンソールの routing (T-105)。GET の path から (status, html) を返す。HTTP は持たない。
 
-- \`\`/\`\` (と \`\`/index.html\`\`): 一覧。dashboard.py が \`\`overview\`\` として渡す
-- \`\`/<segment>/<艦名>\`\`: PAGES のモジュール。艦名は \`\`ships\`\` (ships.json など) にあるものだけ
+- ``/`` (と ``/index.html``): 一覧。dashboard.py が ``overview`` として渡す
+- ``/<segment>/<艦名>``: PAGES のモジュール。艦名は ``ships`` (ships.json など) にあるものだけ
   (一致した名前の dict 引きだけ。path を組み立てない)。無ければ 404
 ページを足すには、モジュールを web/ に置いて PAGES に足す (ship.py が見本)。
 """
