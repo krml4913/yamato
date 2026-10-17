@@ -363,14 +363,15 @@ class ShipConfigTest(ShipTestCase):
         os.utime(cache, (time.time() - 10, time.time() - 10))
         self.assertEqual(self.ok()["pending"], {"changed": True, "keys": ["hub"]})
 
-    def test_unregistered_ship_is_not_found(self):
+    def test_unknown_ship_is_not_found(self):
         status, body = self.get("nope")
         self.assertEqual(status, 404)
         self.assertEqual(body["error"]["code"], "not_found")
-        # ships.json に無い (YAMATO_HOME 直下の folder だけ) 艦は受け付けない
+
+    def test_ship_only_under_home_is_found_like_files_and_fleet(self):
         reg = Path(os.environ["YAMATO_HOME"]) / "ships.json"
         reg.write_text("{}", encoding="utf-8")
-        self.assertEqual(self.get()[0], 404)
+        self.assertEqual(self.get()[0], 200)   # ships.json に無くても YAMATO_HOME 直下なら引ける
 
     def test_path_is_not_a_ship_name(self):
         for n in ("..", "%2e%2e", "t1%2F..", "_admiral"):
@@ -383,7 +384,7 @@ class ShipConfigTest(ShipTestCase):
         self.assertEqual(body["error"]["code"], "unreadable")
         self.assertEqual(api_schema.check(api_schema.load(), {"$ref": "#/components/schemas/Error"}, body), [])
         (self.shipdir / "team.yaml").unlink()
-        self.assertEqual(self.get()[1]["error"]["code"], "unreadable")
+        self.assertEqual(self.get()[1]["error"]["code"], "not_found")   # team.yaml が無い艦は引けない (fleet は exists=false で出す)
 
     def test_read_does_not_touch_the_ship_folder(self):
         before = _tree_state(self.shipdir)
@@ -443,6 +444,27 @@ class FleetTest(ShipTestCase):
         loose = next(s for s in body["ships"] if s["name"] == "loose")
         self.assertEqual((loose["registered"], loose["exists"], loose["team"]), (False, True, "loose"))
         self.assertNotIn("_hidden", [s["name"] for s in body["ships"]])
+
+    def test_fleet_config_and_files_agree_on_every_ship(self):
+        home = Path(os.environ["YAMATO_HOME"])
+        loose = home / "loose"      # ships.json に無い。YAMATO_HOME の下にだけある
+        (loose / "roles").mkdir(parents=True)
+        (loose / "team.yaml").write_text("name: loose\nroles: {}\n", encoding="utf-8")
+        (loose / "charter.md").write_text("# c\n", encoding="utf-8")
+        from yamato.util import register_ship
+
+        register_ship("gone", self.tmp / "gone")      # 登録だけでフォルダが無い
+        _, body = self.get()
+        names = {s["name"]: s["exists"] for s in body["ships"]}
+        self.assertEqual((names["loose"], names["gone"]), (True, False))
+        for name, exists in names.items():
+            cfg = dashboard.api_get(f"/api/v1/ships/{name}/config")[0]
+            files = dashboard.api_get(f"/api/v1/ships/{name}/files/charter.md")[0]
+            if exists:
+                self.assertEqual(cfg, 200, name)
+            else:
+                self.assertEqual((cfg, files), (404, 404), name)
+        self.assertEqual(dashboard.api_get("/api/v1/ships/loose/files/charter.md")[0], 200)
 
     def test_admiral_is_separate_with_roles_and_never_in_ships(self):
         adm = self.tmp / "home" / "_admiral"

@@ -249,8 +249,8 @@ def _error(code: str, message: str, detail: str | None = None) -> dict:
 
 
 def ship_file(name: str, file: str) -> tuple[int, dict]:
-    """``files/{file}``: 艦は ``all_ships`` の dict から、ファイルは列挙の dict から引く。"""
-    shipdir = admiral.all_ships().get(name)
+    """``files/{file}``: 艦は ``admiral.find_ship`` で、ファイルは列挙の dict から引く。"""
+    shipdir = admiral.find_ship(name)
     if shipdir is None:
         return 404, _error("not_found", "その艦は無い", name)
     try:
@@ -284,8 +284,8 @@ def api_get(path: str) -> tuple[int, dict]:
 
 
 def ship_config_get(name: str) -> tuple[int, dict]:
-    """``GET /api/v1/ships/{name}/config``。艦は ships.json にあるものだけ。読めない艦はエラーの JSON にする。"""
-    shipdir = shipconfig.registered(name)
+    """``GET /api/v1/ships/{name}/config``。艦の引き方は files と同じ (``admiral.find_ship``)。読めない艦はエラーの JSON にする。"""
+    shipdir = admiral.find_ship(name)
     if shipdir is None:
         return 404, _error("not_found", f"艦がありません: {name}")
     try:

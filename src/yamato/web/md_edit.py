@@ -22,7 +22,7 @@ def validate(text: str) -> list[str]:
 
 
 def resolve(ship: str, file: str) -> edit.Target | None:
-    shipdir = admiral.all_ships().get(ship)
+    shipdir = admiral.find_ship(ship)
     if shipdir is None:
         return None
     ent = files.listing(shipdir).get(file)

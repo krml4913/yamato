@@ -7,8 +7,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from . import team as team_mod
-from .admiral import ADMIRAL_DIRNAME
-from .util import YamatoError, load_registry, yamato_home
+from .admiral import ADMIRAL_DIRNAME, known_ships
+from .util import YamatoError, yamato_home
 
 
 def _team(shipdir: Path) -> tuple[str | None, list[str], str | None]:
@@ -23,14 +23,8 @@ def _team(shipdir: Path) -> tuple[str | None, list[str], str | None]:
 
 
 def _ships() -> list[dict]:
-    """ships.json の艦と、$YAMATO_HOME 直下で team.yaml のあるフォルダ (``_`` 始まりは除く)。"""
-    found: dict[str, tuple[Path, bool]] = {
-        n: (Path(p), True) for n, p in load_registry().items() if not n.startswith("_")}
-    home = yamato_home()
-    if home.is_dir():
-        for d in sorted(home.iterdir()):
-            if not d.name.startswith("_") and (d / "team.yaml").is_file():
-                found.setdefault(d.name, (d, False))
+    """``admiral.known_ships()`` (ships.json の艦と $YAMATO_HOME 直下で team.yaml のあるフォルダ)。"""
+    found = known_ships()
     out = []
     for name, (path, registered) in sorted(found.items()):
         exists = (path / "team.yaml").is_file()

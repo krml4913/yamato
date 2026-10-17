@@ -57,8 +57,8 @@ class MdEditTest(unittest.TestCase):
         outside = self.root / "outside.md"
         outside.write_text("out\n", encoding="utf-8")
         (self.ship / "roles" / "link.md").symlink_to(outside)
-        files = ("knowledge.md", "roles/impl/memory.md", "memory.md", "team.yaml", "roles/link.md",
-                 "roles/none.md", "../outside.md", "roles/../team.yaml", str(outside))
+        files = ("knowledge.md", "roles/impl/memory.md", "memory.md", "roles/link.md",
+                 "roles/none.md", "../outside.md", "roles/../charter.md", str(outside))
         for file in files:
             for op in ("preview", "commit"):
                 with self.assertRaises(edit.EditError, msg=(file, op)) as cm:

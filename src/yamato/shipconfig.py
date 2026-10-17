@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 
 from . import team as team_mod
-from .util import YamatoError, load_registry, read_json
+from .util import YamatoError, read_json
 
 SCHEMA = Path(__file__).parent / "schema" / "team.schema.json"
 
@@ -80,12 +80,6 @@ def pending(shipdir: Path) -> dict:
         except (YamatoError, OSError, ValueError):
             keys = []
     return {"changed": changed, "keys": keys}
-
-
-def registered(name: str) -> Path | None:
-    """ships.json にある艦の folder。無ければ None。"""
-    path = load_registry().get(name)
-    return Path(path) if path and not name.startswith("_") else None
 
 
 def ship_config(name: str, shipdir: Path) -> dict:
