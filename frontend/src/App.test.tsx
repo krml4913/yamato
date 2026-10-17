@@ -10,6 +10,11 @@ describe("App", () => {
     }
   });
 
+  it("/ship は艦を選ぶページ", () => {
+    render(<MemoryRouter initialEntries={["/ship"]}><App /></MemoryRouter>);
+    expect(screen.getByText("艦を選ぶ")).toBeInTheDocument();
+  });
+
   it("/ship/:name で艦名を出す", () => {
     render(<MemoryRouter initialEntries={["/ship/foo"]}><App /></MemoryRouter>);
     expect(screen.getByText("艦: foo")).toBeInTheDocument();
