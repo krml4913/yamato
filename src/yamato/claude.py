@@ -172,6 +172,17 @@ def _claude_json() -> Path:
     return Path(base) / ".claude.json" if base else Path.home() / ".claude.json"
 
 
+def user_settings_env() -> dict[str, str]:
+    """``env`` of the user's ``settings.json`` (Bedrock etc.); {} if absent or malformed."""
+    base = os.environ.get("CLAUDE_CONFIG_DIR")
+    path = (Path(base) if base else Path.home() / ".claude") / "settings.json"
+    try:
+        env = json.loads(path.read_text(encoding="utf-8")).get("env")
+    except (OSError, ValueError, AttributeError):
+        return {}
+    return {str(k): str(v) for k, v in env.items()} if isinstance(env, dict) else {}
+
+
 def git_root(path: Path) -> Path | None:
     try:
         cp = subprocess.run(["git", "-C", str(path), "rev-parse", "--show-toplevel"],

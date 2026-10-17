@@ -140,7 +140,7 @@ def _settings(shipdir: Path) -> dict:
     }}
 
 
-def upgrade(shipdir: Path, from_version: str | None, template: str | None, *, execvp=os.execvp,
+def upgrade(shipdir: Path, from_version: str | None, template: str | None, *, execvp=os.execvp, execvpe=os.execvpe,
             out=print, now: float | None = None) -> int:
     from .team import load_team
 
@@ -167,4 +167,6 @@ def upgrade(shipdir: Path, from_version: str | None, template: str | None, *, ex
         prompt=f"艦 {team['name']} の写しを v{old} から v{__version__} に上げる。材料を読んで、変更を 1 件ずつ出してくれ。")
     out(f"claude を起動する (cwd {shipdir})")
     os.chdir(shipdir)
-    return procs.run_foreground(argv, execvp=execvp)
+    # user settings' env goes to claude's environment, never into the (kept) settings.json: it holds secrets
+    env = {**os.environ, **claude.user_settings_env()} if claude.user_settings_env() else None
+    return procs.run_foreground(argv, execvp=execvp, env=env, execvpe=execvpe)

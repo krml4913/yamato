@@ -173,10 +173,14 @@ def terminate(pid, grace: float, alive: Callable[[], bool] | None = None, kill_w
 
 # --- 前面 -----------------------------------------------------------------------
 
-def run_foreground(argv: Sequence[str], *, execvp=os.execvp, run=subprocess.run) -> int:
+def run_foreground(argv: Sequence[str], *, execvp=os.execvp, run=subprocess.run,
+                   env: dict | None = None, execvpe=os.execvpe) -> int:
     """端末を渡して前面で走らせる。POSIX は exec (戻らない。差し替えた execvp のときだけ 0 で戻る)、
     Windows は待って終了コードを返す (execvp は別プロセスを作って即戻るので使えない)。"""
     if is_windows():
-        return run(list(argv)).returncode
-    execvp(argv[0], list(argv))
+        return (run(list(argv), env=env) if env is not None else run(list(argv))).returncode
+    if env is not None:
+        execvpe(argv[0], list(argv), env)
+    else:
+        execvp(argv[0], list(argv))
     return 0

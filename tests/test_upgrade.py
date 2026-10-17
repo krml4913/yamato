@@ -121,6 +121,35 @@ class UpgradeCommandTest(ShipTestCase):
         # the roles were not touched
         self.assertEqual((self.shipdir / "roles" / "impl.md").read_text(encoding="utf-8"), "手直し済み\n")
 
+    def test_user_env_goes_to_the_process_not_the_file(self):
+        import tempfile
+        envs = []
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "settings.json").write_text(json.dumps({
+                "env": {"CLAUDE_CODE_USE_BEDROCK": "1", "AWS_REGION": "us-east-1"},
+                "hooks": {"Stop": [{"hooks": [{"type": "command", "command": "x"}]}]}}), encoding="utf-8")
+            with mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": d}):
+                rc = upgrade.upgrade(self.shipdir, "v1.0.0", None,
+                                     execvpe=lambda f, a, e: (self.calls.append((f, a)), envs.append(e)),
+                                     out=lambda *_: None, now=1.0)
+        self.assertEqual(rc, 0)
+        (env,) = envs
+        self.assertEqual(env["CLAUDE_CODE_USE_BEDROCK"], "1")
+        self.assertEqual(env["AWS_REGION"], "us-east-1")
+        self.assertIn("PATH", env)
+        (backup,) = list((self.shipdir / ".upgrade").iterdir())
+        text = (backup / "settings.json").read_text(encoding="utf-8")
+        self.assertNotIn("env", json.loads(text))
+        self.assertNotIn("us-east-1", text)
+        (prog, argv), = self.calls
+        self.assertEqual(argv[argv.index("--setting-sources") + 1], "local")
+
+    def test_no_user_env_uses_plain_execvp(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d, mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": d}):
+            self.assertEqual(self.run_upgrade(), 0)
+        self.assertEqual(len(self.calls), 1)
+
     def test_template_name_comes_from_the_record(self):
         upgrade.set_template(self.shipdir, "dev", "1.0.0")
         self.assertEqual(self.run_upgrade(None), 0)
