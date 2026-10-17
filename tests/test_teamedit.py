@@ -106,6 +106,35 @@ class TeamEditTest(ShipTestCase):
         self.assertTrue(p["valid"], p["errors"])
         self.assertFalse(p["changed"])
 
+    def raw(self, content):
+        return edit.handle("preview", {"ship": "t1", "file": "team.yaml", "content": content})
+
+    def test_raw_yaml_syntax_error_has_line_number(self):
+        p = self.raw("name: t1\nroles:\n  impl: [a, b\nhub: x\n")
+        self.assertFalse(p["valid"])
+        self.assertRegex(p["errors"][0], r"^行 \d+: yaml を読めない")
+
+    def test_raw_yaml_validation_error_points_at_the_line(self):
+        text = self.path.read_text(encoding="utf-8")
+        lines = text.splitlines(True)
+        bad = "".join(lines) + "bogus_key: 1\n"
+        p = self.raw(bad)
+        self.assertFalse(p["valid"])
+        self.assertTrue(p["errors"][0].startswith(f"行 {len(lines) + 1}: "), p["errors"])
+        p = self.raw(text.replace("hub: impl", "hub: nobody") if "hub: impl" in text else text + "hub: nobody\n")
+        self.assertFalse(p["valid"])
+        self.assertRegex(p["errors"][0], r"^行 \d+: .*hub")
+
+    def test_raw_yaml_commit_conflict_and_write(self):
+        text = self.path.read_text(encoding="utf-8")
+        p = self.raw(text + "\n# メモ\n")
+        self.assertTrue(p["valid"], p["errors"])
+        self.path.write_text(text + "# 別の変更\n", encoding="utf-8")
+        with self.assertRaises(edit.EditError) as cm:
+            edit.handle("commit", {"ship": "t1", "file": "team.yaml", "content": text + "\n# メモ\n",
+                                   "base_hash": p["base_hash"]})
+        self.assertEqual(cm.exception.status, 409)
+
     def test_only_registered_ships_and_team_yaml(self):
         for ship, file in (("nope", "team.yaml"), ("t1", "knowledge.md"), ("t1", "../team.yaml"), ("_admiral", "team.yaml")):
             with self.assertRaises(edit.EditError) as cm:
