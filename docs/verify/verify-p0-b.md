@@ -94,7 +94,7 @@ claude --resume 50cba1b6-c333-... --bg -- "<質問>"    # フラグは付けな�
 |---|---|---|
 | Stop hook の数 (logs) | `running Stop hooks… 0/2` (自分の分 + plugin) | `running Stop hook` (自分の分だけ) |
 | 言語の指示 | JAPANESE (答えも日本語になりがち) | NONE |
-| `~/.claude/CLAUDE.md` の Ruflo 節 | YES | NO (モデルの自己申告) |
+| `~/.claude/CLAUDE.md` の Ruflo 節 | YES | NO (モデルの自己申告。実際は入っていた。下の追記) |
 | 自分の hooks (marker) | 発火した | 発火した |
 | 自分の deny (`echo DENYME-3`) | denied | denied |
 | permission mode | auto (`--settings` が user の dontAsk に勝つ) | auto |
@@ -169,7 +169,7 @@ settings.json のひな形:
 ## 注意点と未検証の事項
 - auto の classifier の判定は、ファイル経由の指示 (task.md) でも直接の依頼でも同じように拒否した。ただし試したのは 3 種類だけ。判定はモデル任せなので、deny リストが本命になる
 - レシピの `env -u GH_TOKEN` が効くかは**未検証**。bg の席は daemon から起動されるので、起動側で unset しても daemon に焼き付いた環境変数が残る可能性がある (#315)。P0 で確認が要る
-- Q3 の CLAUDE.md が除外されたかどうかは、モデルの自己申告でしか確認していない
+- Q3 の CLAUDE.md が除外されたかどうかは、モデルの自己申告でしか確認していない → **追記 (10-17)**: 元帥の実機確認で、自己申告は誤りだった。`--setting-sources project,local` でも `~/.claude/CLAUDE.md` は「project instructions」として席の文脈に入る。また `--settings` の `remoteControlAtStartup: false` は user の `true` に勝つ
 - `state` フィールドの意味 (終わったあとも `blocked` と出た件) は調べていない
 - 副作用: `~/.claude.json` に workspace trust を 4 件追加した (scratchpad の spikeb、repo1、ship2、ship3)
 - 後始末: spike-b.* のセッションはすべて stop + rm した。`claude agents --json --all` で spike-b が 0 件なのを確認した。repo の変更と PR はない
