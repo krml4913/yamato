@@ -81,6 +81,26 @@ def _today_usage(shipdir: Path, now: float) -> dict[str, int]:
     return out
 
 
+def _last_cost(shipdir: Path) -> dict[str, float | None]:
+    """席ごとの最新の headless の記録の total_cost_usd (無い・null・数でなければ None)。"""
+    import json
+
+    out: dict[str, float | None] = {}
+    try:
+        text = (Path(shipdir) / "usage.jsonl").read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return out
+    for raw in text.splitlines():
+        try:
+            row = json.loads(raw)
+        except ValueError:
+            continue
+        if isinstance(row, dict) and row.get("shift") == "headless":
+            c = row.get("total_cost_usd")
+            out[row.get("seat") or "?"] = c if isinstance(c, (int, float)) and not isinstance(c, bool) else None
+    return out
+
+
 def _report_summary(shipdir: Path) -> dict | None:
     """前回の日報 (report.latest) の「一言」「明日」。日報が無ければ None。"""
     p = report.latest(shipdir)
@@ -114,6 +134,7 @@ def gather(name: str, shipdir: Path, by: dict, now: float) -> dict:
     items = board_mod.Board(shipdir, team).items()
     active_assignees = board_mod.active_seats(items)
     usage = _today_usage(shipdir, now)
+    costs = _last_cost(shipdir)
     seats = []
     for s, spec in team["seats"].items():
         rec = roster.seat(shipdir, s)
@@ -132,7 +153,8 @@ def gather(name: str, shipdir: Path, by: dict, now: float) -> dict:
             "unread": len(inbox.unread(shipdir, s)),
             "red": admiral.red_flags(team, s, rec, live, now, has_active=s in active_assignees),
             "log": _last_log_line(shipdir, s), "tokens": usage.get(s, 0),
-            "budget": (team["roles"].get(spec.get("role")) or {}).get("max_budget_usd"),
+            "budget": (team["roles"].get(spec.get("role")) or {}).get("max_budget_usd") if spec["shift"] == "headless" else None,
+            "last_cost": costs.get(s),
         })
     waits = []
     for meta, body in report.pending_decisions(shipdir, team, lambda d: report.is_human(team, d)):
@@ -232,7 +254,11 @@ def _seat_table(g: dict, now: float) -> str:
         red = "<br>".join(f"<span class='{'red' if f.level == admiral.RED else 'warn'}' title='{e(f.detail)}'>"
                           f"{e(f.text)}</span>" for f in s["red"])
         status = e(str(s["status"] or "-")) + (f" <span class='warn'>{e(str(s['waitingFor']))}</span>" if s["waitingFor"] else "")
-        budget = f" <span class='dim'>/ 上限 ${e(str(s['budget']))}</span>" if s["budget"] else ""
+        budget = ""
+        if s["shift"] == "headless":   # max_budget_usd は -p の 1 回ごとの上限。他の席には出さない
+            prev = "-" if s["last_cost"] is None else f"${s['last_cost']:.2f}"
+            limit = f"${s['budget']}" if s["budget"] else "-"
+            budget = f"<br><span class='dim'>前回 {e(prev)} / 上限 {e(limit)}</span>"
         out.append(f"<tr><td><b>{e(s['name'])}</b> <span class='dim'>{e(str(s['shift']))}</span></td><td>{alive}</td>"
                    f"<td>{status}</td><td>{last}</td><td>{e(', '.join(s['active'] + [f'{i} (レビュー)' for i in s['reviewing']]) or '-')}</td>"
                    f"<td>{s['unread'] or '-'}</td><td>{red}</td>"
