@@ -50,6 +50,22 @@ jobs:
           git add -N src/yamato/web/dist
           git diff --exit-code -- src/yamato/web/dist
 
+  ids:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # 艦の board・判断の番号 (T-数字・D-数字) を repo に書かない。例に使える番号は 001〜009 だけ。
+      # tests/ と frontend のテスト (*.test.*) は、テストデータの id と出典の番号を機械で見分けられないので除く
+      - name: 艦の番号が無いこと
+        run: |
+          if git grep -nIE '[TD]-[0-9]{3}' -- src docs README.md frontend \
+              ':(exclude)src/yamato/web/dist' ':(exclude)frontend/src/api' \
+              ':(exclude)frontend/package-lock.json' ':(exclude)*.test.*' \
+            | grep -vE '[TD]-00[0-9]'; then
+            echo '艦の番号 (T-数字・D-数字) が残っている。理由を中身で書くか消す (例の id は 001〜009)' >&2
+            exit 1
+          fi
+
   python:
     runs-on: ubuntu-latest
     strategy:
