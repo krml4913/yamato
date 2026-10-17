@@ -516,6 +516,7 @@ zellij セッション
 - **載せるもの**: ページの一番上に owner の判断待ち (decider が人間の open な判断 + 急ぎ・経過・推しだけ。owner 宛て inbox の未読は上部に並べず、艦の枠に件数だけ出す。`status=waiting` の席の waitingFor は席の表の status 列で見る)。艦ごとに deadline・席の表 (生存 pid・status・最終・active の項目・未読数・要対応 (`admiral.red_flags` の `Flag(重さ, 文, 詳細)`。赤 = 詰まり・API エラー、黄 = 動いていない・担当が無い。文は「何が起きた → 何をする」で、内部の言葉は title 属性。列名は赤と黄が並ぶので「要対応」、凡例は表の上)・今日のトークン・作業ログの最後の 1 行。`shift: headless` の席だけ今日のトークンの下に「前回 $x / 上限 $y」: 前回 = usage.jsonl のその席の最新の headless の記録の `total_cost_usd`、無い・null は「-」、上限 = 役割の `max_budget_usd` (-p 1 回ごとの上限)、無ければ「-」。他の席は予算を出さない)・board の state 別の件数と active / blocked の項目・PR (board の `pr` 欄がある done 以外。workspace の origin が GitHub ならリンク)・直近 3 日の異常 (feed が赤くする種類と同じ集合 `feed.ABNORMAL_KINDS` を共有)。艦の枠の 2 段目 (T-096): 前回の日報の一言・明日 / 孤児 (`monitor.orphans`) / memory の候補数と前回の反映からの日数・棚卸しの目安 / 席の文脈量と rotate の閾値に対する割合 (80% 以上で「rotate が近い」、取れない席は「-」)。上部は判断待ちだけのまま
 - **壊れた艦**: 1 艦の読み取りで例外が出ても、その艦の枠にエラーを出して他の艦は描く
 - HTML はモジュール内で組み立てる (テンプレートエンジン・外部 CDN なし。値は必ず `html.escape` を通す)。60 秒ごとに meta refresh
+- **ページの分け方 (T-105, web コンソールの土台)**: `src/yamato/web/` に置く。`frame.py` = 共通の枠 (上のナビ「一覧 / 艦ごと」と CSS)、`router.py` = path から (status, html) を返す routing (HTTP なし)、`ship.py` = `/ship/<艦名>` (今は空ページ)。`/` は dashboard.py の一覧。ページは 1 ページ = 1 モジュールで、`SEGMENT` と `render(name, shipdir)` を持たせ `router.PAGES` に足す。艦名は `admiral.all_ships()` にあるものだけ (dict 引きで、path を組み立てない)。無ければ 404。GET だけ・127.0.0.1 固定・`html.escape` は変えない
 - 範囲外: 操作 (判断を閉じる・返事・席を止める)・ローカル以外からの閲覧・認証・トークンのドル換算・1 日の費用の合計や超過の警告
 
 ## 11. admiral (窓口)
