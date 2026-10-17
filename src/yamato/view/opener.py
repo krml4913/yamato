@@ -27,6 +27,7 @@ import contextlib
 import json
 import os
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -35,6 +36,9 @@ from ..util import YamatoError, yamato_home
 from . import layout
 
 DEFAULT_SESSION = "yamato-view"
+# A zellij server that is up but stuck answers no ``action`` / ``list-sessions`` call: without a
+# limit ``yamato view`` hangs on it (T-089). The interactive calls have no limit.
+ZELLIJ_TIMEOUT = 15
 
 
 def zellij_bin() -> str:
@@ -55,14 +59,21 @@ def _run_zellij(run, args: list[str], **kwargs):
         cp = run([zellij_bin(), *args], **kwargs)
     except FileNotFoundError:
         raise YamatoError(f"zellij コマンドが見つかりません ({zellij_bin()})") from None
+    except subprocess.TimeoutExpired:
+        raise YamatoError(_stuck(f"zellij {' '.join(args)}")) from None
     if cp.returncode != 0:
         raise YamatoError(f"zellij {' '.join(args)} が失敗しました (exit {cp.returncode})")
     return cp
 
 
+def _stuck(what: str) -> str:
+    return (f"{what} が {ZELLIJ_TIMEOUT} 秒たっても返りません (zellij のサーバが固まっている可能性)。"
+            "止まったセッションは `zellij delete-session --force yamato-view` で消せます (席は止まりません)")
+
+
 def _zellij(run, args: list[str]):
     """Non-interactive calls (list-sessions / new-tab / delete-session): capture output."""
-    return _run_zellij(run, args, capture_output=True, text=True)
+    return _run_zellij(run, args, capture_output=True, text=True, timeout=ZELLIJ_TIMEOUT)
 
 
 def _zellij_interactive(run, args: list[str]):
@@ -78,9 +89,11 @@ def _session_exists(run, session: str) -> bool:
     raising (``FileNotFoundError`` still becomes ``YamatoError``, same as
     every other zellij call)."""
     try:
-        cp = run([zellij_bin(), "list-sessions", "--short"], capture_output=True, text=True)
+        cp = run([zellij_bin(), "list-sessions", "--short"], capture_output=True, text=True, timeout=ZELLIJ_TIMEOUT)
     except FileNotFoundError:
         raise YamatoError(f"zellij コマンドが見つかりません ({zellij_bin()})") from None
+    except subprocess.TimeoutExpired:
+        raise YamatoError(_stuck("zellij list-sessions")) from None
     if cp.returncode != 0:
         return False
     names = {line.split()[0] for line in (cp.stdout or "").splitlines() if line.strip()}
@@ -182,6 +195,7 @@ def open_ships(refs: list[str] | None = None, *, command: str | None = None,
             # e.g. an EXITED (resurrectable) session, or zellij's actions changed: the panes are
             # only ``view attach`` processes, so throw the session away and start over from the
             # layout of every tab it should hold
+            print(f"セッション {session} を更新できなかったので作り直します (ペインは `view attach` だけで、席は止まりません)", file=sys.stderr)
             path.write_text(layout.assemble(list(merged.values())), encoding="utf-8", newline="\n")
             _zellij(run, ["delete-session", "--force", session])
             _zellij_interactive(run, ["--session", session, "--new-session-with-layout", str(path)])
