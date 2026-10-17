@@ -103,6 +103,9 @@ export function ConfigPage() {
               {config.pending.keys.length > 0 && ` (${config.pending.keys.join(", ")})`}
             </p>
           )}
+          {editToken() && (
+            <p><Link to={`/ship/${encodeURIComponent(name)}/config/raw`}>生の team.yaml を直す (フォームで扱えない項目はこちら)</Link></p>
+          )}
           {editToken() ? (
             <ConfigForm key={config.raw} name={name} config={config} saved={saved}
               onSaved={() => {
