@@ -3,15 +3,19 @@
 サーバーは ``/api/v1/*`` の JSON (応答の形の正本は docs/api/openapi.yaml) と ``web/dist/`` の配信だけ
 (HTML は組まない。画面は web/ のフロントが API を読んで描く)。
 
-読むだけ: 艦フォルダに何も書かない。``seat.status`` は呼ばない (reconcile・enforce・
+読むだけ (--edit なしのとき): 艦フォルダに何も書かない。``seat.status`` は呼ばない (reconcile・enforce・
 restop_stuck で roster を書き換え、席を止めるため)。roster・board・inbox・events・usage・
 作業ログを読み、``claude agents --json`` は 1 回の描画で 1 回だけ呼ぶ。
-サーバーは 127.0.0.1 だけ・GET だけ。bind 先を変えるオプションは作らない。標準ライブラリだけ (http.server)。
+サーバーは 127.0.0.1 だけ。bind 先を変えるオプションは作らない。標準ライブラリだけ (http.server)。
+既定は GET だけ。``--edit`` で起動したときだけ POST (``/api/v1/edit/*``) を受ける。受けるのは、起動ごとの乱数トークン
+(index.html の meta に埋める)・Host・Origin が全部合う要求だけ。
 """
 from __future__ import annotations
 
+import hmac
 import json
 import re
+import secrets
 import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -21,6 +25,7 @@ from urllib.parse import unquote, urlsplit
 from . import admiral, claude, deadline, feed, fleet, inbox, memory, monitor, procs, report, roster, rotate, seat, shipconfig
 from . import board as board_mod
 from .decide import _epoch
+from .web import edit
 from .web import files as web_files
 from .web import static
 from .util import YamatoError, fmt_span, fmt_time, today
@@ -206,6 +211,10 @@ def events_read(shipdir: Path, now: float) -> list[dict]:
 # --- API ----------------------------------------------------------------------
 
 API_OVERVIEW = "/api/v1/overview"
+API_EDIT = "/api/v1/edit/"          # + preview | commit
+TOKEN_HEADER = "X-Yamato-Token"
+TOKEN_META = "yamato-token"
+MAX_BODY = 1024 * 1024
 SHIP_FILE = re.compile(r"^/api/v1/ships/([^/]+)/files/([^/]+)$")
 
 
@@ -286,11 +295,22 @@ def ship_config_get(name: str) -> tuple[int, dict]:
     except Exception as ex:  # noqa: BLE001 — 壊れた艦 1 つでサーバーを落とさない
         return 500, _error("internal", "艦の設定の読み取りに失敗した", type(ex).__name__)
 
+def api_post(path: str, body: dict) -> tuple[int, dict]:
+    """``/api/v1/`` 以下の POST (検査は済み) を (status, JSON にする値) にする。HTTP なし。"""
+    if path.startswith(API_EDIT) and path[len(API_EDIT):] in ("preview", "commit"):
+        try:
+            return 200, edit.handle(path[len(API_EDIT):], body)
+        except edit.EditError as ex:
+            return ex.status, _error(ex.code, ex.message, ex.detail)
+        except Exception as ex:  # noqa: BLE001
+            return 500, _error("internal", "書き込みの処理に失敗した", type(ex).__name__)
+    return 404, _error("not_found", "その API は無い")
+
 
 # --- server -------------------------------------------------------------------
 
 class Handler(BaseHTTPRequestHandler):
-    """GET だけ。ほかのメソッドは 501 (do_* を定義しない)。"""
+    """GET と (--edit のときだけ) POST。ほかのメソッドは 501 (do_* を定義しない)。"""
 
     def _send(self, status: int, data: bytes, ctype: str) -> None:
         self.send_response(status)
@@ -300,26 +320,66 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _json(self, status: int, body: dict) -> None:
+        self._send(status, json.dumps(body, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
+
+    def _origin(self) -> str:
+        return f"{HOST}:{self.server.server_address[1]}"
+
+    def _host_ok(self) -> bool:
+        return self.headers.get("Host") == self._origin()
+
     def do_GET(self):  # noqa: N802
+        edit_mode = self.server.edit_token is not None
+        if edit_mode and not self._host_ok():   # DNS rebinding でトークン入りのページを読まれない
+            return self._json(403, _error("forbidden", "Host が違う"))
         path = urlsplit(self.path).path
         if path == "/api" or path.startswith("/api/"):
             status, body = api_get(path)
-            self._send(status, json.dumps(body, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
-            return
+            return self._json(status, body)
         status, data, ctype = self.server.dist.get(path)
+        if edit_mode and status == 200 and ctype.startswith("text/html") and b"</head>" in data:
+            meta = f'<meta name="{TOKEN_META}" content="{self.server.edit_token}">'.encode()
+            data = data.replace(b"</head>", meta + b"</head>", 1)
         self._send(status, data, ctype)
+
+    def do_POST(self):  # noqa: N802
+        if self.server.edit_token is None:
+            return self.send_error(501, "Unsupported method ('POST')")
+        origin = self._origin()
+        sent = self.headers.get(TOKEN_HEADER) or ""
+        if not (self._host_ok() and self.headers.get("Origin") == f"http://{origin}"
+                and hmac.compare_digest(sent.encode(), self.server.edit_token.encode())):
+            return self._json(403, _error("forbidden", "トークン・Host・Origin のどれかが合わない"))
+        if (self.headers.get("Content-Type") or "").split(";")[0].strip().lower() != "application/json":
+            return self._json(400, _error("bad_request", "Content-Type は application/json"))
+        try:
+            n = int(self.headers.get("Content-Length") or "")
+        except ValueError:
+            return self._json(400, _error("bad_request", "Content-Length が要る"))
+        if not 0 <= n <= MAX_BODY:
+            return self._json(400, _error("bad_request", f"本文は {MAX_BODY} バイトまで"))
+        try:
+            body = json.loads(self.rfile.read(n).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            return self._json(400, _error("bad_request", "本文が JSON でない"))
+        if not isinstance(body, dict):
+            return self._json(400, _error("bad_request", "本文は JSON の object"))
+        status, out = api_post(urlsplit(self.path).path, body)
+        self._json(status, out)
 
     def log_message(self, *a):  # noqa: D401 — アクセスログは出さない
         pass
 
 
-def make_server(port: int | None) -> ThreadingHTTPServer:
-    """127.0.0.1 に bind する。port 無指定は DEFAULT_PORT から順に空きを探す。指定済みで使用中ならエラー。"""
+def make_server(port: int | None, edit_mode: bool = False) -> ThreadingHTTPServer:
+    """127.0.0.1 に bind する。edit_mode なら起動ごとの乱数トークンを作る。port 無指定は DEFAULT_PORT から順に空きを探す。指定済みで使用中ならエラー。"""
     tries = [port] if port is not None else [DEFAULT_PORT + i for i in range(PORT_TRIES)]
     last = None
     for p in tries:
         try:
             srv = ThreadingHTTPServer((HOST, p), Handler)
+            srv.edit_token = secrets.token_urlsafe(32) if edit_mode else None
             srv.dist = static.Dist(static.DIST)   # 起動時に dist の実在ファイルの一覧を作る
             return srv
         except OSError as ex:
@@ -328,10 +388,10 @@ def make_server(port: int | None) -> ThreadingHTTPServer:
     raise YamatoError(f"port {tries[0]}{'-' + str(tries[-1]) if len(tries) > 1 else ''} を使えません: {last}{hint}")
 
 
-def serve(port: int | None = None, open_browser: bool = True, out=print) -> int:
-    srv = make_server(port)
+def serve(port: int | None = None, open_browser: bool = True, out=print, edit_mode: bool = False) -> int:
+    srv = make_server(port, edit_mode)
     url = f"http://{HOST}:{srv.server_address[1]}/"
-    out(f"yamato dashboard: {url} (Ctrl-C で止める)")
+    out(f"yamato dashboard: {url} (Ctrl-C で止める)" + (" [--edit: 書き込み可]" if edit_mode else ""))
     if open_browser:
         webbrowser.open(url)
     try:
@@ -344,10 +404,11 @@ def serve(port: int | None = None, open_browser: bool = True, out=print) -> int:
 
 
 def register(sub) -> None:
-    d = sub.add_parser("dashboard", help="全艦の owner の判断待ちと席の状況をローカルのブラウザで見る (127.0.0.1・読むだけ)")
+    d = sub.add_parser("dashboard", help="全艦の owner の判断待ちと席の状況をローカルのブラウザで見る (127.0.0.1・既定は読むだけ。--edit で書き込みも)")
     d.add_argument("--port", type=int, help=f"待ち受ける port (既定 {DEFAULT_PORT}。使用中なら次の番号を試す)")
     d.add_argument("--no-open", action="store_true", help="ブラウザを開かない")
+    d.add_argument("--edit", action="store_true", help="画面からの書き込み (POST) を受ける。付けなければ読むだけ")
 
 
 def run(args) -> int:
-    return serve(args.port, not args.no_open)
+    return serve(args.port, not args.no_open, edit_mode=args.edit)

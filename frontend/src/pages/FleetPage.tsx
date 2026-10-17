@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { getFleet, type Fleet } from "../api/client";
+import status from "../status.module.css";
+import table from "../table.module.css";
 import styles from "./FleetPage.module.css";
 
 type Ship = Fleet["ships"][number];
@@ -13,7 +15,7 @@ function ShipRow({ ship }: { ship: Ship }) {
       </th>
       <td className={styles.path}>{ship.path}</td>
       <td>{ship.registered ? "ships.json" : "$YAMATO_HOME 直下"}</td>
-      <td>{ship.exists ? <span className="ok">ある</span> : <span className={styles.missing}>フォルダが無い</span>}</td>
+      <td>{ship.exists ? <span className={status.ok}>ある</span> : <span className={styles.missing}>フォルダが無い</span>}</td>
       <td>{ship.team ?? "-"}</td>
       <td className={styles.error}>{ship.error ?? ""}</td>
     </tr>
@@ -42,13 +44,13 @@ export function FleetPage() {
       {!result && <p>読み込み中</p>}
       {fleet && (
         <>
-          <p className="dim">{fleet.home}</p>
+          <p className={status.dim}>{fleet.home}</p>
           <section>
             <h2>艦</h2>
             {fleet.ships.length === 0 ? (
-              <p className="dim">艦がない</p>
+              <p className={status.dim}>艦がない</p>
             ) : (
-              <table>
+              <table className={table.table}>
                 <thead>
                   <tr>
                     <th>名前</th>
@@ -68,7 +70,7 @@ export function FleetPage() {
           <section aria-label="admiral">
             <h2>admiral</h2>
             {fleet.admiral === null ? (
-              <p className="dim">まだ作られていない</p>
+              <p className={status.dim}>まだ作られていない</p>
             ) : (
               <>
                 <p className={styles.path}>{fleet.admiral.path}</p>

@@ -5,9 +5,9 @@
 }
 
 .missing {
-  color: #d97706;
+  color: var(--color-warn);
 }
 
 .error {
-  color: #dc2626;
+  color: var(--color-danger);
 }

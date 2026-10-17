@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getShipConfig, type ShipConfig } from "../api/client";
+import status from "../status.module.css";
+import table from "../table.module.css";
+import styles from "./config.module.css";
 
 type Field = ShipConfig["fields"][number];
 
@@ -19,7 +22,7 @@ function show(v: unknown): string {
 function Table({ rows }: { rows: Record<string, Record<string, unknown>> }) {
   const columns = [...new Set(Object.values(rows).flatMap((r) => Object.keys(r)))];
   return (
-    <table>
+    <table className={table.table}>
       <thead>
         <tr>
           <th>名前</th>
@@ -39,7 +42,7 @@ function Table({ rows }: { rows: Record<string, Record<string, unknown>> }) {
 }
 
 function Value({ field }: { field: Field }) {
-  if (!field.set) return <p className="dim">未設定</p>;
+  if (!field.set) return <p className={status.dim}>未設定</p>;
   if (isTable(field.value)) return <Table rows={field.value} />;
   if (typeof field.value === "object" && field.value !== null) {
     return <pre>{JSON.stringify(field.value, null, 2)}</pre>;
@@ -49,14 +52,14 @@ function Value({ field }: { field: Field }) {
 
 function Section({ field }: { field: Field }) {
   return (
-    <section id={`field-${field.key}`} className="config-field">
+    <section id={`field-${field.key}`} className={styles.field}>
       <h2>
         {field.key}
         {field.required && <small> 必須</small>}
         {field.type && <small> {field.type}</small>}
       </h2>
-      {field.description && <p className="dim">{field.description}</p>}
-      {field.enum && <p className="dim">選べる値: {field.enum.map(show).join(" / ")}</p>}
+      {field.description && <p className={status.dim}>{field.description}</p>}
+      {field.enum && <p className={status.dim}>選べる値: {field.enum.map(show).join(" / ")}</p>}
       <Value field={field} />
     </section>
   );
@@ -86,13 +89,13 @@ export function ConfigPage() {
     <>
       <h1>設定: {name}</h1>
       <p><Link to={`/ship/${encodeURIComponent(name)}`}>艦のページへ</Link></p>
-      {error && <p role="alert" className="config-error">読み込めない: {error}</p>}
+      {error && <p role="alert" className={styles.error}>読み込めない: {error}</p>}
       {!config && !error && <p>読み込み中</p>}
       {config && (
         <>
-          <p className="dim">{config.path}</p>
+          <p className={status.dim}>{config.path}</p>
           {config.pending.changed && (
-            <p role="status" className="config-pending">
+            <p role="status" className={styles.pending}>
               次の yamato up で効く変更がある
               {config.pending.keys.length > 0 && ` (${config.pending.keys.join(", ")})`}
             </p>
