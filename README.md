@@ -49,7 +49,7 @@ cd ~/dev/myapp && claude    # trust のダイアログで承認して終了
 | `status [<ship>]` | 席ごとの状態。手が要る席は `!!! <席>: <何が起きた → 何をする>` (赤: 権限・入力待ちの詰まり・API エラー (`state: failed`)) と、様子見の `(!) <席>: ...` (黄: 生きているのに `watch.stale_after` (既定 20m) より長く動いていない・per_task の席が生きているのに active の担当が無い) で出る。`stopping` のまま 5 分を超えた席は止め直す (T-012) |
 | `admiral [--stop [--force]]` | 常駐の admiral セッション (`_admiral/`、D-011) に `claude attach` する。止まっていれば talk と同じ規則 (send → 起こす) で起こしてから。`_admiral/` が無ければ `admiral` ひな形から初回に作る (登録はしない。`ships` には出ない)。`--stop` は引き継ぎを書いて `seat-stop` するよう admiral に伝えるだけで、それ自体はブロックしない。`--force` は自分で止まらなければ (最大 `ADMIRAL_STOP_WAIT` 秒待って) 強制停止する (`down --force` と同じ扱い) |
 | `ships` | (admiral) 全艦を 1 行ずつ: 稼働中か・残り時間・captain の最終・赤い席の数・owner の判断待ちの数・今日の使用量・最新の日報の日付 |
-| `dashboard [--port N] [--no-open]` | 全艦の「owner の判断待ち」(人間が decider の open な判断だけ。owner 宛て inbox の未読は艦の枠に件数だけ、待っている席は席の表の status 列に出る) と、艦ごとの席の状況 (生存・status・最終・担当・未読・赤・作業ログの最後・今日のトークン)・board の進み・PR・直近の異常に加え、艦の枠の中に前回の日報の「一言」「明日」・孤児 (担当の席が落ちて active のまま残った項目)・memory の候補の数と前回の反映からの日数・席ごとの文脈量と rotate の閾値までの近さ (取れない席は「-」。上部は判断待ちのまま)。`shift: headless` の席だけ今日のトークンの下に「前回 $x / 上限 $y」(前回 = usage.jsonl の最新の `total_cost_usd`、無いか null は「-」。上限は役割の `max_budget_usd`。他の席は予算を出さない) を、ローカルのブラウザの 1 ページで見る (D-093)。標準ライブラリの http.server で `127.0.0.1` だけに待ち受け (bind 先を変えるオプションは無い)、GET だけ、艦フォルダには何も書かない (`status` と違い roster も席も触らない)。60 秒ごとに自動更新。既定 port は 8765 (使用中なら次の番号を試す。`--port` で指定すると使用中はエラー)。既定でブラウザを開く (`--no-open` で開かない)。Ctrl-C で止まる |
+| `dashboard [--port N] [--no-open] [--edit]` | 全艦の「owner の判断待ち」(人間が decider の open な判断だけ。owner 宛て inbox の未読は艦の枠に件数だけ、待っている席は席の表の status 列に出る) と、艦ごとの席の状況 (生存・status・最終・担当・未読・赤・作業ログの最後・今日のトークン)・board の進み・PR・直近の異常に加え、艦の枠の中に前回の日報の「一言」「明日」・孤児 (担当の席が落ちて active のまま残った項目)・memory の候補の数と前回の反映からの日数・席ごとの文脈量と rotate の閾値までの近さ (取れない席は「-」。上部は判断待ちのまま)。`shift: headless` の席だけ今日のトークンの下に「前回 $x / 上限 $y」(前回 = usage.jsonl の最新の `total_cost_usd`、無いか null は「-」。上限は役割の `max_budget_usd`。他の席は予算を出さない) を、ローカルのブラウザの 1 ページで見る。標準ライブラリの http.server で `127.0.0.1` だけに待ち受け、`/api/v1/*` の JSON と `src/yamato/web/dist/` (フロントの build 出力。無ければ「build されていない」と出す) を返し (bind 先を変えるオプションは無い)、既定は GET だけで艦フォルダには何も書かない (`status` と違い roster も席も触らない)。`--edit` を付けて起動したときだけ、画面からの書き込み (`POST /api/v1/edit/preview` → `commit`) を受ける: 起動ごとの乱数トークン (`index.html` に埋まる)・Host・Origin が全部合う要求だけ通し、preview の差分を見て commit し、preview 後にファイルが変わっていれば拒み、上書き前の版を `.runtime/edit-backup/` に 1 世代残す。付けなければ POST は 501。既定 port は 8765 (使用中なら次の番号を試す。`--port` で指定すると使用中はエラー)。既定でブラウザを開く (`--no-open` で開かない)。Ctrl-C で止まる。web コンソールの JSON API (M1 は読むだけ) の正本は [docs/api/openapi.yaml](docs/api/openapi.yaml) (OpenAPI 3.1。応答の検査は `tests/api_schema.py`。実装済みは `GET /api/v1/overview`・`GET /api/v1/fleet` (ships.json の艦と `_admiral`。画面は `/fleet`)・`GET /api/v1/ships/{name}/config` (艦の設定を項目ごとに。画面は `/ship/<艦名>/config`) と、`roles/*.md`・`charter.md`・`knowledge.md` を返す `GET /api/v1/ships/{name}/files/{file}` (画面は `/ship/<艦名>/files/<file>` で markdown を出す)と、書き込みの土台 `POST /api/v1/edit/preview`・`commit` (書ける対象はまだ無い)) |
 | `extend <ship> <期間>` | (admiral) deadline を延ばす (データの書き換えだけ。過ぎていれば今から数える) |
 | `halt <ship>` | (admiral) 緊急停止。猶予なしで全席を強制停止し、日報の安全網を通す |
 | `talk <ship> [<seat>]` | (admiral) 席に `claude attach` する (既定は team.yaml の `talk_default`、省略時 hub)。止まっている席は send と同じ規則で起こしてから。headless の席は attach できないので断る (send で頼む)。使い方は [docs/admiral.md](docs/admiral.md) |
@@ -60,7 +60,7 @@ cd ~/dev/myapp && claude    # trust のダイアログで承認して終了
 | `board kanban <ship> [--all]` | 列ごとに見出し + 件数 + 項目 (T-030)。列は `board.columns` があればその順・その名前、無ければ state の順 (open/active/blocked)。done は既定で出さず、`--all` で archive (done) も出す |
 | `board note <ship> <item> "<text>" [--by <seat>]` | 項目の本文 (`## 経緯` の上) に追記し、経緯に 1 行残す。frontmatter (state・assignee など) は変えない。外を読む役割 (調査艦の researcher・fact-checker) が使う |
 | `log <ship> <seat> "<text>"` | 席の作業ログに 1 行 |
-| `worktree add <ship> <item> [--repo <呼び名>]... [--branch <b>] [--base <ref>] [--path <dir>]` | 項目の作業場所を `git worktree add` で作り、パスを出す (既にあればそのパス。何度呼んでもよい)。場所の既定は艦フォルダの `worktrees/<item>/`、ブランチは `--branch` → 項目の `branch` → `yamato/<ship>/<item>`、起点は `origin/<git.base>` (fetch してから。無ければ `<git.base>`)。項目に `worktree` と `branch` を書く。複数 repo の艦 (workspace が配列) は `--repo` で repo を選び (省略時は先頭、繰り返せる)、場所は `worktrees/<item>/<呼び名>/`、`--branch <repo>=<b>` で repo ごとにブランチを付けられ、項目の `worktree` / `branch` / `pr` / `merged_by` は `{呼び名: 値}` になる ([design.md](docs/design.md) §0) |
+| `worktree add <ship> <item> [--repo <呼び名>]... [--branch <b>] [--base <ref>] [--path <dir>]` | 項目の作業場所を `git worktree add` で作り、パスを出す (既にあればそのパス。何度呼んでもよい)。場所の既定は艦フォルダの `worktrees/<item>/`、ブランチは `--branch` → 項目の `branch` → `yamato/<ship>/<item>`、起点は `origin/<git.base>` (fetch してから。無ければ `<git.base>`)。項目の `branch` が起点 (`--base` か `<git.base>`) と同じ名前なら無視して `yamato/<ship>/<item>` を切り、`--branch` で起点と同じ名前を渡すと断る (手元の base をそのまま checkout して commit が base に乗るのを防ぐ)。項目に `worktree` と `branch` を書く。複数 repo の艦 (workspace が配列) は `--repo` で repo を選び (省略時は先頭、繰り返せる)、場所は `worktrees/<item>/<呼び名>/`、`--branch <repo>=<b>` で repo ごとにブランチを付けられ、項目の `worktree` / `branch` / `pr` / `merged_by` は `{呼び名: 値}` になる ([design.md](docs/design.md) §0) |
 | `worktree path <ship> <item> [--repo]` / `worktree list <ship>` (`rm` も `--repo`) | 項目の worktree のパス (無ければ失敗) / 艦の worktree の一覧 (未 commit・未 push の件数つき) |
 | `worktree rm <ship> <item> [--force]` | 片付ける。未 commit の変更か、どのリモートにもない commit があれば断る (`--force` で外す) |
 | `pr open <ship> <item> [--repo <呼び名>]... [--title] [--body] [--draft]` | 項目の `branch` から `gh pr create` (base は `git.base`)。項目に `pr` を書き、列に `review` があれば動かし、項目の `reviewer` (無ければ hub) に send する |
@@ -167,11 +167,35 @@ unit test は速く保つ (遅いと開発の速さにそのまま響く)。全�
 - git を使うテストは `tests/test_worktree_pr.py` の `GitShipTestCase` のように、一時 repo を setUpClass で 1 回作ってテストごとにコピーする。git の起動 1 回がおよそ 10 ms、push は 40 ms かかる
 - 本物のプロセス・本物の claude で確かめることは unit test ではなく E2E ([docs/e2e/e2e-p0.md](docs/e2e/e2e-p0.md)、[docs/e2e/e2e-p1.md](docs/e2e/e2e-p1.md)) でやる
 
+## 開発者向け: web console のフロント
+
+利用者は node 不要。画面は `src/yamato/web/dist/` にビルド済みで commit してあり、`yamato` はそれを配信するだけ。フロントを直すときだけ Node 24 (`frontend/.nvmrc`) と npm が要る。
+
+dist は **版を出すときだけ** build して commit する。develop 向けの PR では dist を変えない (build の生成物は PR ごとに衝突するため。CI が落とす)。手元で `npm run build` して dist が変わったら、commit の前に `git checkout -- src/yamato/web/dist` で戻す。画面ごとの CSS は CSS Modules (`*.module.css`) に置き、共通の `frontend/src/style.css` は変数とリセットだけにする。
+
+```sh
+cd frontend
+npm ci              # 依存を入れる (lockfile どおり)
+npm run dev         # vite の dev server。/api は 127.0.0.1:8765 (yamato dashboard) に proxy。別 port は YAMATO_API=http://127.0.0.1:<port>
+npm run lint        # eslint + typescript-eslint
+npm run typecheck   # tsc --noEmit
+npm test            # vitest
+npm run gen-api     # docs/api/openapi.yaml (API の正本) から src/api/schema.d.ts を生成。生成物は commit する
+npm run build       # src/yamato/web/dist/ に出力。develop 向けの PR には含めない (版を出すときに commit する)
+```
+
+## CI
+
+`.github/workflows/ci.yml` (GitHub Actions)。push と PR (対象は main・develop) で走り、secrets は使わない。
+- frontend: `frontend/.nvmrc` の Node で `npm ci` → lint → typecheck → test → build → gen-api を流す。そのうえで、`frontend/src/api/` の生成した型が commit と一致するかを全 PR で見る (`docs/api/openapi.yaml` を変えて型を commit し忘れると落ちる)。dist は、develop 向けの PR では build の前に PR の差分に dist が含まれていないかを見て (含まれると落ちる)、main 向けの PR と main への push では build した結果が commit と一致するかを見る (古い dist だと落ちる)
+- python: `python -m unittest discover` を 3.11 と 3.13 で流す。zellij・本物の claude には頼らない (偽の claude を使う)
+
 ## docs
 初めての人はまず [docs/handoff.md](docs/handoff.md) (読む順番はそこの §2)。
 
 - [design.md](docs/design.md) — 設計書
 - [design-p1.md](docs/design-p1.md) — P1 の詳細設計
+- yaml の部分置き換え (`src/yamato/yamlpatch.py`) — コメントと並びを保って team.yaml の値を変える部品。仕様は [design.md §10.2](docs/design.md)
 - [admiral.md](docs/admiral.md) — admiral を務めるときの約束とコマンド
 - [migration.md](docs/migration.md) — v1.0.0 以降の変更の移行手順 (既存の艦・利用者がやること)
 - [events.md](docs/events.md) — events.jsonl の行の形式と読み方、lastActive

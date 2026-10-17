@@ -1,0 +1,5 @@
+/* 画面をまたいで使う状態の色 */
+.red { color: var(--color-danger); font-weight: 600; }
+.warn { color: var(--color-warn); }
+.ok { color: var(--color-ok); }
+.dim { opacity: 0.65; }
