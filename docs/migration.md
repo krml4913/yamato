@@ -62,7 +62,7 @@ v1.2.0 の項目のうち、**互換が 1 版だけあるもの (次の版で消
 3. 下の各項目のうち要るものだけ、艦の写しに反映する。本命は `yamato ship upgrade <艦>` (v1.1.0 以降に作った艦は template の記録があるので `--from` は不要。無ければ `--from v1.1.0`)。手で写すなら `git -C ~/dev/yamato diff v1.1.0 v1.2.0 -- src/yamato/templates/dev/` で差分を見る
 4. 艦を起こす: `yamato up <艦>`。team.yaml を変えたときは、この `up` で `.runtime/team.json` に写って効く
 
-### 新コマンド `yamato dashboard`: 全艦の元帥待ちと席の状況をローカルのブラウザで見る (T-079, D-093)
+### 新コマンド `yamato dashboard`: 全艦の owner 待ちと席の状況をローカルのブラウザで見る (T-079, D-093)
 - 何が変わったか: `yamato dashboard [--port N] [--no-open]` を足した。`127.0.0.1` だけで待ち受け (既定 port 8765)、GET だけ・艦フォルダには何も書かない。あわせて内部で `feed._ABNORMAL_KINDS` を `feed.ABNORMAL_KINDS` に改名した (dashboard と共有するため。表示は変わらない)
 - 既存の艦がやること: なし。team.yaml・艦フォルダの形式・既存コマンドに影響しない。使うなら `~/dev/yamato` を pull して `yamato dashboard`
 - PR: T-079
