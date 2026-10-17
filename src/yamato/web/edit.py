@@ -6,6 +6,9 @@
 
 どのファイルを書けるかはここでは決めない。``RESOLVERS`` に (艦, ファイル名) から ``Target`` を返す関数を
 足した分だけが書ける対象になる (何も足さなければ、どれも 404)。
+
+新しい中身は全文 (``content``) で送るか、``Target.patch`` を持つ対象なら今の中身に当てる操作 (``ops``) で送る。
+操作は preview / commit のそれぞれで、ハッシュを取ったのと同じバイト列に当てる (間に変更が入る隙を作らない)。
 """
 from __future__ import annotations
 
@@ -37,6 +40,7 @@ class Target:
     shipdir: Path                               # 艦フォルダ (.runtime/ の場所)
     key: str                                    # 退避ファイルの名前に使う (ファイル名)
     validate: Callable[[str], list[str]]        # 新しい中身の問題の一覧 (空なら通る)
+    patch: Callable[[str, list], str] | None = None   # (今の中身, 操作の列) → 新しい中身。無ければ全文置き換えだけ
 
 
 Resolver = Callable[[str, str], "Target | None"]
@@ -77,10 +81,20 @@ def _decode(data: bytes | None) -> str:
         raise EditError(500, "unreadable", "今のファイルを UTF-8 として読めない", type(ex).__name__) from ex
 
 
-def preview(target: Target, content: str) -> dict:
+def _content(target: Target, old: str, content: str | None, ops: list | None) -> str:
+    """全文 (content) か、今の中身に当てる操作 (ops) から新しい中身を決める。操作は読んだ同じバイト列に当てる。"""
+    if ops is None:
+        return content if content is not None else old
+    if target.patch is None:
+        raise EditError(400, "bad_request", "このファイルは操作 (ops) では直せない。content を送る")
+    return target.patch(old, ops)
+
+
+def preview(target: Target, content: str | None = None, ops: list | None = None) -> dict:
     """検証して差分を返す。何も書かない。``base_hash`` は commit に渡す。"""
     snap = _snapshot(target.path)
     old = _decode(snap)
+    content = _content(target, old, content, ops)
     errs = list(target.validate(content))
     diff = "".join(difflib.unified_diff(old.splitlines(True), content.splitlines(True),
                                         f"a/{target.key}", f"b/{target.key}"))
@@ -114,15 +128,16 @@ def _atomic_write(path: Path, data: bytes) -> None:
         raise
 
 
-def commit(target: Target, content: str, base_hash: str) -> dict:
+def commit(target: Target, content: str | None, base_hash: str, ops: list | None = None) -> dict:
     """preview 以降にファイルが変わっていなければ書く。変わっていれば 409、検証に落ちれば 422。"""
-    errs = list(target.validate(content))
-    if errs:
-        raise EditError(422, "invalid", "検証に通らない", "; ".join(errs))
     with _lock:
         snap = _snapshot(target.path)
         if _digest(snap) != base_hash:
             raise EditError(409, "conflict", "preview のあとにファイルが変わっている。やり直す")
+        content = _content(target, _decode(snap), content, ops)
+        errs = list(target.validate(content))
+        if errs:
+            raise EditError(422, "invalid", "検証に通らない", "; ".join(errs))
         try:
             target.path.parent.mkdir(parents=True, exist_ok=True)
             if snap is not None:
@@ -135,13 +150,17 @@ def commit(target: Target, content: str, base_hash: str) -> dict:
 
 def handle(op: str, body: dict) -> dict:
     """``POST /api/v1/edit/{preview,commit}`` の本体 (トークンなどの検査は済んでいる前提)。"""
-    ship, file, content = body.get("ship"), body.get("file"), body.get("content")
-    if not (isinstance(ship, str) and isinstance(file, str) and isinstance(content, str)):
-        raise EditError(400, "bad_request", "ship・file・content (文字列) が要る")
+    ship, file = body.get("ship"), body.get("file")
+    content, ops = body.get("content"), body.get("ops")
+    if not (isinstance(ship, str) and isinstance(file, str)):
+        raise EditError(400, "bad_request", "ship・file (文字列) が要る")
+    if (content is None) == (ops is None) or not (content is None or isinstance(content, str)) \
+            or not (ops is None or isinstance(ops, list)):
+        raise EditError(400, "bad_request", "content (文字列) か ops (配列) のどちらか 1 つが要る")
     target = resolve(ship, file)
     if op == "preview":
-        return preview(target, content)
+        return preview(target, content, ops)
     base = body.get("base_hash")
     if not isinstance(base, str):
         raise EditError(400, "bad_request", "commit には preview が返した base_hash が要る")
-    return commit(target, content, base)
+    return commit(target, content, base, ops)

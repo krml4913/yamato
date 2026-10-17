@@ -25,7 +25,7 @@ from urllib.parse import unquote, urlsplit
 from . import admiral, claude, deadline, feed, fleet, inbox, memory, monitor, procs, report, roster, rotate, seat, shipconfig
 from . import board as board_mod
 from .decide import _epoch
-from .web import edit, md_edit  # noqa: F401  (md_edit は import で RESOLVERS に足される)
+from .web import edit, md_edit, teamedit  # noqa: F401  (md_edit は import で RESOLVERS に足される)
 from .web import files as web_files
 from .web import static
 from .util import YamatoError, fmt_span, fmt_time, today
@@ -294,6 +294,9 @@ def ship_config_get(name: str) -> tuple[int, dict]:
         return 500, _error("unreadable", str(ex), "YamatoError")
     except Exception as ex:  # noqa: BLE001 — 壊れた艦 1 つでサーバーを落とさない
         return 500, _error("internal", "艦の設定の読み取りに失敗した", type(ex).__name__)
+
+edit.RESOLVERS.append(teamedit.resolve)
+
 
 def api_post(path: str, body: dict) -> tuple[int, dict]:
     """``/api/v1/`` 以下の POST (検査は済み) を (status, JSON にする値) にする。HTTP なし。"""
