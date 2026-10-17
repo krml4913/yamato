@@ -145,7 +145,10 @@ export interface paths {
          *     タイムアウト 30 秒・stdout と stderr をまとめて返す)。CLI が失敗しても (exit_code が 0 でなくても)
          *     応答は 200 で、画面は出力と exit code をそのまま見せる。op は OpName の値。知らない op は 404。
          *     確認が要る操作は、画面の確認を経た印 confirmed=true が無ければ実行せず 400 (bad_request)。
-         *     今ある操作は rotate (止まっている persistent の席に入れ替えの印を立てる。生きている席は CLI が断る)。
+         *     今ある操作は rotate (止まっている persistent の席に入れ替えの印を立てる。生きている席は CLI が断る)・
+         *     艦の up (params: for・seats は省ける)・down・down-force (down --force)・extend (params.span)・halt。
+         *     艦の操作は yamato up / down / extend / halt をそのまま呼ぶ (席や admiral の名前は借りない)。CLI が断れば exit_code と output にそのまま出る。
+         *     up は 30 秒を超えると打ち切られ timed_out になる。
          */
         post: operations["runOp"];
         delete?: never;
@@ -225,7 +228,7 @@ export interface components {
         OpRequest: {
             /** @description 艦の名前 (fleet の ships[].name)。 */
             ship: string;
-            /** @description 操作ごとの引数 (rotate は seat に席の名前)。値は文字列だけ。 */
+            /** @description 操作ごとの引数 (rotate は seat に席の名前、up は for・seats、extend は span)。値は文字列だけ。 */
             params: {
                 [key: string]: string;
             };
@@ -622,7 +625,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description 操作の名前 (今は rotate)。 */
+                /** @description 操作の名前 (rotate・up・down・down-force・extend・halt)。 */
                 op: string;
             };
             cookie?: never;

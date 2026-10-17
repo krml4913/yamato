@@ -146,11 +146,76 @@ class OpsHttpTest(unittest.TestCase):
         self.assertEqual(self.post(self.edit_srv), 404)   # 通る (艦が無いので 404)
 
 
+class ShipOpsTest(ShipTestCase):
+    """up・down・extend・halt: 本物は走らせず subprocess を偽物にして、呼ぶ引数と環境を確かめる。"""
+
+    def setUp(self):
+        super().setUp()
+        p = mock.patch("yamato.admiral.find_ship", side_effect=lambda n: self.shipdir if n == "t1" else None)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def run_op(self, op, params=None, **kw):
+        body = {"ship": "t1", "params": params or {}, "confirmed": True, **kw}
+        with mock.patch.object(ops.subprocess, "run", return_value=completed(b"ok\n", 0)) as run:
+            status, resp = dashboard.api_post(f"/api/v1/ops/{op}", body)
+        return status, resp, run
+
+    def test_each_op_calls_the_regular_cli_entry(self):
+        d = str(self.shipdir)
+        cases = [
+            ("up", {}, ["up", d, "--quiet"]),
+            ("up", {"for": "3h", "seats": "impl,review"}, ["up", d, "--quiet", "--for=3h", "--seats=impl,review"]),
+            ("down", {}, ["down", d]),
+            ("down-force", {}, ["down", d, "--force"]),
+            ("extend", {"span": "1h"}, ["extend", d, "1h"]),
+            ("halt", {}, ["halt", d]),
+        ]
+        for op, params, expect in cases:
+            with self.subTest(op=op, params=params):
+                status, body, run = self.run_op(op, params)
+                self.assertEqual(status, 200, body)
+                argv = run.call_args.args[0]
+                self.assertEqual(argv[2:], expect)
+                self.assertFalse(run.call_args.kwargs.get("shell"))
+                api_schema.assert_valid(self, body, PATH, method="post")
+
+    def test_does_not_borrow_a_seat_or_admiral_identity(self):
+        _, _, run = self.run_op("halt")
+        added = set(run.call_args.kwargs["env"]) - set(__import__("os").environ)
+        self.assertEqual(added, set())
+
+    def test_every_ship_op_needs_confirmation(self):
+        for op in ("up", "down", "down-force", "extend", "halt"):
+            with self.subTest(op=op):
+                status, body, run = self.run_op(op, {"span": "1h"}, confirmed=False)
+                self.assertEqual((status, body["error"]["code"]), (400, "bad_request"))
+                run.assert_not_called()
+
+    def test_extend_needs_span_and_values_cannot_become_options(self):
+        for op, params in (("extend", {}), ("extend", {"span": "-1h"}), ("up", {"for": "--seats=x"}),
+                           ("up", {"seats": "-x"})):
+            with self.subTest(op=op, params=params):
+                status, body, run = self.run_op(op, params)
+                self.assertEqual((status, body["error"]["code"]), (400, "bad_request"))
+                run.assert_not_called()
+
+    def test_cli_refusal_is_shown_as_is(self):
+        with mock.patch.object(ops.subprocess, "run", return_value=completed("艦は起動していない\n".encode(), 1)):
+            status, body = dashboard.api_post("/api/v1/ops/extend", {"ship": "t1", "params": {"span": "1h"}, "confirmed": True})
+        self.assertEqual((status, body["exit_code"], body["output"]), (200, 1, "艦は起動していない\n"))
+
+    def test_unknown_ship_is_404(self):
+        status, body, run = self.run_op("halt", ship="nope")
+        self.assertEqual((status, body["error"]["code"]), (404, "not_found"))
+        run.assert_not_called()
+
+
 class OperationRegistryTest(unittest.TestCase):
     def test_only_registered_operations_exist(self):
-        self.assertEqual(sorted(ops.OPERATIONS), ["rotate"])
+        self.assertEqual(sorted(ops.OPERATIONS), ["down", "down-force", "extend", "halt", "rotate", "up"])
         with self.assertRaises(edit.EditError) as cm:
-            ops.handle("up", {"ship": "x", "params": {}, "confirmed": True})
+            ops.handle("seat-stop", {"ship": "x", "params": {}, "confirmed": True})
         self.assertEqual(cm.exception.status, 404)
 
 

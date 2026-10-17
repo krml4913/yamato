@@ -74,7 +74,7 @@ def handle(op: str, body: dict) -> dict:
     if not isinstance(ship, str) or not isinstance(params, dict) \
             or not all(isinstance(k, str) and isinstance(v, str) for k, v in params.items()):
         raise EditError(400, "bad_request", "ship (文字列) と params (文字列の object) が要る")
-    shipdir = admiral.all_ships().get(ship)
+    shipdir = admiral.find_ship(ship)
     if shipdir is None:
         raise EditError(404, "not_found", "その艦は無い")
     if operation.confirm and body.get("confirmed") is not True:
