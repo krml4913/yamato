@@ -14,6 +14,7 @@ import json
 import os
 import time
 from pathlib import Path
+from typing import NamedTuple
 
 from . import claude, deadline, inbox, procs, report, roster, seat
 from .runtime import yamato_invocation
@@ -65,6 +66,15 @@ def stale_after(team: dict) -> int:
     return (team.get("watch") or {}).get("stale_after") or parse_duration(WATCH_FALLBACK["stale_after"])
 
 
+RED, WARN = "red", "warn"   # 重さ: すぐ手が要る (詰まり・API エラー) / 様子見 (動いていない・担当が無い)
+
+
+class Flag(NamedTuple):
+    level: str    # RED か WARN
+    text: str     # 何が起きた → owner が何をするか (1 行)
+    detail: str   # 内部の言葉の説明 (dashboard では title 属性)
+
+
 def red_flags(team: dict, seat_name: str, rec: dict, live: dict | None, now: float, *,
               has_active: bool = True) -> list[str]:
     """Why a seat shows red: a live seat idle for longer than ``watch.stale_after``, one
@@ -84,15 +94,18 @@ def red_flags(team: dict, seat_name: str, rec: dict, live: dict | None, now: flo
     waiting = str(live.get("waitingFor") or "")
     status, state = live.get("status"), live.get("state")
     if status == "waiting" or waiting:
-        flags.append(f"詰まり: {waiting or '何か'} で止まっている (status: waiting, waitingFor: {waiting or '-'})")
+        flags.append(Flag(RED, f"{waiting or '入力'} 待ちで止まっている → attach して答える",
+                          f"status: waiting, waitingFor: {waiting or '-'}"))
     if state == "failed":
-        flags.append("API エラー (state: failed)")
+        flags.append(Flag(RED, "API エラーで止まった → attach して様子を見る・送り直す", "state: failed"))
     last = seat._last_active(rec)
     limit = stale_after(team)
     if last and now - last > limit:
-        flags.append(f"{fmt_span(now - last)} 動いていない (生きているのに最終が {fmt_span(limit)} より古い)")
+        flags.append(Flag(WARN, f"{fmt_span(now - last)} 動いていない → 様子を見る・長引くなら rotate",
+                          f"最終が watch.stale_after ({fmt_span(limit)}) より古い"))
     if team["seats"].get(seat_name, {}).get("shift") == "per_task" and not has_active:
-        flags.append("per_task の席が生きているのに担当 (active) の項目が無い (前の task の会話が持ち込まれる疑い。#11)")
+        flags.append(Flag(WARN, "担当の無い席が生きている → 終わっていれば seat-stop (前の task の会話を持ち込む恐れ)",
+                          "per_task の席が生きているのに active の項目が無い (#11)"))
     return flags
 
 
@@ -217,18 +230,23 @@ def ship_line(name: str, shipdir: Path, by: dict, now: float) -> str:
 
     active_assignees = {m.get("assignee") for m in board_mod.Board(shipdir, team).items()
                         if m.get("state") == "active"}
-    red = []
+    red, warn = [], []
     for s in team["seats"]:
         rec = roster.seat(shipdir, s)
-        if red_flags(team, s, rec, by.get(rec.get("sessionId")), now, has_active=s in active_assignees):
+        levels = {f.level for f in red_flags(team, s, rec, by.get(rec.get("sessionId")), now,
+                                             has_active=s in active_assignees)}
+        if RED in levels:
             red.append(s)
+        elif WARN in levels:   # 赤と黄の両方がある席は赤にだけ数える
+            warn.append(s)
     decisions = len(report.pending_decisions(shipdir, team, lambda d: report.is_human(team, d)))
     latest = report.latest(shipdir)
     cols = [
         f"{name:<12}",
         state,
         hub_col,
-        f"赤 {len(red)}" + (f" ({','.join(red)})" if red else ""),
+        f"赤 {len(red)}" + (f" ({','.join(red)})" if red else "")
+        + (f" 黄 {len(warn)} ({','.join(warn)})" if warn else ""),
         f"判断待ち {decisions}",
         f"今日 {report._tokens(_usage_today(shipdir))} tok",
         f"日報 {latest.stem if latest else '-'}",

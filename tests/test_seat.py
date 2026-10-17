@@ -829,7 +829,7 @@ class SeatTest(_SeatBase):
         self.up()
         out = self.run_cmd(seat.status, self.shipdir)
         self.assertIn("生存=yes", out)
-        self.assertIn("!!! pm: 詰まり", out)
+        self.assertIn("!!! pm: permission prompt 待ちで止まっている", out)
         self.assertIn("残り", out)
 
 
