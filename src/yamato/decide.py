@@ -406,7 +406,7 @@ def add_parser(sub) -> None:
     o.add_argument("ship")
     o.add_argument("--category", required=True, help="team.yaml の decisions の鍵 (無ければ default)")
     o.add_argument("--title", required=True)
-    o.add_argument("--blocks", default="", help="この判断で止まるタスク (T-001,T-002)")
+    o.add_argument("--blocks", default="", help="この判断で止まるタスク")
     o.add_argument("--links", default="", help="止めずに結ぶ項目 (merge の判断とタスクなど)")
     o.add_argument("--due", help="期限 YYYY-MM-DD (日報で目立たせるだけ)")
     o.add_argument("--body-file", help="本文 (背景・選択肢と推し) のファイル")

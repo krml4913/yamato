@@ -19,7 +19,7 @@ from .util import YamatoError, atomic_write, ship_lock
 
 STATES = ("open", "active", "blocked", "done")
 FIXED = ("id", "title", "kind", "parent", "assignee", "state", "blocked_on", "links")
-SEAT_FIELDS = ("assignee", "reviewer")   # reviewer: who is reviewing it (T-093); kept after assignee
+SEAT_FIELDS = ("assignee", "reviewer")   # reviewer: who is reviewing it; kept after assignee
 LIST_FIELDS = ("blocked_on", "links")
 REPO_FIELDS = ("worktree", "branch", "pr", "merged_by")   # {repo: value} maps in a several-repo ship
 ID_PREFIX = "T-"
@@ -52,7 +52,7 @@ def _load_value(raw: str):
 
 
 def _reviewer_after_assignee(meta: dict) -> dict:
-    """``reviewer`` sits right after ``assignee`` (T-093). Items written before the field existed
+    """``reviewer`` sits right after ``assignee``. Items written before the field existed
     have none; ``board set reviewer=`` on one inserts it here, not at the end."""
     if "reviewer" not in meta or "assignee" not in meta:
         return meta
@@ -67,7 +67,7 @@ def _reviewer_after_assignee(meta: dict) -> dict:
 
 
 def active_seats(items: list[dict]) -> set:
-    """Seats that hold an ``active`` item, as assignee or as reviewer (T-093)."""
+    """Seats that hold an ``active`` item, as assignee or as reviewer."""
     return {m.get(f) for m in items if m.get("state") == "active" for f in SEAT_FIELDS} - {None}
 
 

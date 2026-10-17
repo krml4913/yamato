@@ -37,7 +37,7 @@ from . import layout
 
 DEFAULT_SESSION = "yamato-view"
 # A zellij server that is up but stuck answers no ``action`` / ``list-sessions`` call: without a
-# limit ``yamato view`` hangs on it (T-089). The interactive calls have no limit.
+# limit ``yamato view`` hangs on it. The interactive calls have no limit.
 ZELLIJ_TIMEOUT = 15
 
 
@@ -114,7 +114,7 @@ def _new_tab(run, block: str, *, session: str | None = None) -> None:
     try:
         _zellij(run, [*(["--session", session] if session else []), "action", "new-tab", "--layout", tmp])
     finally:
-        # zellij has read the layout by the time new-tab returns (T-015); a
+        # zellij has read the layout by the time new-tab returns; a
         # failure to remove it must not fail the view open itself.
         with contextlib.suppress(OSError):
             os.remove(tmp)
@@ -138,7 +138,7 @@ def _sync_session(run, session: str, tabs: list[tuple[str, str]], old: dict[str,
     for name, block in tabs:
         legacy = layout.legacy_tab_name(name)
         if name not in have and legacy in have:
-            # a tab from before ``ship:`` (T-046): replace it so it does not stay as a duplicate
+            # a tab from before ``ship:``: replace it so it does not stay as a duplicate
             _new_tab(run, block, session=session)
             _zellij(run, ["--session", session, "action", "close-tab-by-id", str(have[legacy])])
         elif name not in have:
@@ -175,7 +175,7 @@ def open_ships(refs: list[str] | None = None, *, command: str | None = None,
             if name in have:
                 _zellij(run, ["action", "go-to-tab-name", name])
             elif legacy in have:
-                # a tab from before ``ship:`` (T-046): rename it rather than leave a duplicate
+                # a tab from before ``ship:``: rename it rather than leave a duplicate
                 _zellij(run, ["action", "go-to-tab-name", legacy])
                 _zellij(run, ["action", "rename-tab", name])
             else:
