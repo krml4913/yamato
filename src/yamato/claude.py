@@ -51,7 +51,7 @@ def claude_cmd() -> list[str]:
 
 
 # Windows command-line limits, in characters: CreateProcess takes 32767; ``cmd /c`` (the
-# ``claude.cmd`` shim) only 8191. T-090: a 4-role ship's whole ``--agents`` JSON was 28.6K.
+# ``claude.cmd`` shim) only 8191. A 4-role ship's whole ``--agents`` JSON was 28.6K.
 WIN_CMDLINE_MAX = 32767
 WIN_CMD_SHELL_MAX = 8191
 
@@ -103,7 +103,7 @@ def _claude_argv(args: list[str]) -> list[str]:
 
 def only_role(agents_json: str, role: str) -> str:
     """``--agents`` JSON cut down to the one role the seat runs as (``--agent <role>``): the other
-    roles' prompts are never used by it and were most of the argv (T-090). Unparsable input or
+    roles' prompts are never used by it and were most of the argv. Unparsable input or
     an unknown role is passed on unchanged."""
     try:
         agents = json.loads(agents_json)
@@ -339,7 +339,7 @@ DEFAULT_SETTING_SOURCES = "project,local"
 
 def add_dir_args(add_dir: str | list[str]) -> list[str]:
     """``--add-dir`` takes several values after one flag (it eats trailing values, so the prompt
-    follows ``--``). The ship folder comes first; a multi-repo ship adds its other repos (D-071)."""
+    follows ``--``). The ship folder comes first; a multi-repo ship adds its other repos."""
     dirs = [add_dir] if isinstance(add_dir, str) else list(add_dir)
     return ["--add-dir", *dirs]
 
@@ -422,7 +422,7 @@ def headless_argv(*, session_id: str, name: str, role: str, agents_json: str, mo
 
 
 def upgrade_argv(*, settings: str, system_prompt: str, prompt: str) -> list[str]:
-    """The foreground (interactive) ``claude`` of ``yamato ship upgrade`` (D-081): not a seat, so no
+    """The foreground (interactive) ``claude`` of ``yamato ship upgrade``: not a seat, so no
     ``--bg`` / ``--agent`` and not the ship's settings. ``settings`` is upgrade's own file (Edit
     allowed for roles/*.md and team.yaml only), ``--setting-sources local`` keeps user/project
     settings (hooks, CLAUDE.md) out of it, and the first user turn is ``prompt``."""

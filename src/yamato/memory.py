@@ -43,7 +43,7 @@ MEMORY_APPLY = "memory_apply"
 
 SCOPES = ("role", "ship")
 MEMORY_KEYS = {"applier", "curate_every", "curate_at", "max_duration"}
-# `inject.limits.memory` / `knowledge` ([lines, chars], T-076): what `memory apply` refuses over and
+# `inject.limits.memory` / `knowledge` ([lines, chars]): what `memory apply` refuses over and
 # where the SessionStart injection cuts, in characters as Claude Code counts them: both fit the
 # 10,000 characters of the knowledge hook (verify-p0-c Q1). Only what a ship that names none gets
 LIMIT_DEFAULTS = {"memory": (80, 4000), "knowledge": (120, 5000)}
@@ -77,7 +77,7 @@ def validate_conf(raw, roles: dict) -> dict:
     """``memory:`` of team.yaml (design-p1 §0.4, §3.4, §3.5)."""
     raw = raw or {}
     keys = MEMORY_KEYS
-    if isinstance(raw, dict) and "limits" in raw:   # moved in v1.2.0 (T-076); the compatibility went in v1.3.0
+    if isinstance(raw, dict) and "limits" in raw:   # moved in v1.2.0; the compatibility went in v1.3.0
         raise YamatoError("team.yaml: memory.limits は無くなった。inject.limits.memory / inject.limits.knowledge に "
                           "[行数, 文字数] で書く (memory_lines + memory_chars → inject.limits.memory、"
                           "knowledge_lines + knowledge_chars → inject.limits.knowledge。docs/migration.md)")
@@ -100,7 +100,7 @@ def validate_conf(raw, roles: dict) -> dict:
 
 def limit(team: dict, kind: str) -> tuple[int, int]:
     """``(lines, chars)`` for kind ``memory`` / ``knowledge``: ``inject.limits.<kind>`` of the validated
-    team (T-076), else the default (a ``.runtime/team.json`` from before has none)."""
+    team, else the default (a ``.runtime/team.json`` from before has none)."""
     got = ((team.get("inject") or {}).get("limits") or {}).get(kind)
     return tuple(got) if got else LIMIT_DEFAULTS[kind]
 
@@ -802,7 +802,7 @@ def apply_knowledge(shipdir: Path, team: dict, by: str, now: float | None = None
 def register(sub) -> None:
     m = sub.add_parser("memo", help="memory の候補を呼び出した席の memory-inbox.md に 1 行足す (design-p1 §3.2)")
     m.add_argument("text")
-    m.add_argument("--item", help="関わる項目 (T-042 など)")
+    m.add_argument("--item", help="関わる項目 (項目の id)")
     m.add_argument("--scope", default="role", choices=SCOPES, help="role (役割の memory) / ship (艦の knowledge)")
     m.add_argument("--ship", help="艦 (省略時は呼び出したセッションの席がいる艦を探す)")
     m.add_argument("--seat", help="席 (席のセッションの外から書くとき。席の中では呼び出した席と同じであること)")

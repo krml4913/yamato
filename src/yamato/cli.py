@@ -105,11 +105,11 @@ def _parser(hook_only: bool = False) -> argparse.ArgumentParser:
     bm = bs.add_parser("mine", help="席の担当 (done 以外)")
     bm.add_argument("ship")
     bm.add_argument("seat")
-    bt = bs.add_parser("tree", help="parent を辿ってインデントで出す (T-030)")
+    bt = bs.add_parser("tree", help="parent を辿ってインデントで出す")
     bt.add_argument("ship")
     bt.add_argument("id", nargs="?", help="この項目の下だけ (省略時は全体)")
     bt.add_argument("--all", action="store_true", help="archive も含める")
-    bk = bs.add_parser("kanban", help="列ごとに見出し + 件数 + 項目 (T-030)")
+    bk = bs.add_parser("kanban", help="列ごとに見出し + 件数 + 項目")
     bk.add_argument("ship")
     bk.add_argument("--all", action="store_true", help="archive (done) も含める")
 
@@ -130,7 +130,7 @@ def _parser(hook_only: bool = False) -> argparse.ArgumentParser:
     report.register(sub)
     feed.register(sub)
     dashboard.register(sub)
-    rotate.register(sub)   # T-024: `yamato rotate <ship> <seat>...` (a stopped persistent seat's mark)
+    rotate.register(sub)   # `yamato rotate <ship> <seat>...` (a stopped persistent seat's mark)
     from . import decide  # design-p1 §1
 
     decide.add_parser(sub)

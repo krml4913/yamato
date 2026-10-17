@@ -284,8 +284,7 @@ def env_command(name: str, default: str) -> list[str]:
     over the interpreter too). A value that already names one program -- a path that
     exists (spaces and all) or something ``shutil.which`` finds -- is taken whole, never
     split. An unquoted value with spaces (``C:\\Users\\A B\\python.exe a.py``) takes the longest
-    leading run of words that is an existing file as the program, the rest as arguments
-    (T-049). Otherwise it is split as a shell would. The program is resolved with ``which`` (npm's ``claude.cmd`` shim, W1)."""
+    leading run of words that is an existing file as the program, the rest as arguments. Otherwise it is split as a shell would. The program is resolved with ``which`` (npm's ``claude.cmd`` shim, W1)."""
     import shlex
     import shutil
     raw = os.environ.get(name) or default

@@ -1,4 +1,4 @@
-"""Find `view attach` / `claude attach` processes that outlive their pane (T-089).
+"""Find `view attach` / `claude attach` processes that outlive their pane.
 
 A pane's ``yamato view attach`` runs ``claude attach`` as a child. When zellij closes the pane
 (a rebuilt tab, ``delete-session``, a killed server) the pane process gets SIGHUP/SIGTERM; if
