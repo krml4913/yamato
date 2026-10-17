@@ -209,7 +209,13 @@ def _add(shipdir: Path, team: dict, item_id: str, branch: str | None, base: str 
     brd = Board(shipdir, team)
     meta, _, _ = brd.read(item_id)
     root = repo_root(team, r)
-    branch = branch or field_get(team, meta, "branch", r) or default_branch(team, item_id)
+    protected = {git_conf(team)["base"], *([base.removeprefix("origin/")] if base else [])}
+    if branch in protected:
+        raise YamatoError(f"ブランチ {branch!r} は起点 (base) です。task 用のブランチを指定してください")
+    recorded_branch = field_get(team, meta, "branch", r)
+    if not branch and recorded_branch in protected:
+        recorded_branch = None   # `branch: develop` on the item: cut the task branch instead (T-122)
+    branch = branch or recorded_branch or default_branch(team, item_id)
     # a value starting with `-` would be read as an option by `git worktree add`
     if branch.startswith("-") or git(["check-ref-format", "--branch", branch], root, check=False).returncode:
         raise YamatoError(f"ブランチ名が不正です: {branch!r}")

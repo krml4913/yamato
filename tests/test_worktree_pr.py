@@ -326,6 +326,31 @@ class WorktreeTest(GitShipTestCase):
         self.assertTrue((wt / "new.txt").is_file())
         self.assertFalse((self.workspace / "new.txt").exists())
 
+    def test_item_branch_equal_to_the_base_is_not_checked_out(self):
+        # T-122: an item whose branch is the base itself (`branch: develop`) used to get the
+        # local develop checked out as is, and the next commit landed on it
+        from yamato import worktree
+
+        run("git", "branch", "develop", cwd=self.workspace)
+        run("git", "push", "-q", "origin", "develop", cwd=self.workspace)
+        tid = self.item(branch="develop")
+        wt, _ = worktree.add(self.shipdir, self.team(), tid, base="develop")
+        self.assertEqual(run("git", "branch", "--show-current", cwd=wt), f"yamato/t1/{tid}")
+        self.assertEqual(self.board().read(tid)[0]["branch"], f"yamato/t1/{tid}")
+        # the default base (git.base, here main) is guarded the same way
+        tid2 = self.item(branch="main")
+        wt2, _ = worktree.add(self.shipdir, self.team(), tid2)
+        self.assertEqual(run("git", "branch", "--show-current", cwd=wt2), f"yamato/t1/{tid2}")
+
+    def test_explicit_branch_equal_to_the_base_is_refused(self):
+        from yamato import worktree
+        from yamato.util import YamatoError
+
+        run("git", "branch", "develop", cwd=self.workspace)
+        tid = self.item()
+        with self.assertRaisesRegex(YamatoError, "base"):
+            worktree.add(self.shipdir, self.team(), tid, branch="develop", base="develop")
+
     def test_explicit_branch_base_and_path(self):
         from yamato import worktree
 
