@@ -25,7 +25,7 @@ from urllib.parse import unquote, urlsplit
 from . import admiral, claude, deadline, feed, fleet, inbox, memory, monitor, procs, report, roster, rotate, seat, shipconfig
 from . import board as board_mod
 from .decide import _epoch
-from .web import edit
+from .web import edit, md_edit  # noqa: F401  (md_edit は import で RESOLVERS に足される)
 from .web import files as web_files
 from .web import static
 from .util import YamatoError, fmt_span, fmt_time, today

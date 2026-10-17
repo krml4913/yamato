@@ -1,13 +1,20 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getShipFile, type ShipFile } from "../api/files";
+import { editToken } from "../api/client";
 import { Markdown } from "../markdown/Markdown";
+import { MdEditor } from "./MdEditor";
 
-// roles/*.md・charter.md・knowledge.md を markdown で出す。
+// roles/*.md・charter.md・knowledge.md を markdown で出す。--edit で起動していれば role・charter は直せる
+// (knowledge.md は memory apply の記録のため読むだけ)。
 export function ShipFilePage() {
   const { name = "", file = "" } = useParams();
   const [state, setState] = useState<{ key: string; file?: ShipFile; error?: string }>({ key: "" });
+  const [reload, setReload] = useState(0);
   const key = `${name}\n${file}`;
+  const [editKey, setEditKey] = useState<string | null>(null);
+  const editing = editKey === key;   // 別の file に移ったら編集は閉じる
+  const setEditing = (on: boolean) => setEditKey(on ? key : null);
 
   useEffect(() => {
     let live = true;
@@ -16,7 +23,7 @@ export function ShipFilePage() {
       (e: Error) => live && setState({ key, error: e.message }),
     );
     return () => { live = false; };
-  }, [name, file, key]);
+  }, [name, file, key, reload]);
 
   const cur = state.key === key ? state : { key };
   return (
@@ -24,7 +31,21 @@ export function ShipFilePage() {
       <p><Link to={`/ship/${encodeURIComponent(name)}`}>← {name}</Link></p>
       <h1>{file}</h1>
       {cur.error && <p role="alert">読めない: {cur.error}</p>}
-      {cur.file && <Markdown text={cur.file.text} />}
+      {cur.file && !(editing && cur.file.kind !== "knowledge") && (
+        <>
+          {editToken() && cur.file.kind !== "knowledge" && <p><button onClick={() => setEditing(true)}>編集</button></p>}
+          <Markdown text={cur.file.text} />
+        </>
+      )}
+      {cur.file && editing && cur.file.kind !== "knowledge" && (
+        <MdEditor
+          ship={name}
+          file={file}
+          initial={cur.file.text}
+          onSaved={() => { setEditing(false); setReload((n) => n + 1); }}
+          onCancel={() => setEditing(false)}
+        />
+      )}
       {!cur.file && !cur.error && <p>読み込み中</p>}
     </>
   );

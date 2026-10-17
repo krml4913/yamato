@@ -98,7 +98,7 @@ export interface paths {
          * @description --edit のときだけ。要求ヘッダに X-Yamato-Token (起動ごとの乱数。index.html の
          *     <meta name="yamato-token"> に埋まる)・Host は 127.0.0.1:<port>・Origin は http://127.0.0.1:<port>・
          *     Content-Type は application/json が要る。どれかが違えば 403 (forbidden)。--edit が無ければ 501。
-         *     書き換えられるファイルは (ship, file) で決まり、書ける対象でなければ 404。
+         *     書き換えられるファイルは (ship, file) で決まり、書ける対象でなければ 404。今書けるのは ShipConfig.files のうち kind が role・charter のものだけ (knowledge は memory apply の記録のため読むだけ)。空の中身は valid=false。
          */
         post: operations["previewEdit"];
         delete?: never;
