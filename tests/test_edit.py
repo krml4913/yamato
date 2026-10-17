@@ -218,6 +218,37 @@ class EditTest(unittest.TestCase):
         s, _ = self.post("nope", self.req())
         self.assertEqual(s, 404)
 
+    def test_preview_hash_matches_the_bytes_the_diff_was_made_from(self):
+        # 差分の元を読んだあとにファイルが変わっても、base_hash は差分の元のものになる (commit が 409 で止まる)
+        real = Path.read_bytes
+        calls = []
+
+        def racy(path):
+            data = real(path)
+            if path == self.file and not calls:
+                calls.append(1)
+                self.file.write_text("changed during preview\n", encoding="utf-8")
+            return data
+
+        with mock.patch.object(Path, "read_bytes", racy):
+            body = self.preview("two\n")
+        self.assertEqual(body["base_hash"], edit._digest(b"one\n"))
+        s, out = self.post("commit", self.req("two\n", base_hash=body["base_hash"]))
+        self.assertEqual((s, out["error"]["code"]), (409, "conflict"))
+        self.assertEqual(self.file.read_text(encoding="utf-8"), "changed during preview\n")
+
+    def test_crlf_file_vs_lf_content_is_a_change(self):
+        self.file.write_bytes(b"one\r\ntwo\r\n")
+        body = self.preview("one\ntwo\n")
+        self.assertTrue(body["changed"])
+        self.assertNotEqual(body["diff"], "")
+
+    def test_commit_backs_up_exact_bytes(self):
+        self.file.write_bytes(b"one\r\n")
+        self.post("commit", self.req("two\n", base_hash=edit.file_hash(self.file)))
+        self.assertEqual((self.ship / ".runtime" / edit.BACKUP_DIR / "note.txt").read_bytes(), b"one\r\n")
+        self.assertEqual(self.file.read_bytes(), b"two\n")
+
     def test_default_has_no_writable_targets(self):
         with mock.patch.object(edit, "RESOLVERS", []):
             with self.assertRaises(edit.EditError):

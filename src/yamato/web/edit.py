@@ -51,38 +51,47 @@ def resolve(ship: str, file: str) -> Target:
     raise EditError(404, "not_found", "その艦・ファイルは書き換えられない")
 
 
-def file_hash(path: Path) -> str:
-    try:
-        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
-    except FileNotFoundError:
-        return ABSENT
+def _digest(data: bytes | None) -> str:
+    return ABSENT if data is None else hashlib.sha256(data).hexdigest()
 
 
-def _read(path: Path) -> str:
+def _snapshot(path: Path) -> bytes | None:
+    """ファイルのバイト列を 1 回だけ読む (無ければ None)。ハッシュも差分もこの 1 回から作る。"""
     try:
-        return Path(path).read_text(encoding="utf-8")
+        return Path(path).read_bytes()
     except FileNotFoundError:
-        return ""
-    except (OSError, UnicodeDecodeError) as ex:
+        return None
+    except OSError as ex:
         raise EditError(500, "unreadable", "今のファイルを読めない", type(ex).__name__) from ex
+
+
+def file_hash(path: Path) -> str:
+    return _digest(_snapshot(path))
+
+
+def _decode(data: bytes | None) -> str:
+    """改行を変換せずに文字列にする (CRLF のファイルの差分を取りこぼさない)。"""
+    try:
+        return "" if data is None else data.decode("utf-8")
+    except UnicodeDecodeError as ex:
+        raise EditError(500, "unreadable", "今のファイルを UTF-8 として読めない", type(ex).__name__) from ex
 
 
 def preview(target: Target, content: str) -> dict:
     """検証して差分を返す。何も書かない。``base_hash`` は commit に渡す。"""
-    old = _read(target.path)
+    snap = _snapshot(target.path)
+    old = _decode(snap)
     errs = list(target.validate(content))
     diff = "".join(difflib.unified_diff(old.splitlines(True), content.splitlines(True),
                                         f"a/{target.key}", f"b/{target.key}"))
     return {"valid": not errs, "errors": errs, "changed": old != content, "diff": diff,
-            "base_hash": file_hash(target.path)}
+            "base_hash": _digest(snap)}
 
 
-def _backup(target: Target) -> None:
-    if not target.path.exists():
-        return
+def _backup(target: Target, old: bytes) -> None:
     d = target.shipdir / ".runtime" / BACKUP_DIR
     d.mkdir(parents=True, exist_ok=True)
-    _atomic_write(d / target.key.replace("/", "__"), target.path.read_bytes())
+    _atomic_write(d / target.key.replace("/", "__"), old)
 
 
 def _atomic_write(path: Path, data: bytes) -> None:
@@ -111,11 +120,13 @@ def commit(target: Target, content: str, base_hash: str) -> dict:
     if errs:
         raise EditError(422, "invalid", "検証に通らない", "; ".join(errs))
     with _lock:
-        if file_hash(target.path) != base_hash:
+        snap = _snapshot(target.path)
+        if _digest(snap) != base_hash:
             raise EditError(409, "conflict", "preview のあとにファイルが変わっている。やり直す")
         try:
             target.path.parent.mkdir(parents=True, exist_ok=True)
-            _backup(target)
+            if snap is not None:
+                _backup(target, snap)   # ハッシュを見たバイト列をそのまま退避する
             _atomic_write(target.path, content.encode("utf-8"))
         except OSError as ex:
             raise EditError(500, "internal", "書き込みに失敗した", type(ex).__name__) from ex
