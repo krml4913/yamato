@@ -98,7 +98,7 @@ export interface paths {
          * @description --edit のときだけ。要求ヘッダに X-Yamato-Token (起動ごとの乱数。index.html の
          *     <meta name="yamato-token"> に埋まる)・Host は 127.0.0.1:<port>・Origin は http://127.0.0.1:<port>・
          *     Content-Type は application/json が要る。どれかが違えば 403 (forbidden)。--edit が無ければ 501。
-         *     書き換えられるファイルは (ship, file) で決まり、書ける対象でなければ 404。今書けるのは ShipConfig.files のうち kind が role・charter のものだけ (knowledge は memory apply の記録のため読むだけ)。空の中身は valid=false。
+         *     書き換えられるファイルは (ship, file) で決まり、書ける対象でなければ 404。今書けるのは team.yaml と、ShipConfig.files のうち kind が role・charter のもの (knowledge は memory apply の記録のため読むだけ)。空の中身は valid=false。新しい中身は content (全文) か ops (部分置き換えの操作。team.yaml だけ) のどちらか 1 つで送る。
          */
         post: operations["previewEdit"];
         delete?: never;
@@ -164,10 +164,10 @@ export interface components {
         Error: {
             error: {
                 /**
-                 * @description not_found (艦・ファイルが無い) / bad_request / unreadable (読めない・壊れている) / internal / forbidden (書き込みのトークン・Host・Origin が合わない) / conflict (preview のあとにファイルが変わった) / invalid (検証に通らない)。
+                 * @description not_found (艦・ファイルが無い) / bad_request / unreadable (読めない・壊れている) / internal / forbidden (書き込みのトークン・Host・Origin が合わない) / conflict (preview のあとにファイルが変わった) / invalid (検証に通らない) / unpatchable (その yaml の形には部分置き換えで当てられない。生の yaml で直す)。
                  * @enum {string}
                  */
-                code: "not_found" | "bad_request" | "unreadable" | "internal" | "forbidden" | "conflict" | "invalid";
+                code: "not_found" | "bad_request" | "unreadable" | "internal" | "forbidden" | "conflict" | "invalid" | "unpatchable";
                 message: string;
                 /** @description 例外名など補足。無ければ null または省略。 */
                 detail?: string | null;
@@ -178,13 +178,33 @@ export interface components {
             ship: string;
             /** @description 書き換える対象 (艦フォルダからの相対 path)。 */
             file: string;
-            /** @description 新しい中身の全文。 */
-            content: string;
+            /** @description 新しい中身の全文。ops とどちらか 1 つ。 */
+            content?: string;
+            /** @description 今の中身に当てる操作の列 (team.yaml だけ。コメントと並びを保つ部分置き換え)。content とどちらか 1 つ。当てられない形は 422 (unpatchable)。 */
+            ops?: components["schemas"]["EditOp"][];
+        };
+        /**
+         * @description yaml の部分置き換え 1 つ。op と path は必須。path は map のキー (文字列) と list の添字 (整数) の並び。
+         *     set_value (scalar の値を value に) / add_key (path の map に key: value を足す) / remove_key (path のキーを消す) /
+         *     insert_item (path の list に value を足す。index 無しで末尾) / remove_item (path の要素を消す)。
+         */
+        EditOp: {
+            /** @enum {string} */
+            op: "set_value" | "add_key" | "remove_key" | "insert_item" | "remove_item";
+            path: (string | number)[];
+            /** @description add_key のキー名。 */
+            key?: string;
+            /** @description set_value・add_key・insert_item の値 (JSON)。 */
+            value?: unknown;
+            /** @description insert_item の位置。 */
+            index?: number;
         };
         EditCommitRequest: {
             ship: string;
             file: string;
-            content: string;
+            /** @description 新しい中身の全文。ops とどちらか 1 つ。 */
+            content?: string;
+            ops?: components["schemas"]["EditOp"][];
             /** @description preview が返した base_hash。 */
             base_hash: string;
         };
@@ -422,6 +442,10 @@ export interface components {
             description: string | null;
             /** @description schema の enum。無ければ null。 */
             enum: unknown[] | null;
+            /** @description この項目の team.schema.json の定義そのもの (type・enum・properties・anyOf・description など)。フォームはこれから組む。schema に無い項目は null。 */
+            schema: {
+                [key: string]: unknown;
+            } | null;
         };
         ShipFile: {
             name: string;

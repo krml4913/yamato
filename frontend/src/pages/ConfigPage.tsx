@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { getShipConfig, type ShipConfig } from "../api/client";
+import { editToken, getShipConfig, type ShipConfig } from "../api/client";
 import status from "../status.module.css";
 import table from "../table.module.css";
 import styles from "./config.module.css";
+import { ConfigForm } from "./ConfigForm";
 
 type Field = ShipConfig["fields"][number];
 
@@ -68,6 +69,8 @@ function Section({ field }: { field: Field }) {
 export function ConfigPage() {
   const { name = "" } = useParams();
   // 結果は艦名つきで持つ (艦を切り替えたとき、前の艦の表示を出さない)
+  const [reload, setReload] = useState(0);
+  const [saved, setSaved] = useState(false);
   const [result, setResult] = useState<{ name: string; config?: ShipConfig; error?: string } | null>(null);
 
   useEffect(() => {
@@ -79,7 +82,7 @@ export function ConfigPage() {
     return () => {
       live = false;
     };
-  }, [name]);
+  }, [name, reload]);
 
   const current = result?.name === name ? result : null;
   const config = current?.config;
@@ -100,7 +103,17 @@ export function ConfigPage() {
               {config.pending.keys.length > 0 && ` (${config.pending.keys.join(", ")})`}
             </p>
           )}
-          {config.fields.map((f) => <Section key={f.key} field={f} />)}
+          {editToken() ? (
+            <ConfigForm key={config.raw} name={name} config={config} saved={saved}
+              onSaved={() => {
+                setSaved(true);
+                setReload((n) => n + 1);
+              }}
+              onDirty={() => setSaved(false)}
+            />
+          ) : (
+            config.fields.map((f) => <Section key={f.key} field={f} />)
+          )}
           <details>
             <summary>生の yaml</summary>
             <pre>{config.raw}</pre>

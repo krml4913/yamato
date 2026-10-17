@@ -168,11 +168,11 @@ FLEET = {"home": "/h", "ships": [{"name": "a", "path": "/h/a", "registered": Tru
 CONFIG = {"name": "a", "path": "/h/a/team.yaml", "raw": "name: a\n# c\n", "pending": {"changed": True, "keys": ["roles"]},
           "files": [{"file": "roles/impl.md", "kind": "role", "bytes": 10}, {"file": "charter.md", "kind": "charter", "bytes": 0}],
           "fields": [{"key": "name", "set": True, "required": True, "value": "a", "type": "string",
-                      "description": "艦の名前。", "enum": None},
+                      "description": "艦の名前。", "enum": None, "schema": {"type": "string"}},
                      {"key": "workspace", "set": True, "required": True, "value": ["/x", "/y"], "type": None,
-                      "description": None, "enum": None},
+                      "description": None, "enum": None, "schema": None},
                      {"key": "x", "set": False, "required": False, "value": None, "type": "string",
-                      "description": "d", "enum": ["a", "b"]}]}
+                      "description": "d", "enum": ["a", "b"], "schema": {"enum": ["a", "b"]}}]}
 FILE = {"name": "a", "file": "roles/impl.md", "kind": "role", "text": "# impl\n", "bytes": 7}
 
 CASES = [("/api/v1/overview", OVERVIEW), ("/api/v1/fleet", FLEET),

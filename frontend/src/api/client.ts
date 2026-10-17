@@ -60,6 +60,7 @@ export class EditApiError extends Error {
     public status: number,
     public code: string,
     message: string,
+    public detail: string | null = null,
   ) {
     super(message);
   }
@@ -76,7 +77,7 @@ async function postJson<T>(url: string, body: object): Promise<T> {
   const data = await res.json().catch(() => null);
   if (!res.ok) {
     const e = data?.error;
-    throw new EditApiError(res.status, e?.code ?? "internal", e?.message ?? `POST ${url}: ${res.status}`);
+    throw new EditApiError(res.status, e?.code ?? "internal", e?.message ?? `POST ${url}: ${res.status}`, e?.detail ?? null);
   }
   return data as T;
 }
