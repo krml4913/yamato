@@ -1,24 +1,344 @@
-# yamato web console の API (正本)。frontend/src/api/schema.d.ts はここから生成する (npm run gen-api)。
-# これは T-107 の最小の雛形。実際の API は T-106 が書き、この雛形を置き換える。
 openapi: 3.1.0
 info:
   title: yamato web console API
-  version: 0.0.0
+  version: 1.0.0
+  description: |
+    yamato web console (D-118) の JSON API。この YAML が正本で、フロントの TS の型はここから生成し、
+    Python 側の応答は tests/api_schema.py の検査器でこのスキーマに照らして確かめる。
+    M1 は読むだけ (GET)。127.0.0.1 だけで待ち受ける。日時は epoch 秒 (number)、無い・取れない値は null。
+    エラーは全 path 共通で components.schemas.Error の形 (HTTP status は 4xx / 5xx)。
+    検査器が解く範囲: type (配列で "null" も可)・nullable・properties・required・additionalProperties・items・enum・const・$ref (#/components/schemas/…)。
+    それ以外のキーワード (oneOf・allOf など) は使わない。
+servers:
+  - url: http://127.0.0.1:8765
 paths:
-  /api/v1/ships:
+  /api/v1/overview:
     get:
-      summary: 登録されている艦の一覧
-      operationId: listShips
+      operationId: getOverview
+      summary: 全艦の一覧 (今の dashboard の gather 相当)
+      description: 判断待ち・艦ごとの席の表・board・PR・異常・2 段目 (日報・孤児・memory・文脈量)。1 艦の読み取りが落ちてもその艦の error に入れて他は返す。
       responses:
         "200":
-          description: 艦の名前の一覧
+          description: 全艦の状況
           content:
             application/json:
-              schema:
+              schema: {$ref: "#/components/schemas/Overview"}
+        default: {$ref: "#/components/responses/Error"}
+  /api/v1/fleet:
+    get:
+      operationId: getFleet
+      summary: 艦の一覧 (ships.json と _admiral)
+      description: ships.json と $YAMATO_HOME 直下の艦。_admiral は別枠 (admiral) に出す (一覧の ships には入れない)。読むだけ。
+      responses:
+        "200":
+          description: 艦の一覧
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Fleet"}
+        default: {$ref: "#/components/responses/Error"}
+  /api/v1/ships/{name}/config:
+    get:
+      operationId: getShipConfig
+      summary: 艦の team.yaml を項目ごとに
+      description: team.yaml の値・team.schema.json の description・生の yaml・この艦で読める md の一覧・「次の up で効く変更あり」。
+      parameters:
+        - {$ref: "#/components/parameters/ShipName"}
+      responses:
+        "200":
+          description: 艦の設定
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ShipConfig"}
+        default: {$ref: "#/components/responses/Error"}
+  /api/v1/ships/{name}/files/{file}:
+    get:
+      operationId: getShipFile
+      summary: roles/*.md・charter.md・knowledge.md の中身
+      description: file は艦フォルダからの相対 path を URL エンコードした 1 語 (roles%2Fimpl.md・charter.md・knowledge.md)。ShipConfig.files に出たものだけ読める。それ以外は 404。
+      parameters:
+        - {$ref: "#/components/parameters/ShipName"}
+        - name: file
+          in: path
+          required: true
+          description: ShipConfig.files[].file の値 (URL エンコード)。
+          schema: {type: string}
+      responses:
+        "200":
+          description: ファイルの中身
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ShipFile"}
+        default: {$ref: "#/components/responses/Error"}
+components:
+  parameters:
+    ShipName:
+      name: name
+      in: path
+      required: true
+      description: 艦の名前 (fleet の ships[].name)。
+      schema: {type: string}
+  responses:
+    Error:
+      description: エラー (4xx / 5xx)。形は全 path 共通。
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+  schemas:
+    Error:
+      type: object
+      description: 共通のエラー。code は機械が分岐に使う短い語、message は人が読む日本語。
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: not_found (艦・ファイルが無い) / bad_request / unreadable (読めない・壊れている) / internal。
+              enum: [not_found, bad_request, unreadable, internal]
+            message: {type: string}
+            detail:
+              type: [string, "null"]
+              description: 例外名など補足。無ければ null または省略。
+      additionalProperties: false
+    Overview:
+      type: object
+      required: [generated_at, agents_error, waits, ships]
+      properties:
+        generated_at: {type: number, description: "組み立てた時刻 (epoch 秒)。"}
+        agents_error:
+          type: [string, "null"]
+          description: claude agents --json を読めなかったときの理由 (生存が不明になる)。読めたら null。
+        waits:
+          type: array
+          description: 全艦の owner の判断待ち (decider が人間の open な判断)。急ぎ→id 順。
+          items: {$ref: "#/components/schemas/Wait"}
+        ships:
+          type: array
+          items: {$ref: "#/components/schemas/ShipOverview"}
+    Wait:
+      type: object
+      required: [ship, id, title, urgent, age, recommendation]
+      properties:
+        ship: {type: string}
+        id: {type: string}
+        title: {type: string}
+        urgent: {type: boolean}
+        age: {type: string, description: "経過の表示 (例: 2h13m)。取れなければ空文字。"}
+        recommendation: {type: [string, "null"], description: "判断の本文にある「推し」。無ければ null。"}
+    ShipOverview:
+      type: object
+      description: 1 艦。読めなければ error に理由が入り state は null。
+      required: [name, error, state]
+      properties:
+        name: {type: string}
+        error: {type: [string, "null"]}
+        state:
+          type: [object, "null"]
+          required: [team, deadline, hub, hub_last, tokens, owner_unread, multi_repo, counts, seats, board, prs, anomalies, report, orphans, memory]
+          properties:
+            team: {type: string, description: "team.yaml の name。"}
+            deadline: {type: string, description: "稼働時間の上限の表示 (例: deadline 10-17 17:23 (残り 1h54m))。"}
+            hub: {type: string, description: "captain の席。"}
+            hub_last: {type: [number, "null"], description: "captain の最終活動 (epoch 秒)。"}
+            tokens: {type: integer, description: "今日の全席のトークン合計。"}
+            owner_unread: {type: integer, description: "owner 宛て inbox の未読数。"}
+            multi_repo: {type: boolean, description: "workspace が複数 repo か。"}
+            counts:
+              type: object
+              description: board の state ごとの件数 (decision は除く)。
+              additionalProperties: {type: integer}
+            seats:
+              type: array
+              items: {$ref: "#/components/schemas/Seat"}
+            board:
+              type: array
+              description: active / blocked の項目 (decision は除く)。
+              items: {$ref: "#/components/schemas/BoardItem"}
+            prs:
+              type: array
+              description: board の pr 欄がある done 以外。
+              items: {$ref: "#/components/schemas/Pr"}
+            anomalies:
+              type: array
+              description: 直近 3 日の異常 (feed.ABNORMAL_KINDS)。新しい順。
+              items: {$ref: "#/components/schemas/Anomaly"}
+            report:
+              type: [object, "null"]
+              description: 前回の日報。まだ無ければ null。
+              required: [date, word, tomorrow]
+              properties:
+                date: {type: string}
+                word: {type: string}
+                tomorrow: {type: string}
+            orphans:
+              type: array
+              description: 担当の席が落ちて active のまま残った項目。
+              items:
                 type: object
-                required: [ships]
+                required: [id, title, seat, why]
                 properties:
-                  ships:
-                    type: array
-                    items:
-                      type: string
+                  id: {type: string}
+                  title: {type: string}
+                  seat: {type: [string, "null"]}
+                  why: {type: string}
+            memory:
+              type: array
+              description: memory の候補数と前回の反映からの日数。
+              items:
+                type: object
+                required: [role, count, days, due]
+                properties:
+                  role: {type: [string, "null"], description: "役割名。艦全体の knowledge は null。"}
+                  count: {type: integer}
+                  days: {type: [integer, "null"], description: "前回の反映からの日数。反映が無ければ null。"}
+                  due: {type: boolean, description: "棚卸しの目安に達したか。"}
+    Seat:
+      type: object
+      required: [name, role, shift, alive, pid, status, waiting_for, last, active, reviewing, unread, flags, log, tokens, budget, last_cost, context]
+      properties:
+        name: {type: string}
+        role: {type: [string, "null"]}
+        shift: {type: string, description: "per_task / continuous / headless など。"}
+        alive: {type: boolean}
+        pid: {type: [integer, "null"]}
+        status: {type: [string, "null"], description: "claude agents の status。"}
+        waiting_for: {type: [string, "null"]}
+        last: {type: [number, "null"], description: "最終活動 (epoch 秒)。"}
+        active:
+          type: array
+          description: 担当で active の項目 id。
+          items: {type: string}
+        reviewing:
+          type: array
+          description: レビュー中の項目 id。
+          items: {type: string}
+        unread: {type: integer}
+        flags:
+          type: array
+          description: 要対応 (admiral.red_flags)。
+          items:
+            type: object
+            required: [level, text, detail]
+            properties:
+              level: {type: string, enum: [red, warn]}
+              text: {type: string}
+              detail: {type: string}
+        log: {type: string, description: "作業ログの最後の 1 行。無ければ空文字。"}
+        tokens: {type: integer, description: "今日のトークン。"}
+        budget: {type: [number, "null"], description: "headless の席だけ。役割の max_budget_usd。"}
+        last_cost: {type: [number, "null"], description: "headless の席の前回の total_cost_usd。"}
+        context:
+          type: [object, "null"]
+          description: 文脈量。取れなければ null。
+          required: [tokens, limit]
+          properties:
+            tokens: {type: integer}
+            limit: {type: [integer, "null"], description: "rotate の閾値。無ければ null。"}
+    BoardItem:
+      type: object
+      required: [id, title, state, assignee, blocked_on]
+      properties:
+        id: {type: string}
+        title: {type: string}
+        state: {type: string}
+        assignee: {type: [string, "null"]}
+        blocked_on:
+          type: array
+          items: {type: string}
+    Pr:
+      type: object
+      required: [item, title, state, repo, number, link]
+      properties:
+        item: {type: string}
+        title: {type: string}
+        state: {type: string}
+        repo: {type: string}
+        number: {type: string, description: "PR 番号 (# なし)。"}
+        link: {type: [string, "null"], description: "workspace の origin が GitHub のときの URL。"}
+    Anomaly:
+      type: object
+      required: [kind, ts, summary]
+      properties:
+        kind: {type: string}
+        ts: {type: number}
+        summary: {type: string}
+    Fleet:
+      type: object
+      required: [home, ships, admiral]
+      properties:
+        home: {type: string, description: "$YAMATO_HOME。"}
+        ships:
+          type: array
+          items: {$ref: "#/components/schemas/FleetShip"}
+        admiral:
+          type: [object, "null"]
+          description: _admiral。無ければ null。
+          required: [path, team]
+          properties:
+            path: {type: string}
+            team: {type: [string, "null"], description: "team.yaml の name。読めなければ null。"}
+    FleetShip:
+      type: object
+      required: [name, path, registered, team, error]
+      properties:
+        name: {type: string}
+        path: {type: string}
+        registered: {type: boolean, description: "ships.json にあるか (false は $YAMATO_HOME 直下の拾い上げ)。"}
+        team: {type: [string, "null"]}
+        error: {type: [string, "null"], description: "team.yaml を読めなかった理由。"}
+    ShipConfig:
+      type: object
+      required: [name, path, fields, raw, files, pending]
+      properties:
+        name: {type: string}
+        path: {type: string, description: "team.yaml の絶対 path。"}
+        fields:
+          type: array
+          description: team.yaml の最上位の項目を team.schema.json の並びで。schema にあるが team.yaml に無い項目も set=false で出す。
+          items: {$ref: "#/components/schemas/ConfigField"}
+        raw: {type: string, description: "team.yaml の生のテキスト (コメント込み)。"}
+        files:
+          type: array
+          description: この艦で読める md。
+          items:
+            type: object
+            required: [file, kind, bytes]
+            properties:
+              file: {type: string, description: "艦フォルダからの相対 path (roles/impl.md)。files/{file} には URL エンコードして渡す。"}
+              kind: {type: string, enum: [role, charter, knowledge]}
+              bytes: {type: integer}
+        pending:
+          type: object
+          description: 「次の up で効く変更あり」(team.yaml と .runtime/team.json の差)。
+          required: [changed, keys]
+          properties:
+            changed: {type: boolean}
+            keys:
+              type: array
+              description: 差のある最上位の項目名。
+              items: {type: string}
+    ConfigField:
+      type: object
+      required: [key, set, required, value, type, description, enum]
+      properties:
+        key: {type: string, description: "最上位の項目名。"}
+        set: {type: boolean, description: "team.yaml に書かれているか。"}
+        required: {type: boolean}
+        value: {description: "team.yaml の値 (JSON にした形)。未設定は null。"}
+        type: {type: [string, "null"], description: "schema の type (複数なら | で連結)。anyOf だけなら null。"}
+        description: {type: [string, "null"]}
+        enum:
+          type: [array, "null"]
+          description: schema の enum。無ければ null。
+          items: {}
+    ShipFile:
+      type: object
+      required: [name, file, kind, text, bytes]
+      properties:
+        name: {type: string}
+        file: {type: string}
+        kind: {type: string, enum: [role, charter, knowledge]}
+        text: {type: string}
+        bytes: {type: integer}
