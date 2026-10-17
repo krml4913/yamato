@@ -1,6 +1,6 @@
 # 移行手順 (migration)
 
-v1.0.0 以降の変更のうち、**既存の艦・利用者が何かをしないと動かなくなる (または挙動が変わる) もの**の手順をここに集める。tag を打つときに「未リリース」の見出しを版名 (`## v1.1.0 → v1.2.0` など) に改め、その上に空の「未リリース」を作り直す。
+v1.0.0 以降の変更のうち、**既存の艦・利用者が何かをしないと動かなくなる (または挙動が変わる) もの**の手順をここに集める。tag を打つときに「未リリース」の見出しを版名 (`## v1.2.0 → v1.3.0` など) に改め、その上に空の「未リリース」を作り直す。
 
 ## 移行手順が要る変更の種類
 - team.yaml の形・既定値 (キーの追加・改名・削除、既定値の変更)
@@ -21,23 +21,42 @@ v1.0.0 以降の変更のうち、**既存の艦・利用者が何かをしな�
 
 ## 未リリース
 
+## v1.2.0 → v1.3.0
+
+### 全体の手順
+v1.3.0 は **v1.2.0 が警告つきで読み替えていた古い書き方を消す版** (T-095, #116)。**v1.2.0 で「書き換えろ」の警告が出ていた艦は、直してから上げる**。直さずに上げると team.yaml の検査で `yamato up` などが止まる。ひな形どおりの艦は何もしなくてよい。
+
+**検査が拒否するようになった古い書き方**
+- トップの `charter:`・`inject` のリストの `charter`・`inject.limits.charter` → `inject.files.charter` / `file:charter` / `inject.limits.files.charter` (T-075)
+- `memory.limits` の 4 キー → `inject.limits.memory` / `inject.limits.knowledge` (T-076)
+
+**既存の艦の写しに反映するもの**: T-093 の `roles/pm.md` の手順 (reviewer 欄を書く一行。下の項目)。
+
+**移行不要**: #111・#112・#114・#117・#118・#119 は表示・docs・内部の変更で、艦がやることはない。
+
+手順:
+1. 艦を止める: `yamato down <艦>`
+2. yamato を更新する: `git -C ~/dev/yamato pull` (tag を使うなら `git -C ~/dev/yamato checkout v1.3.0`)
+3. 本命は `yamato ship upgrade <艦>` (template の記録があるので `--from` は不要。無ければ `--from v1.2.0`)。手で写すなら `git -C ~/dev/yamato diff v1.2.0 v1.3.0 -- src/yamato/templates/dev/` で差分を見る
+4. 艦を起こす: `yamato up <艦>`
+
 ### board の項目に `reviewer` 欄を足す (T-093)
 - 何が変わったか: board の項目の frontmatter に任意の `reviewer` 欄 (assignee の直後)。`board set <id> reviewer=<席>` で書き、`reviewer=-` で消す。state=active の項目の assignee か reviewer がいる席は「担当あり」と数える (per_task の reviewer がレビュー中に「担当の無い席が生きている」と警告されなくなる)。dashboard の担当の欄に「T-xxx (レビュー)」、`board mine <席>` と注入の「自分の担当」にもレビュー中の項目を「(レビュー)」の印で出す。欄の無い既存の項目はそのまま読める
 - 既存の艦がやること: 艦の `roles/pm.md` の「報告 (「PR を開いた」の知らせ) が来たら」の手順に、レビューを頼む前の `board set <ship> <id> reviewer=<reviewer の席> --by pm` を足す (ひな形 `src/yamato/templates/dev/roles/pm.md` の手順 4 を写す)。`yamato up` のやり直しは要らない
 - やらないと: reviewer 欄が書かれず、レビュー中の reviewer が今までどおり警告 (黄) に出て、dashboard にもレビュー中と出ない。動作は壊れない
-- PR: #115
+- PR: #115 (T-093)
 
 ### v1.2.0 の互換を消した: 古い `charter` の書き方と `memory.limits` は読み込みエラー (T-095)
 - 何が変わったか: v1.2.0 が警告つきで読み替えていた次の書き方を、team.yaml の検査が拒否する (エラー文に新しい書き方が出る)。トップの `charter:` / `inject.parts`・`roles.<role>.inject` の `charter` / `inject.limits.charter` (T-075 の互換) と、`memory.limits` (`memory_lines`・`memory_chars`・`knowledge_lines`・`knowledge_chars`。T-076 の互換)。読み替えのコードと警告、team.schema.json の古いキーも消えた
 - 既存の艦がやること: **v1.2.0 で「書き換えろ」の警告が出ていた艦は、直してから上げる**。(1) トップの `charter: <パス>` を消して `inject.files.charter: <パス>` に (2) リストの `charter` を `file:charter` に (3) `inject.limits.charter` を `inject.limits.files.charter` に (4) `memory.limits` を消し、`inject.limits.memory: [<memory_lines>, <memory_chars>]` と `inject.limits.knowledge: [<knowledge_lines>, <knowledge_chars>]` に。詳しくは下の v1.1.0 → v1.2.0 の T-075・T-076 の項。警告が出ていなければ何もしない
 - やらないと: 古い書き方の艦は `yamato up` などの team.yaml の検査で止まる
-- PR: T-095
+- PR: #116 (T-095)
 
 ### Windows で claude の起動がコマンド長超過で失敗するのを直す (T-090)
 - 何が変わったか: 席の起動 (`--bg`・`-p`) の `--agents` に、その席の role だけを載せるようにした (今までは全 role の全文で、yamato-dev で 28.6K 文字)。Windows では、コマンドラインが上限 (`claude.exe` は 32767 文字、`claude.cmd` の shim は `cmd /c` 経由で 8191 文字) を超えるなら、起動前に大きい引数を示してエラーにする。npm の shim は `node cli.js` を直に叩く (見つかれば)
 - 既存の艦がやること: なし。Windows で role プロンプトが長く shim の上限に当たる艦は、`claude.exe` の入れ方にするか roles/*.md を縮める
 - やらないと: 動作は変わらない (macOS/Linux には影響なし)
-- PR: (T-090)
+- PR: #113 (T-090)
 
 ### `ship upgrade` の claude に ~/.claude/settings.json の `env` を渡す (T-088)
 - 何が変わったか: upgrade の claude は `--setting-sources local` なので user settings が丸ごと落ち、Bedrock 用の `env` (`CLAUDE_CODE_USE_BEDROCK`・`AWS_REGION`・`AWS_PROFILE` など) も届かなかった。user の settings.json (`CLAUDE_CONFIG_DIR` があればそこ) の `env` だけを、upgrade の claude の環境に渡すようにした (秘密が入りうるので控えの settings.json には書かない)。hooks・CLAUDE.md は今までどおり入らない
