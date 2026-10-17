@@ -15,8 +15,34 @@ from yamato.web import edit, ops
 PATH = "/api/v1/ops/{op}"
 
 
-def completed(out=b"", rc=0):
-    return subprocess.CompletedProcess([], rc, out, None)
+class FakePopen:
+    """spawn_detached の偽物が返す子。hang=True は wait が時間切れになる (終わらない CLI)。"""
+
+    def __init__(self, rc, hang):
+        self.returncode, self.hang = (None if hang else rc), hang
+        self.kill = mock.Mock()
+        self.terminate = mock.Mock()
+        self.send_signal = mock.Mock()
+
+    def wait(self, timeout=None):
+        if self.hang and timeout is not None:
+            raise subprocess.TimeoutExpired([], timeout)
+        return self.returncode
+
+
+def spawn(out=b"", rc=0, hang=False, side_effect=None):
+    """``ops.procs.spawn_detached`` を偽物にする (本物の CLI は起こさない)。出力は渡された stdout に書く。"""
+    box = {}
+
+    def fake(argv, cwd=None, env=None, stdout=None, stderr=None):
+        stdout.write(out)
+        stdout.flush()
+        box["popen"] = FakePopen(rc, hang)
+        return box["popen"]
+
+    m = mock.patch.object(ops.procs, "spawn_detached", side_effect=side_effect or fake)
+    m.popen = lambda: box["popen"]
+    return m
 
 
 class OpsCommonTest(ShipTestCase):
@@ -36,15 +62,15 @@ class OpsCommonTest(ShipTestCase):
 
     # --- 呼び方: list・shell なし・タイムアウト ---
 
-    def test_runs_cli_as_argv_list_without_shell_with_timeout(self):
-        with mock.patch.object(ops.subprocess, "run", return_value=completed(b"ok\n")) as run:
+    def test_runs_cli_as_argv_list_without_shell(self):
+        m = spawn(b"ok\n")
+        with m as run:
             status, body = self.call("rotate", self.req())
         self.assertEqual(status, 200, body)
         argv = run.call_args.args[0]
         self.assertIsInstance(argv, list)
         self.assertEqual(argv[2:], ["rotate", str(self.shipdir), self.seat, "--by", "owner"])
         self.assertFalse(run.call_args.kwargs.get("shell"))
-        self.assertEqual(run.call_args.kwargs["timeout"], ops.TIMEOUT)
         api_schema.assert_valid(self, body, PATH, method="post")
         self.assertEqual((body["exit_code"], body["output"], body["timed_out"]), (0, "ok\n", False))
 
@@ -53,20 +79,41 @@ class OpsCommonTest(ShipTestCase):
         self.assertEqual((status, body["error"]["code"]), (400, "bad_request"))
 
     def test_nonzero_exit_is_200_with_output_and_exit_code(self):
-        with mock.patch.object(ops.subprocess, "run", return_value=completed("失敗した\n".encode(), 1)):
+        with spawn("失敗した\n".encode(), 1):
             status, body = self.call("rotate", self.req())
         self.assertEqual((status, body["exit_code"], body["output"]), (200, 1, "失敗した\n"))
 
-    def test_timeout_is_reported_not_raised(self):
-        err = subprocess.TimeoutExpired([], 1, output=b"partial")
-        with mock.patch.object(ops.subprocess, "run", side_effect=err):
+    def test_timeout_is_reported_and_the_cli_is_not_killed(self):
+        m = spawn(b"partial", hang=True)
+        with m, mock.patch.object(ops.threading, "Thread") as thread:
             status, body = self.call("rotate", self.req())
         self.assertEqual((status, body["timed_out"], body["exit_code"], body["output"]), (200, True, None, "partial"))
         api_schema.assert_valid(self, body, PATH, method="post")
+        p = m.popen()
+        for killer in (p.kill, p.terminate, p.send_signal):
+            killer.assert_not_called()   # 時間切れでも CLI は殺さない (裏で最後まで走る)
+        self.assertEqual(thread.call_args.kwargs["target"], p.wait)   # 終わったら回収する
+        self.assertTrue(Path(body["log"]).is_file())
+        self.assertIn(".runtime", Path(body["log"]).parts)
+
+    def test_cli_is_started_in_its_own_session(self):
+        with mock.patch.object(ops.procs.subprocess, "Popen") as popen, \
+                mock.patch.object(ops.procs, "is_windows", return_value=False):
+            popen.return_value.returncode = 0
+            self.call("rotate", self.req())
+        self.assertTrue(popen.call_args.kwargs["start_new_session"])   # dashboard の Ctrl-C を受けない
+        self.assertEqual(popen.call_args.kwargs["stdin"], subprocess.DEVNULL)
+
+    def test_output_files_are_pruned(self):
+        with spawn(b"x"):
+            for _ in range(ops.LOG_KEEP + 3):
+                self.call("rotate", self.req())
+        logs = list((self.shipdir / ".runtime" / "web-ops").glob("*.log"))
+        self.assertLessEqual(len(logs), ops.LOG_KEEP)
 
     def test_output_is_stripped_of_control_chars_and_capped(self):
         raw = b"\x1b[31mred\x1b[0m\x07\r\nline\n" + b"x" * (ops.MAX_OUTPUT + 5)
-        with mock.patch.object(ops.subprocess, "run", return_value=completed(raw)):
+        with spawn(raw):
             _, body = self.call("rotate", self.req())
         self.assertTrue(body["output"].startswith("red\nline\n"))
         self.assertNotIn("\x1b", body["output"])
@@ -74,21 +121,21 @@ class OpsCommonTest(ShipTestCase):
         self.assertEqual(len(body["output"]), ops.MAX_OUTPUT)
 
     def test_html_in_output_is_returned_as_text_untouched(self):
-        with mock.patch.object(ops.subprocess, "run", return_value=completed(b"<script>x</script>")):
+        with spawn(b"<script>x</script>"):
             _, body = self.call("rotate", self.req())
         self.assertEqual(body["output"], "<script>x</script>")   # 画面は text として描く (HTML にしない)
 
     # --- 入口の検査 ---
 
     def test_needs_confirmation(self):
-        with mock.patch.object(ops.subprocess, "run") as run:
+        with mock.patch.object(ops.procs, "spawn_detached") as run:
             for b in (self.req(confirmed=False), {k: v for k, v in self.req().items() if k != "confirmed"}):
                 status, body = self.call("rotate", b)
                 self.assertEqual((status, body["error"]["code"]), (400, "bad_request"))
         run.assert_not_called()
 
     def test_unknown_op_ship_seat_and_bad_body(self):
-        with mock.patch.object(ops.subprocess, "run") as run:
+        with mock.patch.object(ops.procs, "spawn_detached") as run:
             self.assertEqual(self.call("nope", self.req())[0], 404)
             self.assertEqual(self.call("seat-stop", self.req())[0], 404)   # 外から席を止める入口は無い
             self.assertEqual(self.call("rotate", self.req(ship="zz"))[0], 404)
@@ -99,7 +146,7 @@ class OpsCommonTest(ShipTestCase):
         run.assert_not_called()
 
     def test_a_failing_launch_is_500_json(self):
-        with mock.patch.object(ops.subprocess, "run", side_effect=OSError("boom")):
+        with spawn(side_effect=OSError("boom")):
             status, body = self.call("rotate", self.req())
         self.assertEqual((status, body["error"]["code"]), (500, "internal"))
 
@@ -137,7 +184,7 @@ class OpsHttpTest(unittest.TestCase):
         return r.status
 
     def test_checks_are_the_same_as_edit(self):
-        with mock.patch.object(ops.subprocess, "run") as run:
+        with mock.patch.object(ops.procs, "spawn_detached") as run:
             self.assertEqual(self.post(self.edit_srv, token="bad"), 403)
             self.assertEqual(self.post(self.edit_srv, token=None), 403)
             self.assertEqual(self.post(self.edit_srv, origin="http://evil.example"), 403)
@@ -146,11 +193,76 @@ class OpsHttpTest(unittest.TestCase):
         self.assertEqual(self.post(self.edit_srv), 404)   # 通る (艦が無いので 404)
 
 
+class ShipOpsTest(ShipTestCase):
+    """up・down・extend・halt: 本物は走らせず subprocess を偽物にして、呼ぶ引数と環境を確かめる。"""
+
+    def setUp(self):
+        super().setUp()
+        p = mock.patch("yamato.admiral.find_ship", side_effect=lambda n: self.shipdir if n == "t1" else None)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def run_op(self, op, params=None, **kw):
+        body = {"ship": "t1", "params": params or {}, "confirmed": True, **kw}
+        with spawn(b"ok\n") as run:
+            status, resp = dashboard.api_post(f"/api/v1/ops/{op}", body)
+        return status, resp, run
+
+    def test_each_op_calls_the_regular_cli_entry(self):
+        d = str(self.shipdir)
+        cases = [
+            ("up", {}, ["up", d, "--quiet"]),
+            ("up", {"for": "3h", "seats": "impl,review"}, ["up", d, "--quiet", "--for=3h", "--seats=impl,review"]),
+            ("down", {}, ["down", d]),
+            ("down-force", {}, ["down", d, "--force"]),
+            ("extend", {"span": "1h"}, ["extend", d, "1h"]),
+            ("halt", {}, ["halt", d]),
+        ]
+        for op, params, expect in cases:
+            with self.subTest(op=op, params=params):
+                status, body, run = self.run_op(op, params)
+                self.assertEqual(status, 200, body)
+                argv = run.call_args.args[0]
+                self.assertEqual(argv[2:], expect)
+                self.assertFalse(run.call_args.kwargs.get("shell"))
+                api_schema.assert_valid(self, body, PATH, method="post")
+
+    def test_does_not_borrow_a_seat_or_admiral_identity(self):
+        _, _, run = self.run_op("halt")
+        added = set(run.call_args.kwargs["env"]) - set(__import__("os").environ)
+        self.assertEqual(added, set())
+
+    def test_every_ship_op_needs_confirmation(self):
+        for op in ("up", "down", "down-force", "extend", "halt"):
+            with self.subTest(op=op):
+                status, body, run = self.run_op(op, {"span": "1h"}, confirmed=False)
+                self.assertEqual((status, body["error"]["code"]), (400, "bad_request"))
+                run.assert_not_called()
+
+    def test_extend_needs_span_and_values_cannot_become_options(self):
+        for op, params in (("extend", {}), ("extend", {"span": "-1h"}), ("up", {"for": "--seats=x"}),
+                           ("up", {"seats": "-x"})):
+            with self.subTest(op=op, params=params):
+                status, body, run = self.run_op(op, params)
+                self.assertEqual((status, body["error"]["code"]), (400, "bad_request"))
+                run.assert_not_called()
+
+    def test_cli_refusal_is_shown_as_is(self):
+        with spawn("艦は起動していない\n".encode(), 1):
+            status, body = dashboard.api_post("/api/v1/ops/extend", {"ship": "t1", "params": {"span": "1h"}, "confirmed": True})
+        self.assertEqual((status, body["exit_code"], body["output"]), (200, 1, "艦は起動していない\n"))
+
+    def test_unknown_ship_is_404(self):
+        status, body, run = self.run_op("halt", ship="nope")
+        self.assertEqual((status, body["error"]["code"]), (404, "not_found"))
+        run.assert_not_called()
+
+
 class OperationRegistryTest(unittest.TestCase):
     def test_only_registered_operations_exist(self):
-        self.assertEqual(sorted(ops.OPERATIONS), ["rotate"])
+        self.assertEqual(sorted(ops.OPERATIONS), ["down", "down-force", "extend", "halt", "rotate", "up"])
         with self.assertRaises(edit.EditError) as cm:
-            ops.handle("up", {"ship": "x", "params": {}, "confirmed": True})
+            ops.handle("seat-stop", {"ship": "x", "params": {}, "confirmed": True})
         self.assertEqual(cm.exception.status, 404)
 
 

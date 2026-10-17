@@ -1,7 +1,8 @@
 """web コンソールの操作の共通部品 (HTTP は持たない)。
 
 操作は yamato の CLI を別プロセスで呼ぶだけで、操作のロジックはここにも画面にも持たない。
-引数は list で渡して shell を通さず、タイムアウトを付け、出力 (stdout + stderr) と exit code を返す。
+引数は list で渡して shell を通さず、出力 (stdout + stderr) と exit code を返す。
+CLI は自分のセッションで起こして殺さない。待ちを打ち切っても (``timed_out``) 裏で最後まで走る。
 CLI が失敗しても (exit code が 0 でなくても) 応答は 200 で、画面は出力と exit code をそのまま見せる。
 
 どの操作ができるかは ``OPERATIONS`` に ``Operation`` を足した分だけ (足さなければ 404)。
@@ -14,15 +15,19 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
+import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from .. import admiral
+from .. import admiral, procs
 from ..util import YAMATO_BIN, YamatoError
 from .edit import EditError
 
-TIMEOUT = 30           # 秒。CLI が返らないまま画面を待たせない
+TIMEOUT = 30           # 秒。画面が CLI を待つ長さ (過ぎても CLI は殺さない)
+LOG_KEEP = 20          # .runtime/web-ops/ に残す出力のファイル数
 MAX_OUTPUT = 20000     # 画面に返す出力の文字数の上限
 _CONTROL = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b[@-_]|[\x00-\x08\x0b-\x1f\x7f]")
 
@@ -48,21 +53,51 @@ def clean(text: str) -> tuple[str, bool]:
     return (text[:MAX_OUTPUT], True) if len(text) > MAX_OUTPUT else (text, False)
 
 
-def run_cli(cmd: Command) -> dict:
-    """``yamato <args>`` を実行して結果を返す。shell は通さない。"""
+def _log_file(shipdir: Path, name: str) -> tuple[int, Path]:
+    """出力を受けるファイル (``.runtime/web-ops/``)。古いものは新しい LOG_KEEP 個だけ残す。"""
+    d = shipdir / ".runtime" / "web-ops"
+    d.mkdir(parents=True, exist_ok=True)
+    fd, path = tempfile.mkstemp(prefix=f"{int(time.time())}-{name}-", suffix=".log", dir=d)
+    for old in sorted(d.glob("*.log"), key=lambda f: f.stat().st_mtime)[:-LOG_KEEP]:
+        old.unlink(missing_ok=True)
+    return fd, Path(path)
+
+
+def _read(path: Path) -> tuple[str, bool]:
+    try:
+        return clean(path.read_bytes().decode("utf-8", "replace"))
+    except OSError:
+        return "", False
+
+
+def run_cli(cmd: Command, shipdir: Path) -> dict:
+    """``yamato <args>`` を実行して結果を返す。shell は通さない。
+
+    CLI は自分のセッションで起こし (dashboard を止めても巻き添えにならない)、出力は
+    ``.runtime/web-ops/`` のファイルに書かせる。``TIMEOUT`` 秒待っても終わらなければ殺さずに
+    ``timed_out`` で返す (up や halt は途中で殺すと watchdog の無い deadline や半端な停止が残る)。
+    CLI は裏で最後まで走り、``log`` のファイルに出力が続く。"""
     argv = [sys.executable, str(YAMATO_BIN), *cmd.args]
     shown = ["yamato", *cmd.args]
     try:
-        p = subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                           env={**os.environ, **cmd.env}, timeout=TIMEOUT)
-    except subprocess.TimeoutExpired as ex:
-        raw = ex.stdout or b""
-        out, cut = clean(raw.decode("utf-8", "replace") if isinstance(raw, bytes) else raw)
-        return {"argv": shown, "exit_code": None, "timed_out": True, "output": out, "truncated": cut}
+        fd, log = _log_file(shipdir, cmd.args[0])
+    except OSError as ex:
+        raise EditError(500, "internal", "出力のファイルを作れなかった", type(ex).__name__) from ex
+    try:
+        with os.fdopen(fd, "wb") as f:
+            p = procs.spawn_detached(argv, env={**os.environ, **cmd.env}, stdout=f, stderr=subprocess.STDOUT)
     except OSError as ex:
         raise EditError(500, "internal", "yamato を起動できなかった", type(ex).__name__) from ex
-    out, cut = clean(p.stdout.decode("utf-8", "replace"))
-    return {"argv": shown, "exit_code": p.returncode, "timed_out": False, "output": out, "truncated": cut}
+    try:
+        p.wait(timeout=TIMEOUT)
+    except subprocess.TimeoutExpired:
+        threading.Thread(target=p.wait, daemon=True).start()   # 終わったら回収する (zombie を残さない)
+        out, cut = _read(log)
+        return {"argv": shown, "exit_code": None, "timed_out": True, "output": out, "truncated": cut,
+                "log": str(log)}
+    out, cut = _read(log)
+    return {"argv": shown, "exit_code": p.returncode, "timed_out": False, "output": out, "truncated": cut,
+            "log": str(log)}
 
 
 def handle(op: str, body: dict) -> dict:
@@ -74,7 +109,7 @@ def handle(op: str, body: dict) -> dict:
     if not isinstance(ship, str) or not isinstance(params, dict) \
             or not all(isinstance(k, str) and isinstance(v, str) for k, v in params.items()):
         raise EditError(400, "bad_request", "ship (文字列) と params (文字列の object) が要る")
-    shipdir = admiral.all_ships().get(ship)
+    shipdir = admiral.find_ship(ship)
     if shipdir is None:
         raise EditError(404, "not_found", "その艦は無い")
     if operation.confirm and body.get("confirmed") is not True:
@@ -83,4 +118,4 @@ def handle(op: str, body: dict) -> dict:
         cmd = operation.build(shipdir, params)
     except YamatoError as ex:
         raise EditError(400, "bad_request", str(ex)) from ex
-    return run_cli(cmd)
+    return run_cli(cmd, shipdir)
