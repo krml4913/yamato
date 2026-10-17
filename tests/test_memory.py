@@ -84,38 +84,18 @@ class ConfTest(_Base):
         c = memory.conf(validate(d, Path("/ship")))
         self.assertEqual(c["curate_every"], 36 * 3600)
         self.assertEqual(memory.limit(validate(d, Path("/ship")), "memory"), (80, 4000))   # not named: default
-        for bad in ({"applier": "nobody"}, {"curate_at": 0}, {"limits": {"memory_lines": 0}},
-                    {"limits": {"lines": 3}}, {"curate_every": "x"}, {"unknown": 1}):
+        for bad in ({"applier": "nobody"}, {"curate_at": 0}, {"limits": {"memory_lines": 10}},
+                    {"curate_every": "x"}, {"unknown": 1}):
             d["memory"] = bad
             with self.assertRaises(YamatoError, msg=bad):
                 validate(d, Path("/ship"))
 
-    def test_old_memory_limits_are_read_with_a_warning(self):
-        """T-076: `memory.limits` (four flat keys) is read as inject.limits.memory / knowledge for one version."""
-        d = {"name": "dev", "hub": "pm", "workspace": "/tmp", "roles": {"pm": {}},
-             "memory": {"limits": {"memory_lines": 10, "knowledge_chars": 700}}}
-        t = validate(d, Path("/ship"))
-        self.assertEqual(memory.limit(t, "memory"), (10, 4000))      # the key left out keeps its default
-        self.assertEqual(memory.limit(t, "knowledge"), (120, 700))
-        self.assertTrue(any("memory.limits は inject.limits.memory / knowledge に書き換えろ" in w for w in t["warnings"]))
-        self.assertNotIn("legacy_limits", t["memory"])
-        # both written: inject.limits wins, and it is said
-        d["inject"] = {"limits": {"memory": [5, 300]}}
-        t = validate(d, Path("/ship"))
-        self.assertEqual(memory.limit(t, "memory"), (5, 300))
-        self.assertEqual(memory.limit(t, "knowledge"), (120, 700))    # only the one not in inject.limits is read over
-        self.assertTrue(any("両方がある。inject.limits.memory を使う" in w for w in t["warnings"]))
-        # the old shape is still checked
-        d["memory"] = {"limits": {"memory_lines": 0}}
-        with self.assertRaises(YamatoError):
-            validate(d, Path("/ship"))
-
-    def test_the_old_byte_limits_name_their_new_keys(self):
-        d = {"name": "dev", "hub": "pm", "workspace": "/tmp", "roles": {"pm": {}},
-             "memory": {"limits": {"memory_bytes": 8192, "knowledge_bytes": 12288}}}
-        with self.assertRaises(YamatoError) as cm:
-            validate(d, Path("/ship"))
-        self.assertIn("memory_bytes は memory_chars / knowledge_bytes は knowledge_chars に改名した", str(cm.exception))
+    def test_old_memory_limits_are_refused(self):
+        """T-095: `memory.limits` (read for v1.2.0) is an error that names inject.limits.memory / knowledge."""
+        for limits in ({"memory_lines": 10, "knowledge_chars": 700}, {"memory_bytes": 8192}, {}):
+            d = {"name": "dev", "hub": "pm", "workspace": "/tmp", "roles": {"pm": {}}, "memory": {"limits": limits}}
+            with self.assertRaisesRegex(YamatoError, "memory.limits は無くなった。inject.limits.memory / inject.limits.knowledge"):
+                validate(d, Path("/ship"))
 
 
 class MigrateTest(_Base):

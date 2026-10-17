@@ -27,6 +27,12 @@ v1.0.0 以降の変更のうち、**既存の艦・利用者が何かをしな�
 - やらないと: reviewer 欄が書かれず、レビュー中の reviewer が今までどおり警告 (黄) に出て、dashboard にもレビュー中と出ない。動作は壊れない
 - PR: #115
 
+### v1.2.0 の互換を消した: 古い `charter` の書き方と `memory.limits` は読み込みエラー (T-095)
+- 何が変わったか: v1.2.0 が警告つきで読み替えていた次の書き方を、team.yaml の検査が拒否する (エラー文に新しい書き方が出る)。トップの `charter:` / `inject.parts`・`roles.<role>.inject` の `charter` / `inject.limits.charter` (T-075 の互換) と、`memory.limits` (`memory_lines`・`memory_chars`・`knowledge_lines`・`knowledge_chars`。T-076 の互換)。読み替えのコードと警告、team.schema.json の古いキーも消えた
+- 既存の艦がやること: **v1.2.0 で「書き換えろ」の警告が出ていた艦は、直してから上げる**。(1) トップの `charter: <パス>` を消して `inject.files.charter: <パス>` に (2) リストの `charter` を `file:charter` に (3) `inject.limits.charter` を `inject.limits.files.charter` に (4) `memory.limits` を消し、`inject.limits.memory: [<memory_lines>, <memory_chars>]` と `inject.limits.knowledge: [<knowledge_lines>, <knowledge_chars>]` に。詳しくは下の v1.1.0 → v1.2.0 の T-075・T-076 の項。警告が出ていなければ何もしない
+- やらないと: 古い書き方の艦は `yamato up` などの team.yaml の検査で止まる
+- PR: T-095
+
 ### Windows で claude の起動がコマンド長超過で失敗するのを直す (T-090)
 - 何が変わったか: 席の起動 (`--bg`・`-p`) の `--agents` に、その席の role だけを載せるようにした (今までは全 role の全文で、yamato-dev で 28.6K 文字)。Windows では、コマンドラインが上限 (`claude.exe` は 32767 文字、`claude.cmd` の shim は `cmd /c` 経由で 8191 文字) を超えるなら、起動前に大きい引数を示してエラーにする。npm の shim は `node cli.js` を直に叩く (見つかれば)
 - 既存の艦がやること: なし。Windows で role プロンプトが長く shim の上限に当たる艦は、`claude.exe` の入れ方にするか roles/*.md を縮める
