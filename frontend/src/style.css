@@ -22,3 +22,10 @@ h3 { font-size: 13px; margin: 12px 0 4px; opacity: 0.7; }
 .dim { opacity: 0.65; }
 .tag { display: inline-block; border-radius: 4px; padding: 0 6px; background: #7772; margin-right: 4px; }
 .tag.urgent { background: #dc2626; color: #fff; }
+
+/* 設定画面 (表の見た目は上の table・th・td の全体指定) */
+.config-field { border-top: 1px solid #7773; }
+.config-field h2 small { font-size: 0.7em; font-weight: normal; opacity: 0.7; }
+.config-pending { padding: 0.5rem; border: 1px solid #d97706; }
+.config-error { color: #dc2626; }
+pre { overflow-x: auto; }
