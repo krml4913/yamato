@@ -2,8 +2,9 @@ import type { ReactNode } from "react";
 import styles from "./saveBar.module.css";
 
 /** 画面の下に固定する保存バー。count は変えた項目の数の表示、children はボタン、panel は差分・エラー。 */
-export function SaveBar({ count, children, panel, error }: {
+export function SaveBar({ count, children, panel, error, busy }: {
   count: string;
+  busy?: boolean;
   children: ReactNode;
   panel?: ReactNode;
   error?: string | null;
@@ -17,7 +18,7 @@ export function SaveBar({ count, children, panel, error }: {
         </div>
       )}
       <div className={styles.row}>
-        <span className={styles.count}>{count}</span>
+        <span className={styles.count} data-busy={busy ? "true" : "false"} aria-live="polite">{count}</span>
         {children}
       </div>
     </div>

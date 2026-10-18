@@ -42,6 +42,7 @@ export function RawYamlPage() {
           <MdEditor
             key={`${round}`}
             ship={name}
+            nowrap
             file="team.yaml"
             initial={current.raw}
             onSaved={() => {

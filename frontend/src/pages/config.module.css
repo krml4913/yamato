@@ -40,6 +40,8 @@
 .kv dt { opacity: 0.75; min-width: 8rem; flex: none; }
 .kv dt::after { content: ":"; }
 .kv dd { margin: 0; min-width: 0; }
+.changed { border-left: 4px solid var(--color-warn); padding-left: 0.75rem; }
+.changedMark { font-size: 13px; margin-left: 0.5rem; color: var(--color-warn); }
 
 /* 表: 見出しは長い表でも画面の上に残す (目次の下)。説明の文は折り返す */
 .valueTable .scalar { overflow-wrap: normal; }
