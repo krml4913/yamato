@@ -80,8 +80,11 @@ describe("OverviewPage", () => {
     const btn = screen.getAllByRole("button", { name: "要対応の見方" })[0];
     expect(btn).toHaveAttribute("aria-expanded", "false");
     fireEvent.focus(btn);
+    fireEvent.mouseEnter(btn);
+    expect(screen.queryByRole("note")).toBeNull();   // focus・hover だけでは開かない
+    fireEvent.click(btn);
     expect(screen.getByRole("note")).toHaveTextContent(/すぐ手が要る/);
-    fireEvent.blur(btn);
+    fireEvent.click(btn);   // focus を保ったまま、もう一度押せば閉じる
     expect(screen.queryByRole("note")).toBeNull();
     fireEvent.click(btn);
     expect(screen.getByRole("note")).toBeInTheDocument();
