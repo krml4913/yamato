@@ -19,3 +19,5 @@ a { color: var(--color-link); }
 h1 { font-size: 20px; margin: 12px 0 4px; }
 h2 { font-size: 16px; margin: 0 0 8px; }
 pre { overflow-x: auto; }
+/* 読む行の長さに上限を付ける。表の中は対象外 */
+:where(p, li, dd):not(:where(td *, th *)) { max-width: 75ch; }

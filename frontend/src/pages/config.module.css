@@ -11,6 +11,7 @@
 .unset { margin: 0.25rem 0; }
 .unsetLabel { opacity: 0.55; font-style: italic; }
 .hint { font-size: 0.8125rem; opacity: 0.6; }
+.valueTable .scalar { overflow-wrap: normal; white-space: nowrap; }
 .valueTable td, .valueTable th[scope="row"] { font-size: 1rem; }
 .list { margin: 0; padding-left: 1.25rem; }
 .kv { margin: 0; }
