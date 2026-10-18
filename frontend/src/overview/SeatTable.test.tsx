@@ -112,3 +112,11 @@ describe("SeatTable の読みやすさ", () => {
     expect(cell.getAttribute("title")).toContain(id);
   });
 });
+
+describe("SeatTable の横スクロール", () => {
+  it("表は横に動かせる入れ物に入っている (狭い幅でも全部の列に届く)", () => {
+    const { container } = render(<SeatTable ship="dev" seats={seats} now={0} />);
+    const table = container.querySelector("table");
+    expect(table?.parentElement?.className).toMatch(/scroll/);
+  });
+});
