@@ -27,8 +27,9 @@ function CloseOne({ wait }: { wait: Wait }) {
   );
 }
 
-// 判断の本文 (背景・選択肢・推し)。開いたときだけ読む
-function Body({ wait }: { wait: Wait }) {
+// 判断の本文 (背景・選択肢・推し)。開いたときだけ読む。閉じるフォームは本文を読んだあとに本文の下へ出す
+// (読まずに閉じる入口は作らない。本文が読めなかったときも、閉じる手段は残す)
+function Body({ wait, editing }: { wait: Wait; editing: boolean }) {
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<{ text: string } | { error: string } | null>(null);
   const toggle = () => {
@@ -48,6 +49,7 @@ function Body({ wait }: { wait: Wait }) {
       {open && (state === null ? <p className={status.dim}>読み込み中…</p>
         : "error" in state ? <p role="alert" className={status.red}>{state.error}</p>
         : <div className={styles.waitBody}><Markdown text={state.text} /></div>)}
+      {open && state !== null && editing && <CloseOne wait={wait} />}
     </div>
   );
 }
@@ -66,8 +68,7 @@ export function Waits({ waits }: { waits: Wait[] }) {
                 {w.urgent && <span className={`${styles.tag} ${styles.urgent}`}>急ぎ</span>}
                 <b>{w.ship}</b> 判断 {w.id}: {w.title} <span className={status.dim}>({w.age || "?"} 待ち)</span>
                 {w.recommendation && (<><br /><span className={status.dim}>推し: {w.recommendation}</span></>)}
-                <Body wait={w} />
-                {editing && <CloseOne wait={w} />}
+                <Body wait={w} editing={editing} />
               </li>
             ))}
         </ul>

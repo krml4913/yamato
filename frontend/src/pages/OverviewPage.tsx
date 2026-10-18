@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { editToken, getOverview, type Overview } from "../api/client";
 import { fmtDateTime } from "../overview/format";
-import { Legend } from "../overview/Legend";
 import { ShipCard, ShipLink } from "../overview/ShipCard";
 import { isRunning, stoppedSummary } from "../overview/summary";
 import { Waits } from "../overview/Waits";
@@ -47,7 +46,6 @@ export function OverviewPage() {
           </p>
           <Waits waits={data.waits} />
           {data.ships.length === 0 && <p className={status.dim}>艦がありません (yamato ship create で作る)</p>}
-          {data.ships.length > 0 && <Legend />}
           {running.map((s) => (
             <ShipCard key={s.name} ship={s} now={data.generated_at} waits={data.waits} />
           ))}
