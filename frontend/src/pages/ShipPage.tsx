@@ -81,22 +81,22 @@ function ShipOps({ ship, running }: { ship: string; running: boolean | null }) {
           <fieldset className={styles.opGroup}>
             <legend>艦を起こす</legend>
             <div className={styles.row}>
-            <label>稼働時間 <input aria-label="稼働時間" className={styles.wide} value={forSpan} onChange={(e) => setForSpan(e.target.value)} placeholder="例 3h (省くと既定)" /></label>
-            <label>一緒に起こす席 <input aria-label="一緒に起こす席" className={styles.wide} value={seats} onChange={(e) => setSeats(e.target.value)} placeholder="例 impl,review" /></label>
-            <button className={quiet(running === true)} onClick={() => ask({
-              op: "up", params: { for: forSpan, seats }, title: `艦 ${ship} を起動する`, confirmLabel: "起動する",
-              detail: "captain の席を起こし、稼働時間の上限を設定する (yamato up)。",
-            })}>up</button>
+              <label>稼働時間 <input aria-label="稼働時間" className={styles.wide} value={forSpan} onChange={(e) => setForSpan(e.target.value)} placeholder="例 3h (省くと既定)" /></label>
+              <label>一緒に起こす席 <input aria-label="一緒に起こす席" className={styles.wide} value={seats} onChange={(e) => setSeats(e.target.value)} placeholder="例 impl,review" /></label>
+              <button className={quiet(running === true)} onClick={() => ask({
+                op: "up", params: { for: forSpan, seats }, title: `艦 ${ship} を起動する`, confirmLabel: "起動する",
+                detail: "captain の席を起こし、稼働時間の上限を設定する (yamato up)。",
+              })}>up</button>
             </div>
           </fieldset>
           <fieldset className={styles.opGroup}>
             <legend>稼働時間を延ばす</legend>
             <div className={styles.row}>
-            <label>延ばす時間 <input aria-label="延ばす時間" className={styles.wide} value={span} onChange={(e) => setSpan(e.target.value)} placeholder="例 1h" /></label>
-            <button className={quiet(running === false)} onClick={() => ask({
-              op: "extend", params: { span }, title: `艦 ${ship} の deadline を延ばす`, confirmLabel: "延ばす",
-              detail: "稼働時間の上限を延ばす (yamato extend)。起動していない艦は断られる。",
-            })}>extend</button>
+              <label>延ばす時間 <input aria-label="延ばす時間" className={styles.wide} value={span} onChange={(e) => setSpan(e.target.value)} placeholder="例 1h" /></label>
+              <button className={quiet(running === false)} onClick={() => ask({
+                op: "extend", params: { span }, title: `艦 ${ship} の deadline を延ばす`, confirmLabel: "延ばす",
+                detail: "稼働時間の上限を延ばす (yamato extend)。起動していない艦は断られる。",
+              })}>extend</button>
             </div>
           </fieldset>
           <div className={styles.row}>
