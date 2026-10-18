@@ -2,7 +2,7 @@
 .row label { display: flex; gap: 0.25rem; align-items: center; }
 .wide { width: 14em; }
 .runState { margin: 0 0 0.5rem; font-weight: 600; }
-.hint { font-size: 12px; opacity: 0.75; margin: 0; }
+.hint { font-size: 13px; opacity: 0.75; margin: 0; }
 .quiet { opacity: 0.55; }
 
 .usual { margin: 0.5rem 0 1rem; }
@@ -18,16 +18,16 @@
 
 /* 白地の赤文字でなく、赤地の白文字にして読めるようにする */
 .danger {
-  background: #b91c1c;
+  background: var(--color-danger);
   color: #fff;
-  border: 1px solid #7f1d1d;
+  border: 1px solid var(--color-danger);
   border-radius: 4px;
   padding: 0.3rem 0.8rem;
   cursor: pointer;
 }
-.danger:hover { background: #991b1b; }
+.danger:hover { filter: brightness(0.9); }
 
 .mdGroup h3 { font-size: 14px; margin: 0.5rem 0 2px; }
 .mdList { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; list-style: none; padding: 0; margin: 0; }
-.mdInternal { font-size: 12px; opacity: 0.8; }
-.mdInternal h3 { font-size: 12px; }
+.mdInternal { font-size: 13px; opacity: 0.75; }
+.mdInternal h3 { font-size: 13px; }
