@@ -128,6 +128,27 @@ describe("艦ページの操作", () => {
     expect(screen.queryByRole("heading", { level: 2, name: "dev" })).toBeNull();
   });
 
+  it("読み込み中は状態の枠を先に出し、設定リンクは状態の下に置く", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockImplementation((u: string) => Promise.resolve(new Response(JSON.stringify(
+      String(u).includes("/overview")
+        ? { generated_at: 0, waits: [], ships: [{ name: "dev", error: "x", state: null }] }
+        : { fields: [] },
+    ), { status: 200 }))));
+    page();
+    expect(screen.getByRole("status").textContent).toContain("読み込み中");
+    await waitFor(() => expect(screen.queryByText(/読み込み中/)).toBeNull());
+    const link = screen.getByRole("link", { name: "設定" });
+    const h1 = screen.getByRole("heading", { level: 1 });
+    expect(h1.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText(/読めない: x/).compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("状態が取れなかったらエラーを出す", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("down")));
+    page();
+    expect((await screen.findByRole("alert")).textContent).toContain("読めなかった");
+  });
+
   it("止まっている艦では down を、動いている艦では up を目立たせない", async () => {
     setToken(true);
     const fetchFor = (alive: boolean) => vi.fn().mockImplementation((u: string) => Promise.resolve(new Response(JSON.stringify(
