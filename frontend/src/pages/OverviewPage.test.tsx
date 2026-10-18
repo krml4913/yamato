@@ -1,4 +1,6 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, render as rtlRender, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+import type { ReactElement } from "react";
 import { REFRESH_MS, OverviewPage } from "./OverviewPage";
 import type { Overview } from "../api/client";
 import status from "../status.module.css";
@@ -34,8 +36,20 @@ const data = (): Overview => ({
   ],
 });
 
+const render = (ui: ReactElement) => rtlRender(<MemoryRouter>{ui}</MemoryRouter>);
+
+function setToken(on: boolean) {
+  document.head.querySelectorAll('meta[name="yamato-token"]').forEach((m) => m.remove());
+  if (on) {
+    const m = document.createElement("meta");
+    m.name = "yamato-token";
+    m.content = "tok";
+    document.head.appendChild(m);
+  }
+}
+
 describe("OverviewPage", () => {
-  afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
+  afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); setToken(false); });
 
   it("判断待ち・艦の枠・席の表・2 段目・PR・異常・壊れた艦を出す", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(data())));
@@ -126,5 +140,53 @@ describe("OverviewPage", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("x", { status: 500 }));
     render(<OverviewPage />);
     expect(await screen.findByText(/取得に失敗した/)).toBeInTheDocument();
+  });
+
+  it("読むだけ / 編集できる をモードどおりに出す", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify(data())));
+    const first = render(<OverviewPage />);
+    expect(await screen.findByText(/読むだけ/)).toBeInTheDocument();
+    first.unmount();
+    setToken(true);
+    render(<OverviewPage />);
+    expect(await screen.findByText(/編集できる/)).toBeInTheDocument();
+    expect(screen.queryByText(/読むだけ/)).toBeNull();
+  });
+
+  it("艦の名前は艦のページへのリンク (止まっている艦も)", async () => {
+    const d = data();
+    const stoppedShip = structuredClone(d.ships[0]);
+    stoppedShip.name = "old ship";
+    stoppedShip.state!.seats = [seat({ alive: false, pid: null })];
+    d.ships = [d.ships[0], stoppedShip];
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(d)));
+    render(<OverviewPage />);
+    expect(await screen.findByRole("link", { name: "dev" })).toHaveAttribute("href", "/ship/dev");
+    expect(screen.getAllByRole("link", { name: "old ship" })[0]).toHaveAttribute("href", "/ship/old%20ship");
+  });
+
+  it("異常は 24 時間以内を赤で上に、古いものは畳んで赤くしない", async () => {
+    const d = data();
+    const now = d.generated_at;
+    d.ships[0].state!.anomalies = [
+      { kind: "spin_suspected", ts: now - 3600, summary: "最近" },
+      { kind: "pr_conflict", ts: now - 30 * 3600, summary: "昨日" },
+    ];
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(d)));
+    const { container } = render(<OverviewPage />);
+    expect(await screen.findByText("spin_suspected")).toHaveClass(status.red);
+    const old = container.querySelector("details[class*=oldAnomalies]")!;
+    expect(old).not.toHaveAttribute("open");
+    expect(old.querySelector("summary")).toHaveTextContent("24 時間より前の異常 (1 件)");
+    expect(screen.getByText(/pr_conflict/)).not.toHaveClass(status.red);
+    expect(old.textContent).toContain("昨日");
+  });
+
+  it("古い異常しか無ければ今は無いと出す", async () => {
+    const d = data();
+    d.ships[0].state!.anomalies = [{ kind: "crash", ts: d.generated_at - 48 * 3600, summary: "前々日" }];
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(d)));
+    render(<OverviewPage />);
+    expect(await screen.findByText("24 時間以内の異常は無い")).toBeInTheDocument();
   });
 });

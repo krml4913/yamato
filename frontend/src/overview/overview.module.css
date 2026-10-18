@@ -29,5 +29,14 @@
 .secBoard h3 { font-size: 15px; margin: 16px 0 4px; }
 .secPr h3 { font-size: 14px; margin: 14px 0 4px; opacity: 0.85; }
 .secReport h3 { font-size: 13px; margin: 14px 0 4px; opacity: 0.7; }
-.secMisc { font-size: 12px; }
-.secMisc h3 { font-size: 12px; margin: 10px 0 2px; opacity: 0.55; font-weight: 600; }
+.secMisc { font-size: 13px; }
+.secMisc h3 { font-size: 13px; margin: 10px 0 2px; opacity: 0.55; font-weight: 600; }
+
+/* 艦の名前は艦のページへのリンク。見出しの見た目は変えない */
+.shipLink { color: inherit; text-decoration: none; }
+.shipLink:hover { text-decoration: underline; }
+
+/* 済んだ異常 (24 時間より前): 赤くしない、畳む */
+.oldAnomalies { margin-top: 6px; }
+.oldAnomalies > summary { cursor: pointer; opacity: 0.75; }
+.oldAnomalies li { opacity: 0.7; }
