@@ -26,7 +26,7 @@ describe("SeatTable の操作", () => {
   it("--edit でなければ(トークンが無ければ)操作の入口を出さない", () => {
     setToken(false);
     render(<SeatTable ship="dev" seats={seats} now={0} />);
-    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.queryByRole("button", { name: /入れ替え|終業/ })).toBeNull();
     expect(screen.queryByText("操作")).toBeNull();
   });
 
@@ -35,7 +35,7 @@ describe("SeatTable の操作", () => {
     render(<SeatTable ship="dev" seats={seats} now={0} />);
     expect(screen.getByRole("button", { name: "pm に入れ替えの印" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "impl に終業を頼む" })).toBeTruthy();
-    expect(screen.getAllByRole("button")).toHaveLength(2);
+    expect(screen.getAllByRole("button").filter((b) => b.textContent !== "?")).toHaveLength(2);   // 「?」は凡例
   });
 
   it("終業は確認を経て send に頼みの文を載せるだけ。CLI の出力をそのまま見せる", async () => {
