@@ -425,15 +425,15 @@ def _close(shipdir: Path, team: dict, seat: str, *, sid: str, no: int, started: 
     if failures:
         outcome, reason = FAILED, "failed"
     elif killed:
-        # max-duration / grace-exceeded: the wrapper's own limit; down-force: from outside
-        outcome, reason = (FORCED if killed == "down-force" else TIMEOUT), killed
+        # max-duration / grace-exceeded: the wrapper's own limit; down-force / halt: from outside
+        outcome, reason = (FORCED if killed in events.FORCED_FROM_OUTSIDE else TIMEOUT), killed
     elif by_seat:
         outcome, reason = OK, "seat-stop"
     else:
         outcome, reason = NO_HANDOFF, "exited"
     notes = [f"{FAILED}: " + " / ".join(w for w, _ in failures)] if failures else []
     if killed:
-        notes.append(f"{FORCED if killed == 'down-force' else TIMEOUT} ({killed})")
+        notes.append(f"{FORCED if killed in events.FORCED_FROM_OUTSIDE else TIMEOUT} ({killed})")
     if not by_seat:
         notes.append(roster.NO_HANDOFF_NOTE)
     note = "、".join(notes) or None

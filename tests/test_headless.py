@@ -226,6 +226,25 @@ class HeadlessTest(_Base):
         self.assertIn(rec["outcome"], (headless.FORCED, headless.TIMEOUT))
         self.assertEqual(len(events.read(self.shipdir, kinds=events.FORCE_STOP)), 1)
 
+    def test_force_stop_from_outside_is_forced_whatever_the_reason(self):
+        # down --force と halt は同じ強制停止で、記録の理由だけが違う。どちらも「強制停止」で、時間切れではない
+        for reason in ("down-force", "halt"):
+            with self.subTest(reason=reason):
+                self.set_fake_mode(p_sleep=30)
+                th = threading.Thread(target=headless.run, args=(self.shipdir, "researcher"), daemon=True)
+                th.start()
+                for _ in range(100):
+                    if roster.seat(self.shipdir, "researcher").get("pid"):
+                        break
+                    time.sleep(0.05)
+                with mock.patch.object(seat.report, "safety_net", return_value=[]):
+                    seat.force_stop_all(self.shipdir, self.team(), reason)
+                th.join(15)
+                self.assertFalse(th.is_alive())
+                rec = roster.seat(self.shipdir, "researcher")
+                self.assertEqual((rec["endReason"], rec["outcome"]), (reason, headless.FORCED))
+                self.assertEqual(self.usage_lines()[-1]["outcome"], headless.FORCED)
+
     # --- a wrapper that goes away must not leave claude -p without its time limit ---
 
     def _orphan(self):
