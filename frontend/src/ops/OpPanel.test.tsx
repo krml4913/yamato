@@ -62,4 +62,17 @@ describe("OpPanel の出方と後始末", () => {
       window.removeEventListener(REFRESH_EVENT, seen);
     }
   });
+
+  it("実行中は確定のボタンを無効にして実行中と分かる", async () => {
+    let done: (r: Response) => void = () => {};
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(() => new Promise<Response>((r) => { done = r; })));
+    render(<OpPanel spec={spec} onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "延ばす" }));
+    const running = await screen.findByRole("button", { name: "実行中…" }) as HTMLButtonElement;
+    expect(running.disabled).toBe(true);
+    expect(screen.getByRole("region", { name: "延ばす" }).getAttribute("aria-busy")).toBe("true");
+    done(new Response(JSON.stringify({ argv: ["yamato"], exit_code: 0, timed_out: false, truncated: false, output: "" }), { status: 200 }));
+    await screen.findByText("exit code 0");
+    expect(screen.getByRole("region", { name: "延ばす" }).getAttribute("aria-busy")).toBe("false");
+  });
 });

@@ -6,6 +6,17 @@ import type { Wait } from "./types";
 import status from "../status.module.css";
 import styles from "./overview.module.css";
 
+// 待ち時間は server が "144h47m" / "5m03s" の形で渡す。24 時間を超えたら日で出す。
+// 日数が 1 日以上なら warn、3 日以上なら赤にして、長く放っている判断を目で拾えるようにする
+export function fmtWait(age: string): { text: string; level: "" | "warn" | "red" } {
+  const m = /^(\d+)h(\d+)m$/.exec(age);
+  if (!m) return { text: age || "?", level: "" };
+  const h = Number(m[1]);
+  if (h < 24) return { text: age, level: "" };
+  const d = Math.floor(h / 24);
+  return { text: `${d} 日 ${h % 24} 時間`, level: d >= 3 ? "red" : "warn" };
+}
+
 // 判断待ち 1 件を閉じる入口。--edit で起動したとき (index.html にトークンがあるとき) だけ出す
 function CloseOne({ wait, onAsk }: { wait: Wait; onAsk: (spec: OpSpec) => void }) {
   const [choice, setChoice] = useState("");
@@ -52,6 +63,11 @@ function Body({ wait, editing, onAsk }: { wait: Wait; editing: boolean; onAsk: (
   );
 }
 
+function WaitAge({ age }: { age: string }) {
+  const { text, level } = fmtWait(age);
+  return <span className={level === "red" ? status.red : level === "warn" ? status.warn : status.dim}>({text} 待ち)</span>;
+}
+
 export function Waits({ waits }: { waits: Wait[] }) {
   const editing = editToken() !== null;
   // 確認画面は一覧の下に 1 つ。閉じた判断は一覧から消えるので、一覧の中に置くと結果ごと消える
@@ -66,7 +82,7 @@ export function Waits({ waits }: { waits: Wait[] }) {
             {waits.map((w) => (
               <li key={`${w.ship}/${w.id}`}>
                 {w.urgent && <span className={`${styles.tag} ${styles.urgent}`}>急ぎ</span>}
-                <b>{w.ship}</b> 判断 {w.id}: {w.title} <span className={status.dim}>({w.age || "?"} 待ち)</span>
+                <b>{w.ship}</b> 判断 {w.id}: {w.title} <WaitAge age={w.age} />
                 {w.recommendation && (<><br /><span className={status.dim}>推し: {w.recommendation}</span></>)}
                 <Body wait={w} editing={editing} onAsk={setPending} />
               </li>

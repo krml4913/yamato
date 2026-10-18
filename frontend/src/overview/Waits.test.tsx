@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { Waits } from "./Waits";
+import { Waits, fmtWait } from "./Waits";
 import type { Wait } from "./types";
 
 function setToken(on: boolean) {
@@ -131,5 +131,15 @@ describe("判断の本文を読む", () => {
     await openBody("dev", "D-002");
     expect(screen.getByRole("textbox", { name: "判断 D-002 の決定" })).toBeTruthy();
     expect(screen.getByRole("textbox", { name: "判断 D-002 の理由" })).toBeTruthy();
+  });
+});
+
+describe("待ち時間の出し方", () => {
+  it("24 時間未満はそのまま、超えたら日で出す", () => {
+    expect(fmtWait("23h59m")).toEqual({ text: "23h59m", level: "" });
+    expect(fmtWait("5m03s").text).toBe("5m03s");
+    expect(fmtWait("24h00m")).toEqual({ text: "1 日 0 時間", level: "warn" });
+    expect(fmtWait("144h47m")).toEqual({ text: "6 日 0 時間", level: "red" });
+    expect(fmtWait("").text).toBe("?");
   });
 });

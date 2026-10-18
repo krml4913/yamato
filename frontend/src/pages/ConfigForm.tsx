@@ -4,7 +4,7 @@ import { Editor } from "../form/Editor";
 import { defaultFor, diffFields, type Json, type Schema } from "../form/schema";
 import status from "../status.module.css";
 import styles from "./config.module.css";
-import { FieldHead, groupFields, Groups, type Field } from "./configGroups";
+import { FieldHead, groupFields, isWide, Groups, type Field } from "./configGroups";
 import form from "../form/form.module.css";
 import { DiffView } from "../edit/DiffView";
 import { SaveBar, saveBarStyles, SavedNotice } from "../edit/SaveBar";
@@ -87,30 +87,32 @@ export function ConfigForm({ name, config, saved, onSaved, onDirty }: {
         const v = draft[f.key];
         const schema = f.schema as Schema | null;
         return (
-          <section key={f.key} id={`field-${f.key}`} className={`${styles.field} ${changedKeys.has(f.key) ? styles.changed : ""}`}>
+          <section key={f.key} id={`field-${f.key}`} className={`${styles.field} ${isWide(f, true) ? styles.wide : ""} ${changedKeys.has(f.key) ? styles.changed : ""}`}>
             <FieldHead field={f} />
-            {changedKeys.has(f.key) && <span className={styles.changedMark}>変えた</span>}
-            {v === undefined ? (
-              <button
-                type="button"
-                disabled={!schema}
-                onClick={() => change(f.key, defaultFor(schema ?? {}))}
-                aria-label={`${f.key} を設定する`}
-              >
-                未設定 (設定する)
-              </button>
-            ) : (
-              <>
-                <Editor label={f.key} schema={schema ?? {}} value={v} onChange={(nv) => change(f.key, nv)} />
-                {!f.required && (
-                  <p>
-                    <button type="button" className={form.small} onClick={() => change(f.key, undefined)} aria-label={`${f.key} を未設定に戻す`}>
-                      未設定に戻す
-                    </button>
-                  </p>
-                )}
-              </>
-            )}
+            <div className={styles.body}>
+              {changedKeys.has(f.key) && <span className={styles.changedMark}>変えた</span>}
+              {v === undefined ? (
+                <button
+                  type="button"
+                  disabled={!schema}
+                  onClick={() => change(f.key, defaultFor(schema ?? {}))}
+                  aria-label={`${f.key} を設定する`}
+                >
+                  未設定 (設定する)
+                </button>
+              ) : (
+                <>
+                  <Editor label={f.key} schema={schema ?? {}} value={v} onChange={(nv) => change(f.key, nv)} />
+                  {!f.required && (
+                    <p>
+                      <button type="button" className={form.small} onClick={() => change(f.key, undefined)} aria-label={`${f.key} を未設定に戻す`}>
+                        未設定に戻す
+                      </button>
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
           </section>
         );
       }} />
