@@ -48,7 +48,7 @@
 .valueTable td { white-space: normal; }
 .valueTable td.cellProse { min-width: 18rem; }
 @media (min-width: 1001px) {
-  .valueTable thead th { position: sticky; top: 2.6rem; background: Canvas; z-index: 1; border-bottom: 1px solid var(--color-line-strong); }
+  .valueTable thead th { position: sticky; top: 2.6rem; background: Canvas; opacity: 1; color: color-mix(in srgb, CanvasText 75%, transparent); z-index: 1; border-bottom: 1px solid var(--color-line-strong); }
 }
 @media (max-width: 1000px) {
   .valueTable td { white-space: normal; }
