@@ -47,3 +47,7 @@
   .row label.sendBody { flex: 1 1 100%; flex-wrap: wrap; }
   .sendBody textarea { flex: 1 1 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
 }
+
+/* 状態の枠。読み込み中は表が入る分の高さを先に取る */
+.loading { min-height: 16rem; margin: 1rem 0; font-size: 14px; opacity: 0.75; }
+.loadError { margin: 1rem 0; font-size: 14px; color: var(--color-danger); }

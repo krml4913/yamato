@@ -177,11 +177,12 @@ function ShipFiles({ ship }: { ship: string }) {
   );
 }
 
-// その艦の状態・席・board・PR・日報。一覧の ShipCard をそのまま使い、取れなければ何も出さない。
+// その艦の状態・席・board・PR・日報。一覧の ShipCard をそのまま使い、取れなければエラーを出す。
 function ShipStatus({ ship, onRunning, children }: { ship: string; onRunning: (r: boolean | null) => void; children?: React.ReactNode }) {
   const [data, setData] = useState<Overview | null>(null);
-  // 読み込みが済む (成否は問わない) まで何も出さない。済んでから出せば、操作の入力が途中で作り直されない
+  // 読み込み中は枠だけを出し、済んで (成否は問わない) から中身を出す。済んでから出せば、操作の入力が途中で作り直されない
   const [settled, setSettled] = useState(false);
+  const [failed, setFailed] = useState(false);
   const [tick, setTick] = useState(0);
   // 操作が成功したら読み直す
   useRefreshRequest(useCallback(() => setTick((n) => n + 1), []));
@@ -191,6 +192,7 @@ function ShipStatus({ ship, onRunning, children }: { ship: string; onRunning: (r
       (d) => {
         if (!live) return;
         setData(d);
+        setFailed(false);
         setSettled(true);
         const s = Array.isArray(d.ships) ? d.ships.find((x) => x.name === ship) : undefined;
         onRunning(s?.state ? isRunning(s) : null);
@@ -198,6 +200,7 @@ function ShipStatus({ ship, onRunning, children }: { ship: string; onRunning: (r
       () => {
         if (!live) return;
         onRunning(null);
+        setFailed(true);
         setSettled(true);
       },
     );
@@ -206,9 +209,19 @@ function ShipStatus({ ship, onRunning, children }: { ship: string; onRunning: (r
     };
   }, [ship, onRunning, tick]);
   const s = data && Array.isArray(data.ships) ? data.ships.find((x) => x.name === ship) : undefined;
-  if (!settled) return null;
+  // 読み込み中は状態の枠の場所を先に取り、後から出る表で下のリンクが動かないようにする
+  if (!settled) return <div className={styles.loading} role="status">状態を読み込み中…</div>;
   // 状態が読めなくても操作は出す (操作は状態に依らない)
-  if (!data || !s) return <>{children}</>;
+  if (!data || !s) {
+    return (
+      <>
+        <div className={styles.loadError} role="alert">
+          {failed || !data ? "艦の状態を読めなかった。" : `艦 ${ship} の状態が見つからなかった。`}
+        </div>
+        {children}
+      </>
+    );
+  }
   return <ShipCard ship={s} now={data.generated_at} waits={data.waits ?? []} showName={false}>{children}</ShipCard>;
 }
 
@@ -219,10 +232,10 @@ export function ShipPage() {
   return (
     <>
       <h1>艦: {name}</h1>
-      <p><Link to={`/ship/${encodeURIComponent(ship)}/config`}>設定</Link></p>
       <ShipStatus key={`status-${ship}`} ship={ship} onRunning={setRunning}>
         {editToken() !== null && <ShipOps key={ship} ship={ship} running={running} />}
       </ShipStatus>
+      <p className={styles.section}><Link to={`/ship/${encodeURIComponent(ship)}/config`}>設定</Link></p>
       <ShipFiles key={`files-${ship}`} ship={ship} />
     </>
   );
