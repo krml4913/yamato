@@ -5,6 +5,8 @@
   --color-danger: #dc2626;
   --color-warn: #d97706;
   --color-ok: #16a34a;
+  --color-bg: Canvas;
+  --color-fg: CanvasText;
   --color-card: #fff;
   --color-link: inherit;
   --color-line: #7773;
