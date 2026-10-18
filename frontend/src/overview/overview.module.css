@@ -40,3 +40,6 @@
 .oldAnomalies { margin-top: 6px; }
 .oldAnomalies > summary { cursor: pointer; opacity: 0.75; }
 .oldAnomalies li { opacity: 0.7; }
+
+/* 判断の本文: 長いので枠の中で読む */
+.waitBody { margin: 0.5rem 0; padding: 0 0.75rem; border-left: 3px solid var(--color-chip); max-height: 24rem; overflow: auto; }

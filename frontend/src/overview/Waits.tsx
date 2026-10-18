@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { editToken } from "../api/client";
+import { editToken, getShipItem } from "../api/client";
+import { Markdown } from "../markdown/Markdown";
 import { OpPanel, type OpSpec } from "../ops/OpPanel";
 import type { Wait } from "./types";
 import status from "../status.module.css";
@@ -11,17 +12,42 @@ function CloseOne({ wait }: { wait: Wait }) {
   const [reason, setReason] = useState("");
   const [pending, setPending] = useState<OpSpec | null>(null);
   return (
-    <div role="group" aria-label={`判断 ${wait.id} を閉じる`}>
+    <div role="group" aria-label={`艦 ${wait.ship} の判断 ${wait.id} を閉じる`}>
       <div className={styles.closeRow}>
         <label>決定 <input value={choice} onChange={(e) => setChoice(e.target.value)} placeholder="例 A" /></label>
         <label>理由 <input value={reason} onChange={(e) => setReason(e.target.value)} /></label>
         <button onClick={() => setPending({
           op: "decide-close", ship: wait.ship, params: { id: wait.id, choice, reason },
-          title: `判断 ${wait.id} を閉じる`, confirmLabel: "閉じる",
+          title: `艦 ${wait.ship} の判断 ${wait.id} を閉じる`, confirmLabel: "閉じる",
           detail: `owner として閉じる (yamato decide close)。止まっていたタスクが戻り、席に知らせが飛ぶ。「${wait.title}」`,
         })}>判断を閉じる</button>
       </div>
       {pending && <OpPanel spec={pending} onClose={() => setPending(null)} />}
+    </div>
+  );
+}
+
+// 判断の本文 (背景・選択肢・推し)。開いたときだけ読む
+function Body({ wait }: { wait: Wait }) {
+  const [open, setOpen] = useState(false);
+  const [state, setState] = useState<{ text: string } | { error: string } | null>(null);
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    if (next && state === null) {
+      getShipItem(wait.ship, wait.id)
+        .then((it) => setState({ text: it.body }))
+        .catch((e: Error) => setState({ error: e.message }));
+    }
+  };
+  return (
+    <div>
+      <button aria-expanded={open} aria-label={`艦 ${wait.ship} の判断 ${wait.id} の本文`} onClick={toggle}>
+        {open ? "本文を閉じる" : "本文を読む"}
+      </button>
+      {open && (state === null ? <p className={status.dim}>読み込み中…</p>
+        : "error" in state ? <p role="alert" className={status.red}>{state.error}</p>
+        : <div className={styles.waitBody}><Markdown text={state.text} /></div>)}
     </div>
   );
 }
@@ -40,6 +66,7 @@ export function Waits({ waits }: { waits: Wait[] }) {
                 {w.urgent && <span className={`${styles.tag} ${styles.urgent}`}>急ぎ</span>}
                 <b>{w.ship}</b> 判断 {w.id}: {w.title} <span className={status.dim}>({w.age || "?"} 待ち)</span>
                 {w.recommendation && (<><br /><span className={status.dim}>推し: {w.recommendation}</span></>)}
+                <Body wait={w} />
                 {editing && <CloseOne wait={w} />}
               </li>
             ))}

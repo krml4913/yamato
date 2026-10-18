@@ -69,6 +69,25 @@ paths:
             application/json:
               schema: {$ref: "#/components/schemas/ShipFile"}
         default: {$ref: "#/components/responses/Error"}
+  /api/v1/ships/{name}/items/{id}:
+    get:
+      operationId: getShipItem
+      summary: board の項目 1 件 (判断も task も同じ形)
+      description: 艦は fleet の ships のうち exists=true のもの (config・files と同じ引き方)。id は [A-Z]-[0-9]+ の形だけ受け (path に使う前に検査)、board/items と board/archive から引く。艦が無い・項目が無い・id の形が違うときは 404。読むだけで何も書かない。
+      parameters:
+        - {$ref: "#/components/parameters/ShipName"}
+        - name: id
+          in: path
+          required: true
+          description: 項目の id (D-001・T-001 の形)。
+          schema: {type: string, pattern: "^[A-Z]-[0-9]+$"}
+      responses:
+        "200":
+          description: 項目
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ShipItem"}
+        default: {$ref: "#/components/responses/Error"}
   /api/v1/edit/preview:
     post:
       operationId: previewEdit
@@ -502,6 +521,20 @@ components:
           type: [object, "null"]
           description: この項目の team.schema.json の定義そのもの (type・enum・properties・anyOf・description など)。フォームはこれから組む。schema に無い項目は null。
           additionalProperties: true
+    ShipItem:
+      type: object
+      required: [id, kind, title, state, category, urgent, assignee, blocked_on, links, body]
+      properties:
+        id: {type: string}
+        kind: {type: [string, "null"]}
+        title: {type: string}
+        state: {type: [string, "null"]}
+        category: {type: [string, "null"], description: "判断 (kind=decision) だけ。他は null。"}
+        urgent: {type: [boolean, "null"], description: "判断だけ。他は null。"}
+        assignee: {type: [string, "null"]}
+        blocked_on: {type: array, items: {type: string}}
+        links: {type: array, items: {type: string}}
+        body: {type: string, description: "本文の markdown (frontmatter を除いた生の文字列)。"}
     ShipFile:
       type: object
       required: [name, file, kind, text, bytes]

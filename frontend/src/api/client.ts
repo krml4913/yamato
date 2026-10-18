@@ -93,3 +93,16 @@ export type OpResult = paths["/api/v1/ops/{op}"]["post"]["responses"]["200"]["co
 /** 操作 (yamato の CLI を 1 回呼ぶ)。CLI が失敗しても resolve し、exit_code と output を見せる。 */
 export const runOp = (op: string, req: OpRequest) =>
   postJson<OpResult>(`/api/v1/ops/${encodeURIComponent(op)}`, req);
+
+export type ShipItem =
+  paths["/api/v1/ships/{name}/items/{id}"]["get"]["responses"]["200"]["content"]["application/json"];
+
+// board の項目 1 件 (判断も task も同じ形)。読むだけ
+export async function getShipItem(name: string, id: string): Promise<ShipItem> {
+  const res = await fetch(`/api/v1/ships/${encodeURIComponent(name)}/items/${encodeURIComponent(id)}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error?.message ?? `GET items: ${res.status}`);
+  }
+  return res.json();
+}
