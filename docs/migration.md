@@ -21,9 +21,34 @@ v1.0.0 以降の変更のうち、**既存の艦・利用者が何かをしな�
 
 ## 未リリース
 
+## v1.4.0 → v1.5.0
+
+### 全体の手順
+v1.5.0 は **web console の見た目と流れを直し、`pr open --base`・`pr merge --strategy` と items の API を足す版**。team.yaml・艦フォルダの記録の形式・既存のコマンドの名前は変わらない。既存の艦が必ずやることはない。
+
+**移行不要**: #159・#167・#168 は内部の整理・テスト・docs で、艦がやることはない。
+
+手順:
+1. 艦を止める: `yamato down <艦>`
+2. yamato を更新する: `git -C ~/dev/yamato pull` (tag を使うなら `git -C ~/dev/yamato checkout v1.5.0`)
+3. 艦を起こす: `yamato up <艦>`
+
 ### pr open --base と pr merge --strategy
 `yamato pr open` に `--base <branch>` (PR の向き先。省略時は `git.base`)、`yamato pr merge` に `--strategy <merge|squash|rebase>` (省略時は `git.strategy`) を足した。省略したときの挙動は変わらない。既存の艦がやることはない。変わるのは、`pr_open` の events に `base` が増えることと、merge 後の衝突の知らせが merge した PR と同じ base の PR だけに出ること (今まで `git.base` 向けの PR だけを見ていた艦は、`git.base` 以外へ merge したときに知らせが出なくなる)。
 版を出す手順: tag を打つ前に `cd frontend && npm ci && npm run build` で `src/yamato/web/dist/` を作り直して commit する (develop 向けの PR は dist を変えず、main 向けの CI がこの鮮度を見る)。
+- PR: #154・#155
+
+### web console の見た目と流れが変わった (利用者向け)
+- 何が変わったか: 艦のページに状態と操作を集め、危ない操作は違いを書き分けて上に置いた。一覧は頭を軽くし、古い異常を畳み、判断ごとに閉じるフォームを出す。判断は本文を画面で読んでから閉じる。設定ページはまとまりと目次つきで、値を主役にした。狭い幅でも崩れない。`/ship/` 以下の画面は拡張子つきの URL でも開ける。これに合わせて `GET /api/v1/ships/{name}/items/{id}` (board の項目 1 件の本文と frontmatter を返す) が増えた。既存の API は変わらない
+- 既存の艦・利用者がやること: なし。dist は同梱で、node や npm は要らない
+- やらないと: 何も起きない
+- PR: #156・#157・#158・#160・#161・#162・#163・#164・#165・#169・#170
+
+### halt で止めた headless の席は強制停止として記録される
+- 何が変わったか: `yamato halt` で止めた headless の席の outcome が強制停止になり、日報に二重に載らない。`down --force` と同じ扱いに揃えた
+- 既存の艦がやること: なし。halt の後の events・日報を機械で読んでいる場合だけ、`force_stop` の扱いが `down --force` と同じになったことを知っておく
+- やらないと: 何も起きない
+- PR: #166
 
 ## v1.3.0 → v1.4.0
 
