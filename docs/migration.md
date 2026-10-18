@@ -21,6 +21,8 @@ v1.0.0 以降の変更のうち、**既存の艦・利用者が何かをしな�
 
 ## 未リリース
 
+### pr open --base と pr merge --strategy
+`yamato pr open` に `--base <branch>` (PR の向き先。省略時は `git.base`)、`yamato pr merge` に `--strategy <merge|squash|rebase>` (省略時は `git.strategy`) を足した。省略したときの挙動は変わらない。既存の艦がやることはない。変わるのは、`pr_open` の events に `base` が増えることと、merge 後の衝突の知らせが merge した PR と同じ base の PR だけに出ること (今まで `git.base` 向けの PR だけを見ていた艦は、`git.base` 以外へ merge したときに知らせが出なくなる)。
 版を出す手順: tag を打つ前に `cd frontend && npm ci && npm run build` で `src/yamato/web/dist/` を作り直して commit する (develop 向けの PR は dist を変えず、main 向けの CI がこの鮮度を見る)。
 
 ## v1.3.0 → v1.4.0

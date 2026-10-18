@@ -50,9 +50,9 @@ yamato が書くのは次の kind。定数は `src/yamato/events.py` (`notify_fa
 | `worktree_add` | `worktree add` が worktree を**新しく作った**とき (既にあるものを返しただけのときは書かない)。定数は `worktree.WORKTREE_ADD` | 項目の担当 | 項目 | 呼び出し元 (`--by`、無ければ席、無ければ `owner`) | `path`、`branch` |
 | `worktree_rm` | `worktree rm` が片付けたとき。定数は `worktree.WORKTREE_RM` | 項目の担当 | 項目 | 呼び出し元 | `path`、`branch`、`force` |
 | `worktree_add_failed` / `worktree_rm_failed` | `worktree add` / `rm` が失敗したとき。`rm` が未 commit・未 push で断ったのもここ | 項目の担当 (項目が無ければ null) | 項目 | 呼び出し元 | `reason` (1 行、300 文字まで)、`rm` は `force` も |
-| `pr_open` | `pr open` が PR を作ったとき (項目に PR が既にあって何もしなかったときは書かない)。定数は `pr.PR_OPEN` | 項目の担当 | 項目 | 呼び出し元 | `pr` (番号)、`url`、`branch`、`column` (review に動かしたとき)、`draft` (draft のとき) |
+| `pr_open` | `pr open` が PR を作ったとき (項目に PR が既にあって何もしなかったときは書かない)。定数は `pr.PR_OPEN` | 項目の担当 | 項目 | 呼び出し元 | `pr` (番号)、`url`、`branch`、`base` (PR の向き先。`--base` か `git.base`)、`column` (review に動かしたとき)、`draft` (draft のとき) |
 | `pr_open_failed` | `pr open` が失敗したとき (branch が無い、`gh` の失敗など) | 項目の担当 (項目が無ければ null) | 項目 | 呼び出し元 | `reason` |
-| `pr_merge` | `pr merge` が merge したとき。既に merge されていて記録しただけのときも書く (`alreadyMerged: true`)。定数は `pr.PR_MERGE` | 項目の担当 | 項目 | 呼び出し元 | `pr`、`strategy`、`mergedBy` (= `by`。項目の `merged_by` と同じ)、`alreadyMerged` |
+| `pr_merge` | `pr merge` が merge したとき。既に merge されていて記録しただけのときも書く (`alreadyMerged: true`)。定数は `pr.PR_MERGE` | 項目の担当 | 項目 | 呼び出し元 | `pr`、`strategy` (`--strategy` か `git.strategy`、実際に使った値)、`mergedBy` (= `by`。項目の `merged_by` と同じ)、`alreadyMerged` |
 | `pr_merge_failed` | `pr merge` が merge しなかったとき。`git.merge_requires` を満たさず断ったときは `unmet` に理由が入る。gh の失敗もここ | 項目の担当 (項目が無ければ null) | 項目 | 呼び出し元 | `reason`、`pr`、`unmet` (断ったときだけ。理由ごとに 1 行、300 文字まで) |
 | `pr_conflict` | `pr merge` のあと、他の開いている PR の衝突を見つけたとき。衝突の有無が分からなかった (UNKNOWN) ときは書かない。定数は `pr.PR_CONFLICT` | 衝突した項目の担当 | **衝突した項目** | merge した呼び出し元 | `pr` (衝突した PR)、`mergedItem`、`mergedPr` (merge した方)、`mergedBy`、`column` (`rebase` に動かしたとき)、`notified` (知らせた宛先。誰にも知らせなかったときは無い) |
 | `memory_migrate` | P0 の `seats/<seat>/memory.md` を `roles/<role>/memory.md` に移したとき (`memory migrate`・注入の前) | 元の席 | ― | ― | `role`、`lines`、`kept` (元のファイルを残した場所) |

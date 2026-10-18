@@ -2,7 +2,7 @@
 """A stand-in for the ``gh`` CLI used by the worktree / pr tests.
 
 State lives in $FAKE_GH_STATE (JSON): ``prs`` maps a PR number to
-{state, mergeable, head}, ``checks_rc`` / ``checks_out`` answer ``pr checks``,
+{state, mergeable, head, base}, ``checks_rc`` / ``checks_out`` answer ``pr checks``,
 ``merge_sleep`` slows ``pr merge`` down. Every call is appended to ``calls``.
 
 Run as a script (``$YAMATO_GH``), or in-process through ``main()`` (the pr tests
@@ -51,10 +51,11 @@ def main(argv, *, cwd=None, env=None, out=None, err=None) -> int:
     cmd = argv[:2]
     if cmd == ["pr", "create"]:
         head = argv[argv.index("--head") + 1]
+        base = argv[argv.index("--base") + 1] if "--base" in argv else "main"
 
         def create(st):
             n = str(max([int(k) for k in st["prs"]] or [0]) + 1)
-            st["prs"][n] = {"state": "OPEN", "mergeable": "MERGEABLE", "head": head}
+            st["prs"][n] = {"state": "OPEN", "mergeable": "MERGEABLE", "head": head, "base": base}
             return n
         n = locked(create)
         print(f"https://github.com/o/r/pull/{n}", file=out)
@@ -66,7 +67,8 @@ def main(argv, *, cwd=None, env=None, out=None, err=None) -> int:
         if pr is None:
             print("no pull requests found", file=err)
             return 1
-        print(json.dumps({"state": pr["state"], "mergeable": pr["mergeable"]}), file=out)
+        print(json.dumps({"state": pr["state"], "mergeable": pr["mergeable"],
+                          "baseRefName": pr.get("base", "main")}), file=out)
     elif cmd == ["pr", "merge"]:
         time.sleep(st.get("merge_sleep", 0))
 
