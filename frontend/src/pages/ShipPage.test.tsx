@@ -73,12 +73,13 @@ describe("艦ページの操作", () => {
     expect(screen.getByRole("columnheader", { name: "席" })).toBeTruthy();
   });
 
-  it("普段の操作と危ない操作を分け、危ない 2 つは枠の中に置く", async () => {
+  it("普段の操作と危ない操作を分け、危ない操作は halt だけを枠の中に置く", async () => {
     setToken(true);
     page();
     await screen.findByRole("group", { name: "艦の操作" });
     const danger = screen.getByRole("group", { name: "危ない操作" });
-    expect(within(danger).getByRole("button", { name: "down --force" })).toBeTruthy();
+    expect(within(danger).queryByRole("button", { name: "down --force" })).toBeNull();
+    expect(within(danger).getAllByRole("button")).toHaveLength(1);
     expect(within(danger).getByRole("button", { name: "halt" })).toBeTruthy();
     expect(within(danger).queryByRole("button", { name: "down" })).toBeNull();
     const usual = screen.getByRole("group", { name: "普段の操作" });
@@ -103,14 +104,14 @@ describe("艦ページの操作", () => {
     expect(screen.getAllByText("dev", { exact: false }).filter((e) => /^H[12]$/.test(e.tagName) || e.closest("h2"))).toHaveLength(1);
   });
 
-  it("down --force と halt の説明を別々に書く", async () => {
+  it("halt 1 つ向けの説明を書く", async () => {
     setToken(true);
     vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.resolve(new Response("{}", { status: 200 }))));
     page();
     const danger = await screen.findByRole("group", { name: "危ない操作" });
     const hints = [...danger.querySelectorAll("span")].map((e) => e.textContent);
-    expect(hints).toHaveLength(2);
-    expect(hints[0]).not.toBe(hints[1]);
+    expect(hints).toHaveLength(1);
+    expect(danger.textContent).toContain("猶予つきで止めるなら");
   });
 
   it("艦の状態が読めなくても操作を出し、艦名を二重にしない", async () => {
@@ -159,18 +160,17 @@ describe("艦ページの操作", () => {
     expect(screen.queryByLabelText("役割と方針のファイル")).toBeNull();
   });
 
-  it("5 つの操作を出す", async () => {
+  it("4 つの操作を出す", async () => {
     setToken(true);
     page();
     await screen.findByRole("group", { name: "艦の操作" });
-    for (const n of ["up", "down", "extend", "down --force", "halt"]) {
+    for (const n of ["up", "down", "extend", "halt"]) {
       expect(screen.getByRole("button", { name: n })).toBeTruthy();
     }
   });
 
   it.each([
     ["halt", "halt", {}, "緊急停止する"],
-    ["down --force", "down-force", {}, "強制停止する"],
     ["down", "down", {}, "終業を指示する"],
   ])("%s は確認画面を経てから POST する (alert は使わない)", async (label, op, params, confirm) => {
     setToken(true);

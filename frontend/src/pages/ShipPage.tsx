@@ -109,20 +109,13 @@ function ShipOps({ ship, running }: { ship: string; running: boolean | null }) {
         </div>
         <fieldset className={styles.dangerZone}>
           <legend>危ない操作</legend>
-          <p className={styles.hint}>どちらも猶予なしで全席を止める。席は引き継ぎを書けず、作業の途中で切れる。</p>
-          <div className={styles.dangerItem}>
-            <button className={styles.danger} onClick={() => ask({
-              op: "down-force", params: {}, title: `艦 ${ship} を強制停止する (down --force)`, confirmLabel: "強制停止する",
-              detail: "終業 (down) の強制版。猶予を待たず、動いている席を今すぐ止める。席は引き継ぎを書けず、作業の途中で切れる。止めた理由は down-force として記録に残る。",
-            })}>down --force</button>
-            <span className={styles.hint}>down の猶予を待たずに終わらせる。</span>
-          </div>
+          <p className={styles.hint}>猶予なしで全席を止める。席は引き継ぎを書けず、作業の途中で切れる。猶予つきで止めるなら上の down。</p>
           <div className={styles.dangerItem}>
             <button className={styles.danger} onClick={() => ask({
               op: "halt", params: {}, title: `艦 ${ship} を緊急停止する (halt)`, confirmLabel: "緊急停止する",
-              detail: "緊急停止 (yamato halt)。down --force と同じ強制停止で、猶予なしに全席を止める。席は引き継ぎを書けず、作業の途中で切れる。止めた理由は halt として記録に残る。",
+              detail: "緊急停止 (yamato halt)。猶予なしに全席を止める。席は引き継ぎを書けず、作業の途中で切れる。止めた理由は halt として記録に残る。",
             })}>halt</button>
-            <span className={styles.hint}>down --force と同じ強制停止。違うのは記録に残る理由が halt になる点だけ。</span>
+            <span className={styles.hint}>down --force と同じ強制停止は CLI からも打てる。</span>
           </div>
         </fieldset>
       </div>
