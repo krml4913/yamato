@@ -1,5 +1,5 @@
 /* 目次: スクロールしても届くように上に固定する。狭い幅では 1 行のまま横に流す */
-.toc { position: sticky; top: 0; z-index: 2; background: Canvas; border-bottom: 1px solid var(--color-line-strong); margin: 1rem 0 0; }
+.toc { position: sticky; top: 0; z-index: 2; background: var(--color-bg); border-bottom: 1px solid var(--color-line-strong); margin: 1rem 0 0; }
 .toc ul { display: flex; gap: 0 1.25rem; list-style: none; padding: 0; margin: 0; overflow-x: auto; white-space: nowrap; }
 .toc a { display: block; padding: 0.6rem 0 0.5rem; text-decoration: none; border-bottom: 2px solid transparent; }
 .toc a:hover { border-bottom-color: var(--color-line-strong); }
@@ -48,7 +48,7 @@
 .valueTable td { white-space: normal; }
 .valueTable td.cellProse { min-width: 18rem; }
 @media (min-width: 1001px) {
-  .valueTable thead th { position: sticky; top: 2.6rem; background: Canvas; opacity: 1; color: color-mix(in srgb, CanvasText 75%, transparent); z-index: 1; border-bottom: 1px solid var(--color-line-strong); }
+  .valueTable thead th { position: sticky; top: 2.6rem; background: var(--color-bg); opacity: 1; color: color-mix(in srgb, var(--color-fg) 75%, transparent); z-index: 1; border-bottom: 1px solid var(--color-line-strong); }
 }
 @media (max-width: 1000px) {
   .valueTable td { white-space: normal; }
