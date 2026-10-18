@@ -1,7 +1,12 @@
 .path {
   font-family: ui-monospace, monospace;
-  font-size: 13px;
-  word-break: break-all;
+  font-size: 14px;
+  display: inline-block;
+  max-width: 28em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
 }
 
 .missing {

@@ -149,10 +149,7 @@ def gather(name: str, shipdir: Path, by: dict, now: float) -> dict:
     seats = []
     for s, spec in team["seats"].items():
         rec = roster.seat(shipdir, s)
-        live = by.get(rec.get("sessionId"))
-        alive = claude.is_alive(live)
-        if not alive and spec["shift"] == "headless" and rec.get("pid") and procs.pid_alive(rec["pid"]):
-            alive, live = True, {**(live or {}), "pid": rec["pid"]}
+        alive, live = fleet.seat_alive(rec, spec, by)
         last = seat._last_active(rec)
         seats.append({
             "name": s, "role": spec.get("role"), "shift": spec["shift"], "alive": alive,

@@ -3,13 +3,11 @@ import { MemoryRouter } from "react-router-dom";
 import { App } from "../App";
 
 const ship = (name: string, extra: object = {}) => ({
-  name, path: `/h/${name}`, registered: true, exists: true, team: name, error: null, ...extra,
+  name, path: `/h/${name}`, registered: true, exists: true, running: null, team: name, error: null, ...extra,
 });
 
-function open(body: unknown, status = 200, overview: unknown = { ships: [] }) {
-  vi.stubGlobal("fetch", vi.fn(async (u: string) => (String(u).includes("/overview")
-    ? { ok: true, status: 200, json: async () => overview }
-    : { ok: status < 400, status, json: async () => body })));
+function open(body: unknown, status = 200) {
+  vi.stubGlobal("fetch", vi.fn(async () => ({ ok: status < 400, status, json: async () => body })));
   render(<MemoryRouter initialEntries={["/fleet"]}><App /></MemoryRouter>);
 }
 
@@ -26,29 +24,36 @@ describe("FleetPage", () => {
       ],
       admiral: { path: "/h/_admiral", team: "yamato", roles: ["admiral"], error: null },
     });
-    const table = await screen.findByRole("table");
+    const table = (await screen.findAllByRole("table"))[0];
     expect(within(table).getByRole("link", { name: "a" })).toHaveAttribute("href", "/ship/a/config");
     expect(within(table).queryByRole("link", { name: "gone" })).toBeNull();
     expect(within(table).getByText("フォルダが無い")).toBeInTheDocument();
     expect(within(table).getByText("/h/gone/team.yaml がありません")).toBeInTheDocument();
     expect(within(table).getByText("$YAMATO_HOME 直下")).toBeInTheDocument();
     const adm = screen.getByRole("region", { name: "admiral" });
-    expect(within(adm).getByText("roles: admiral")).toBeInTheDocument();
+    expect(within(adm).getByRole("table")).toBeInTheDocument();
+    expect(within(adm).getByRole("cell", { name: "admiral" })).toBeInTheDocument();
+    expect(within(adm).getByText("/h/_admiral")).toHaveAttribute("title", "/h/_admiral");
     expect(within(table).queryByText("_admiral")).toBeNull();
   });
 
   it("艦が稼働か停止かを出す (分からない艦は -)", async () => {
-    const seat = (alive: boolean) => ({ alive });
-    open(
-      { home: "/h", ships: [ship("run"), ship("idle"), ship("unknown")], admiral: null },
-      200,
-      { ships: [{ name: "run", state: { seats: [seat(true)] } }, { name: "idle", state: { seats: [seat(false)] } }] },
-    );
-    const table = await screen.findByRole("table");
-    await within(table).findByRole("cell", { name: "稼働" });
+    open({
+      home: "/h",
+      ships: [ship("run", { running: true }), ship("idle", { running: false }), ship("unknown")],
+      admiral: null,
+    });
+    const table = (await screen.findAllByRole("table"))[0];
+    expect(within(table).getByRole("cell", { name: "稼働" })).toBeInTheDocument();
     expect(within(table).getByRole("cell", { name: "停止" })).toBeInTheDocument();
     const rows = within(table).getAllByRole("row");
     expect(within(rows[3]).getByText("-", { selector: "td span" })).toBeInTheDocument();
+  });
+
+  it("長いフォルダは title に全文を持つ", async () => {
+    const long = "/very/long/" + "x".repeat(80);
+    open({ home: "/h", ships: [ship("a", { path: long })], admiral: null });
+    expect(await screen.findByText(long)).toHaveAttribute("title", long);
   });
 
   it("書き込みの入口 (ボタン・フォーム) を出さない", async () => {
