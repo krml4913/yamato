@@ -38,3 +38,8 @@ export function remaining(deadline: string): string {
   const m = /\((残り [^)]+)\)/.exec(deadline);
   return m ? m[1] : deadline;
 }
+
+// 稼働時間の表示から「(残り …)」を除いたもの。残り時間はバッジが言うので、地の文では繰り返さない。
+export function deadlineAt(deadline: string): string {
+  return deadline.replace(/\s*\(残り [^)]+\)/, "");
+}

@@ -1,4 +1,4 @@
-import { act, render as rtlRender, screen } from "@testing-library/react";
+import { act, fireEvent, render as rtlRender, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import type { ReactElement } from "react";
 import { REFRESH_MS, OverviewPage } from "./OverviewPage";
@@ -70,7 +70,23 @@ describe("OverviewPage", () => {
     expect(screen.getByText("#7")).toHaveAttribute("href", "https://github.com/o/r/pull/7");
     expect(screen.getByText("crash")).toHaveClass(status.red);
     expect(screen.getByText(/読めない: ValueError/)).toBeInTheDocument();
-    expect(screen.getAllByText(/要対応の列/)).toHaveLength(1);   // 凡例はページに 1 回
+    expect(screen.queryByText(/すぐ手が要る/)).toBeNull();   // 凡例は「?」を開くまで出ない
+  });
+
+  it("要対応の見出しの「?」で凡例が開く (押す・focus・Esc)", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(data())));
+    render(<OverviewPage />);
+    await screen.findByText("稼働 2/2");
+    const btn = screen.getAllByRole("button", { name: "要対応の見方" })[0];
+    expect(btn).toHaveAttribute("aria-expanded", "false");
+    fireEvent.focus(btn);
+    expect(screen.getByRole("note")).toHaveTextContent(/すぐ手が要る/);
+    fireEvent.blur(btn);
+    expect(screen.queryByRole("note")).toBeNull();
+    fireEvent.click(btn);
+    expect(screen.getByRole("note")).toBeInTheDocument();
+    fireEvent.keyDown(btn, { key: "Escape" });
+    expect(screen.queryByRole("note")).toBeNull();
   });
 
   it("作業ログの列は行が無ければ「-」", async () => {
@@ -92,7 +108,8 @@ describe("OverviewPage", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(d)));
     render(<OverviewPage />);
     expect(await screen.findByText("稼働 2/2")).toBeInTheDocument();
-    expect(screen.getByText("残り 1h54m")).toBeInTheDocument();
+    expect(screen.getByText("残り 1h54m")).toBeInTheDocument();   // 残り時間はバッジだけ
+    expect(screen.getByText(/^deadline 10-17 17:23 \//)).not.toHaveTextContent(/残り/);
     expect(screen.getByText("判断待ち 1")).toBeInTheDocument();
     expect(screen.getAllByText("active 1")).toHaveLength(2);   // バッジと board の件数
     expect(screen.queryByText(/^孤児 \d/)).toBeNull();
