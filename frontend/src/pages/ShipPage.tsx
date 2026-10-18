@@ -177,10 +177,10 @@ function ShipFiles({ ship }: { ship: string }) {
   );
 }
 
-// その艦の状態・席・board・PR・日報。一覧の ShipCard をそのまま使い、取れなければ何も出さない。
+// その艦の状態・席・board・PR・日報。一覧の ShipCard をそのまま使い、取れなければエラーを出す。
 function ShipStatus({ ship, onRunning, children }: { ship: string; onRunning: (r: boolean | null) => void; children?: React.ReactNode }) {
   const [data, setData] = useState<Overview | null>(null);
-  // 読み込みが済む (成否は問わない) まで何も出さない。済んでから出せば、操作の入力が途中で作り直されない
+  // 読み込み中は枠だけを出し、済んで (成否は問わない) から中身を出す。済んでから出せば、操作の入力が途中で作り直されない
   const [settled, setSettled] = useState(false);
   const [failed, setFailed] = useState(false);
   const [tick, setTick] = useState(0);
