@@ -1,4 +1,22 @@
-.field { border-top: 1px solid var(--color-line); }
-.field h2 small { font-size: 0.7em; font-weight: normal; opacity: 0.7; }
+.toc ul { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; list-style: none; padding: 0; margin: 1rem 0; }
+.toc a { text-decoration: none; border-bottom: 1px solid var(--color-line-strong); }
+.group { margin-top: 2rem; }
+.group > h2 { padding-bottom: 0.25rem; border-bottom: 2px solid var(--color-line-strong); }
+.field { border-top: 1px solid var(--color-line); padding: 0.5rem 0 0.75rem; }
+.field h3 { margin: 0.5rem 0 0.25rem; font-size: 1rem; }
+.badge { font-size: 0.75em; font-weight: normal; opacity: 0.7; margin-left: 0.5rem; padding: 0 0.4rem; border: 1px solid var(--color-line-strong); border-radius: 3px; }
+.desc { font-size: 0.8125rem; opacity: 0.6; margin: 0 0 0.5rem; }
+.value { font-size: 1rem; margin: 0.25rem 0; }
+.scalar { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1rem; overflow-wrap: anywhere; }
+.unset { margin: 0.25rem 0; }
+.unsetLabel { opacity: 0.55; font-style: italic; }
+.hint { font-size: 0.8125rem; opacity: 0.6; }
+.valueTable td, .valueTable th[scope="row"] { font-size: 1rem; }
+.list { margin: 0; padding-left: 1.25rem; }
+.kv { margin: 0; }
+.kv > div { display: flex; gap: 0.75rem; }
+.kv dt { opacity: 0.65; min-width: 6rem; }
+.kv dt::after { content: ":"; }
+.kv dd { margin: 0; }
 .pending { padding: 0.5rem; border: 1px solid var(--color-warn); }
 .error { color: var(--color-danger); }

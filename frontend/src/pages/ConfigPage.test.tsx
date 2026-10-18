@@ -39,6 +39,34 @@ describe("ConfigPage", () => {
     expect(screen.queryByRole("status")).toBeNull();
   });
 
+  it("まとまりに分け、頭に目次を置く。入れ替わった並びでも schema に無い項目は『その他』", async () => {
+    open(config({ fields: [field("grace", { value: "20m" }), field("name", { value: "t1" }), field("zzz", { value: "q" })] }));
+    await screen.findByText("name の説明");
+    const toc = screen.getByRole("navigation", { name: "目次" });
+    expect(within(toc).getAllByRole("link").map((a) => [a.textContent, a.getAttribute("href")])).toEqual([
+      ["艦の基本", "#group-basics"], ["時間と予算", "#group-time"], ["その他", "#group-other"],
+    ]);
+    const basics = document.getElementById("group-basics")!;
+    expect(within(basics).getByText("name")).toBeInTheDocument();
+    expect(within(document.getElementById("group-other")!).getByText("zzz")).toBeInTheDocument();
+  });
+
+  it("object の値は鍵: 値で出し、生の JSON を見せる。未設定は省略時の動作を添える", async () => {
+    open(config({
+      fields: [
+        field("template", { type: "object", value: { name: "default", versions: ["001", "002"], opt: { a: 1 } } }),
+        field("grace", { set: false, value: null, description: "猶予。省略時 20m。" }),
+      ],
+    }));
+    const group = await screen.findByText("default");
+    expect(group).toBeInTheDocument();
+    expect(screen.getByText("versions")).toBeInTheDocument();
+    expect(screen.getByText("002")).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('{"');
+    expect(screen.getByText("未設定")).toBeInTheDocument();
+    expect(screen.getByText(/省略時 20m/, { selector: "span" })).toBeInTheDocument();
+  });
+
   it("team.yaml が新しければ次の up で効く変更を出す", async () => {
     open(config({ pending: { changed: true, keys: ["hub"] } }));
     expect(await screen.findByRole("status")).toHaveTextContent("次の yamato up で効く変更がある (hub)");

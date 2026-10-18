@@ -4,9 +4,9 @@ import { Editor } from "../form/Editor";
 import { defaultFor, diffFields, type Json, type Schema } from "../form/schema";
 import status from "../status.module.css";
 import styles from "./config.module.css";
+import { FieldHead, groupFields, Groups, type Field } from "./configGroups";
 import form from "../form/form.module.css";
 
-type Field = ShipConfig["fields"][number];
 type Draft = Record<string, Json | undefined>;
 
 const initial = (fields: Field[]): Draft =>
@@ -74,17 +74,12 @@ export function ConfigForm({ name, config, saved, onSaved, onDirty }: {
           保存した。次の yamato up で効く (自動では up しない)。
         </p>
       )}
-      {config.fields.map((f) => {
+      <Groups groups={groupFields(config.fields)} render={(f) => {
         const v = draft[f.key];
         const schema = f.schema as Schema | null;
         return (
           <section key={f.key} id={`field-${f.key}`} className={styles.field}>
-            <h2>
-              {f.key}
-              {f.required && <small> 必須</small>}
-              {f.type && <small> {f.type}</small>}
-            </h2>
-            {f.description && <p className={status.dim}>{f.description}</p>}
+            <FieldHead field={f} />
             {v === undefined ? (
               <button
                 type="button"
@@ -108,7 +103,7 @@ export function ConfigForm({ name, config, saved, onSaved, onDirty }: {
             )}
           </section>
         );
-      })}
+      }} />
       <div className={form.actions}>
         <button type="button" disabled={busy || ops.length === 0} onClick={check}>差分を確認</button>
         <button type="button" disabled={busy || !prev || !prev.valid || !prev.changed} onClick={save}>保存</button>

@@ -66,6 +66,14 @@ describe("ConfigForm", () => {
     expect(screen.getByRole("button", { name: "差分を確認" })).toBeDisabled();
   });
 
+  it("閲覧と同じまとまりと目次で並ぶ", async () => {
+    open(cfg);
+    await screen.findByLabelText("roles.impl.model");
+    expect(screen.getByRole("navigation", { name: "目次" })).toBeInTheDocument();
+    expect(document.getElementById("group-seats")!.querySelector("#field-roles")).not.toBeNull();
+    expect(document.getElementById("group-basics")!.querySelector("#field-name")).not.toBeNull();
+  });
+
   it("直す → 差分を確認 → 保存。保存後は『次の yamato up で効く』を出す", async () => {
     open({
       ...cfg,
