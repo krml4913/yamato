@@ -31,3 +31,8 @@
 .mdList { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; list-style: none; padding: 0; margin: 0; }
 .mdInternal { font-size: 13px; opacity: 0.75; }
 .mdInternal h3 { font-size: 13px; }
+
+/* 節と節の間に余白を取り、続いて見えないようにする */
+.section { margin: 1.5rem 0 0; }
+.section h2, .section h3 { margin: 0 0 0.5rem; }
+.dangerItem { display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; align-items: center; margin: 0.5rem 0; }

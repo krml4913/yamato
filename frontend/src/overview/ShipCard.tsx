@@ -40,13 +40,18 @@ function Badges({ ship, waits }: { ship: Ship; waits: Wait[] }) {
   );
 }
 
-export function ShipCard({ ship, now, waits }: { ship: Ship; now: number; waits: Wait[] }) {
+// showName=false は、ページの題が艦名を出しているとき (艦のページ) 枠の頭で二重にしない。
+// children は状態の要点 (バッジと稼働の行) のすぐ下に出す。艦のページの操作の置き場。
+export function ShipCard({ ship, now, waits, showName = true, children }: {
+  ship: Ship; now: number; waits: Wait[]; showName?: boolean; children?: React.ReactNode;
+}) {
   const g = ship.state;
   if (!g) {
     return (
       <section className={styles.card}>
-        <div className={styles.head}><h2><ShipLink name={ship.name} /></h2></div>
+        {showName && <div className={styles.head}><h2><ShipLink name={ship.name} /></h2></div>}
         <p className={status.red}>読めない: {ship.error ?? "?"}</p>
+        {children}
       </section>
     );
   }
@@ -54,7 +59,7 @@ export function ShipCard({ ship, now, waits }: { ship: Ship; now: number; waits:
   return (
     <section className={styles.card}>
       <div className={styles.head}>
-        <h2><ShipLink name={ship.name} /></h2>
+        {showName && <h2><ShipLink name={ship.name} /></h2>}
         <Badges ship={ship} waits={waits} />
       </div>
       <p className={`${status.dim} ${styles.sub}`}>
@@ -62,6 +67,7 @@ export function ShipCard({ ship, now, waits }: { ship: Ship; now: number; waits:
         {g.hub_last ? ` / captain ${g.hub} の最終 ${fmtTime(g.hub_last)}` : ""}
         {` / 今日 ${fmtTokens(g.tokens)} tok`}
       </p>
+      {children}
       <div className={styles.secTable}>
         <SeatTable ship={ship.name} seats={g.seats} now={now} />
       </div>
