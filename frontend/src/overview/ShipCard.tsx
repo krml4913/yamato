@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { Misc, Report } from "./Extras";
-import { fmtTime, fmtTokens, remaining } from "./format";
+import { deadlineAt, fmtTime, fmtTokens, remaining } from "./format";
 import { SeatTable } from "./SeatTable";
 import type { Ship, ShipState, Wait } from "./types";
 import status from "../status.module.css";
@@ -58,7 +58,7 @@ export function ShipCard({ ship, now, waits }: { ship: Ship; now: number; waits:
         <Badges ship={ship} waits={waits} />
       </div>
       <p className={`${status.dim} ${styles.sub}`}>
-        {g.deadline}
+        {deadlineAt(g.deadline)}
         {g.hub_last ? ` / captain ${g.hub} の最終 ${fmtTime(g.hub_last)}` : ""}
         {` / 今日 ${fmtTokens(g.tokens)} tok`}
       </p>
