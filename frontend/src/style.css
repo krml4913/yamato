@@ -3,20 +3,21 @@
   color-scheme: light dark;
   font-family: system-ui, sans-serif;
   --color-danger: #dc2626;
-  --color-warn: #d97706;
-  --color-ok: #16a34a;
-  --color-bg: Canvas;
-  --color-fg: CanvasText;
+  --color-warn: #b45309;
+  --color-ok: #15803d;
+  --color-bg: #f4f3f1;
+  --color-fg: #1c1917;
   --color-card: #fff;
   --color-link: inherit;
-  --color-line: #7773;
-  --color-line-strong: #8884;
-  --color-chip: #7772;
+  --color-line: #78716c40;
+  --color-line-strong: #78716c80;
+  --color-chip: #78716c26;
+  --color-shadow: #1c191714;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --color-card: #292524; --color-link: #7dd3fc; }
+  :root { --color-bg: Canvas; --color-fg: CanvasText; --color-card: #292524; --color-link: #7dd3fc; --color-line: #7773; --color-line-strong: #8884; --color-chip: #7772; --color-shadow: #0003; --color-warn: #d97706; --color-ok: #16a34a; }
 }
-body { margin: 0; }
+body { margin: 0; background: var(--color-bg); color: var(--color-fg); }
 a { color: var(--color-link); }
 h1 { font-size: 20px; margin: 12px 0 4px; }
 h2 { font-size: 16px; margin: 0 0 8px; }
