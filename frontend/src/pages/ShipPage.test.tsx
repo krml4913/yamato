@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ShipPage, seatNames } from "./ShipPage";
 
@@ -30,21 +30,82 @@ describe("艦ページの操作", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 
-  it("config の files に出る md へのリンクを並べる", async () => {
+  it("md を役割・charter・knowledge に分け、名前で出す。_ の役割は内部として分ける", async () => {
     setToken(false);
     vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({
       fields: [], raw: "", pending: { changed: false, keys: [] },
       files: [
         { file: "roles/pm.md", kind: "role", bytes: 1 },
+        { file: "roles/_memory-curator.md", kind: "role", bytes: 1 },
         { file: "charter.md", kind: "charter", bytes: 1 },
         { file: "knowledge.md", kind: "knowledge", bytes: 1 },
       ],
     }), { status: 200 }))));
     page();
-    const link = await screen.findByRole("link", { name: "roles/pm.md" });
+    const link = await screen.findByRole("link", { name: "pm" });
     expect(link.getAttribute("href")).toBe("/ship/dev/files/roles%2Fpm.md");
-    expect(screen.getByRole("link", { name: "charter.md" }).getAttribute("href")).toBe("/ship/dev/files/charter.md");
-    expect(screen.getByRole("link", { name: "knowledge.md" }).getAttribute("href")).toBe("/ship/dev/files/knowledge.md");
+    expect(screen.getByRole("link", { name: "charter" }).getAttribute("href")).toBe("/ship/dev/files/charter.md");
+    expect(screen.getByRole("link", { name: "knowledge" }).getAttribute("href")).toBe("/ship/dev/files/knowledge.md");
+    const internal = screen.getByRole("heading", { name: "内部の役割" }).parentElement as HTMLElement;
+    expect(within(internal).getByRole("link", { name: "_memory-curator" })).toBeTruthy();
+    expect(within(internal).queryByRole("link", { name: "pm" })).toBeNull();
+    expect(screen.queryByText("roles/pm.md")).toBeNull();
+  });
+
+  it("艦の状態・席の表・board を一覧の部品で頭に出す", async () => {
+    setToken(false);
+    const state = {
+      seats: [{ name: "pm", shift: "persistent", alive: true, pid: 1, status: "idle", waiting_for: null, last: null,
+        active: [], reviewing: [], unread: 0, flags: [], tokens: 0, log: "" }],
+      deadline: "10-18 22:00", hub: "pm", hub_last: null, tokens: 0, orphans: [], owner_unread: 2,
+      counts: { open: 1 }, board: [{ id: "001", state: "open", title: "やること", assignee: null, blocked_on: [] }],
+      prs: [], anomalies: [], multi_repo: false, team: "dev", report: null, memory: [],
+    };
+    vi.stubGlobal("fetch", vi.fn().mockImplementation((u: string) => Promise.resolve(new Response(JSON.stringify(
+      String(u).includes("/overview")
+        ? { generated_at: 0, waits: [], ships: [{ name: "dev", state, error: null }, { name: "other", state: null, error: "x" }] }
+        : { fields: [] },
+    ), { status: 200 }))));
+    page();
+    expect(await screen.findByText("稼働 1/1")).toBeTruthy();
+    expect(screen.getByText("owner 宛て未読 2")).toBeTruthy();
+    expect(screen.getByText("やること", { exact: false })).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "席" })).toBeTruthy();
+  });
+
+  it("普段の操作と危ない操作を分け、危ない 2 つは枠の中に置く", () => {
+    setToken(true);
+    page();
+    const danger = screen.getByRole("group", { name: "危ない操作" });
+    expect(within(danger).getByRole("button", { name: "down --force" })).toBeTruthy();
+    expect(within(danger).getByRole("button", { name: "halt" })).toBeTruthy();
+    expect(within(danger).queryByRole("button", { name: "down" })).toBeNull();
+    const usual = screen.getByRole("group", { name: "普段の操作" });
+    for (const n of ["up", "extend", "down"]) expect(within(usual).getByRole("button", { name: n })).toBeTruthy();
+  });
+
+  it("止まっている艦では down を、動いている艦では up を目立たせない", async () => {
+    setToken(true);
+    const fetchFor = (alive: boolean) => vi.fn().mockImplementation((u: string) => Promise.resolve(new Response(JSON.stringify(
+      String(u).includes("/overview")
+        ? { generated_at: 0, waits: [], ships: [{ name: "dev", error: null, state: {
+          seats: [{ name: "pm", shift: "persistent", alive, pid: 1, status: null, waiting_for: null, last: null,
+            active: [], reviewing: [], unread: 0, flags: [], tokens: 0, log: "" }],
+          deadline: "", hub: "pm", hub_last: null, tokens: 0, orphans: [], owner_unread: 0,
+          counts: {}, board: [], prs: [], anomalies: [], multi_repo: false, team: "dev", report: null, memory: [] } }] }
+        : { fields: [] },
+    ), { status: 200 })));
+    vi.stubGlobal("fetch", fetchFor(false));
+    const { unmount } = page();
+    expect(await screen.findByText("いま止まっている")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "down" }).className).toMatch(/quiet/);
+    expect(screen.getByRole("button", { name: "up" }).className).not.toMatch(/quiet/);
+    unmount();
+    vi.stubGlobal("fetch", fetchFor(true));
+    page();
+    expect(await screen.findByText("いま動いている")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "up" }).className).toMatch(/quiet/);
+    expect(screen.getByRole("button", { name: "down" }).className).not.toMatch(/quiet/);
   });
 
   it("files が取れなければ一覧を出さない", async () => {
