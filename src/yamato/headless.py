@@ -471,8 +471,8 @@ def _close(shipdir: Path, team: dict, seat: str, *, sid: str, no: int, started: 
 def _summary(line: dict) -> str:
     cost = line.get("total_cost_usd")
     if line.get("unknown"):
-        return f"使用量 shift#{line['shiftNo']}: 分からない (result の行が無く、transcript も読めなかった)"
-    return (f"使用量 shift#{line['shiftNo']} ({line['source']}): in={line['input_tokens']} out={line['output_tokens']} "
+        return f"{usage.LOG_MARK}shift#{line['shiftNo']}: 分からない (result の行が無く、transcript も読めなかった)"
+    return (f"{usage.LOG_MARK}shift#{line['shiftNo']} ({line['source']}): in={line['input_tokens']} out={line['output_tokens']} "
             f"cache_write={line['cache_creation_input_tokens']} cache_read={line['cache_read_input_tokens']} "
             f"(計 {line['total_tokens']}, {line['messages']} messages, turns={line.get('num_turns')}, "
             f"cost={'-' if cost is None else f'${cost:.4f}'})")
