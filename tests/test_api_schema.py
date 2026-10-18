@@ -167,11 +167,11 @@ FLEET = {"home": "/h", "ships": [{"name": "a", "path": "/h/a", "registered": Tru
          "admiral": {"path": "/h/_admiral", "team": None, "roles": [], "error": "x"}}
 CONFIG = {"name": "a", "path": "/h/a/team.yaml", "raw": "name: a\n# c\n", "pending": {"changed": True, "keys": ["roles"]},
           "files": [{"file": "roles/impl.md", "kind": "role", "bytes": 10}, {"file": "charter.md", "kind": "charter", "bytes": 0}],
-          "fields": [{"key": "name", "set": True, "required": True, "value": "a", "type": "string",
+          "fields": [{"key": "name", "set": True, "required": True, "locked": True, "value": "a", "type": "string",
                       "description": "艦の名前。", "enum": None, "schema": {"type": "string"}},
-                     {"key": "workspace", "set": True, "required": True, "value": ["/x", "/y"], "type": None,
+                     {"key": "workspace", "set": True, "required": True, "locked": False, "value": ["/x", "/y"], "type": None,
                       "description": None, "enum": None, "schema": None},
-                     {"key": "x", "set": False, "required": False, "value": None, "type": "string",
+                     {"key": "x", "set": False, "required": False, "locked": False, "value": None, "type": "string",
                       "description": "d", "enum": ["a", "b"], "schema": {"enum": ["a", "b"]}}]}
 FILE = {"name": "a", "file": "roles/impl.md", "kind": "role", "text": "# impl\n", "bytes": 7}
 

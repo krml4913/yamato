@@ -26,6 +26,11 @@ def _type_of(schema: dict) -> str | None:
     return t if isinstance(t, str) else None
 
 
+# dashboard から書き換えさせない最上位の項目 (サーバーが断り、フォームは読むだけの表示にする)。
+# name は艦フォルダと席の宛先 <name>.<席> に関わる。
+LOCKED_KEYS = ("name",)
+
+
 def fields(data: dict, schema: dict) -> list[dict]:
     """schema の最上位の並びで項目を出す。schema にあって yaml に無い項目は set=False、
     yaml にあって schema に無い項目は末尾に (説明なし) 出す。"""
@@ -35,7 +40,7 @@ def fields(data: dict, schema: dict) -> list[dict]:
     for key, spec in props.items():
         spec = spec if isinstance(spec, dict) else {}
         out.append({
-            "key": key, "set": key in data, "required": key in required,
+            "key": key, "set": key in data, "required": key in required, "locked": key in LOCKED_KEYS,
             "value": _jsonable(data[key]) if key in data else None,
             "type": _type_of(spec), "description": spec.get("description"),
             "enum": spec.get("enum") if isinstance(spec.get("enum"), list) else None,
@@ -43,7 +48,7 @@ def fields(data: dict, schema: dict) -> list[dict]:
         })
     for key in data:
         if key not in props:
-            out.append({"key": str(key), "set": True, "required": False, "value": _jsonable(data[key]),
+            out.append({"key": str(key), "set": True, "required": False, "locked": key in LOCKED_KEYS, "value": _jsonable(data[key]),
                         "type": None, "description": None, "enum": None, "schema": None})
     return out
 

@@ -6,6 +6,7 @@ import status from "../status.module.css";
 import styles from "./config.module.css";
 import { FieldHead, groupFields, isWide, Groups, type Field } from "./configGroups";
 import form from "../form/form.module.css";
+import { ConfigValue } from "./ConfigValue";
 import { DiffView } from "../edit/DiffView";
 import { SaveBar, saveBarStyles, SavedNotice } from "../edit/SaveBar";
 
@@ -86,6 +87,17 @@ export function ConfigForm({ name, config, saved, onSaved, onDirty }: {
       <Groups groups={groupFields(config.fields)} render={(f) => {
         const v = draft[f.key];
         const schema = f.schema as Schema | null;
+        if (f.locked) {
+          return (
+            <section key={f.key} id={`field-${f.key}`} className={styles.field}>
+              <FieldHead field={f} />
+              <div className={styles.body}>
+                <ConfigValue field={f} />
+                <p className={styles.desc}>dashboard からは変えられない (艦フォルダと席の宛先に関わる)。</p>
+              </div>
+            </section>
+          );
+        }
         return (
           <section key={f.key} id={`field-${f.key}`} className={`${styles.field} ${isWide(f, true) ? styles.wide : ""} ${changedKeys.has(f.key) ? styles.changed : ""}`}>
             <FieldHead field={f} />

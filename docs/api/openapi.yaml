@@ -189,8 +189,8 @@ components:
           properties:
             code:
               type: string
-              description: not_found (艦・ファイルが無い) / bad_request / unreadable (読めない・壊れている) / internal / forbidden (書き込みのトークン・Host・Origin が合わない) / conflict (preview のあとにファイルが変わった) / invalid (検証に通らない) / unpatchable (その yaml の形には部分置き換えで当てられない。生の yaml で直す)。
-              enum: [not_found, bad_request, unreadable, internal, forbidden, conflict, invalid, unpatchable]
+              description: not_found (艦・ファイルが無い) / bad_request / unreadable (読めない・壊れている) / internal / forbidden (書き込みのトークン・Host・Origin が合わない) / conflict (preview のあとにファイルが変わった) / invalid (検証に通らない) / locked_key (dashboard から変えられない項目。今は name) / unpatchable (その yaml の形には部分置き換えで当てられない。生の yaml で直す)。
+              enum: [not_found, bad_request, unreadable, internal, forbidden, conflict, invalid, locked_key, unpatchable]
             message: {type: string}
             detail:
               type: [string, "null"]
@@ -506,11 +506,12 @@ components:
               items: {type: string}
     ConfigField:
       type: object
-      required: [key, set, required, value, type, description, enum, schema]
+      required: [key, set, required, locked, value, type, description, enum, schema]
       properties:
         key: {type: string, description: "最上位の項目名。"}
         set: {type: boolean, description: "team.yaml に書かれているか。"}
         required: {type: boolean}
+        locked: {type: boolean, description: "dashboard から書き換えさせない項目 (今は name)。サーバーは変更を 400 locked_key で断り、フォームは読むだけにする。"}
         value: {description: "team.yaml の値 (JSON にした形)。未設定は null。"}
         type: {type: [string, "null"], description: "schema の type (複数なら | で連結)。anyOf だけなら null。"}
         description: {type: [string, "null"]}

@@ -102,10 +102,40 @@ def apply_ops(text: str, ops: list) -> str:
     return text
 
 
+def _locked_values(text: str):
+    import yaml
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError:
+        return None
+    return {k: data.get(k) for k in shipconfig.LOCKED_KEYS} if isinstance(data, dict) else None
+
+
+def refuse_locked(path: Path, content: str) -> None:
+    """``shipconfig.LOCKED_KEYS`` の項目は画面から変えさせない。今のファイルと値が違えば 400。"""
+    try:
+        old = path.read_text(encoding="utf-8")
+    except OSError:
+        return
+    before, after = _locked_values(old), _locked_values(content)
+    if before is None or after is None:
+        return
+    for key in shipconfig.LOCKED_KEYS:
+        if before[key] != after[key]:
+            raise edit.EditError(400, "locked_key", f"{key} は dashboard からは変えられない",
+                                 "艦の名前は艦フォルダと席の宛先に関わる" if key == "name" else None)
+
+
 def resolve(ship: str, file: str) -> edit.Target | None:
     if file != FILE:
         return None
     shipdir = admiral.find_ship(ship)
     if shipdir is None:
         return None
-    return edit.Target(shipdir / FILE, shipdir, FILE, lambda text: validate(shipdir, text), apply_ops)
+    path = shipdir / FILE
+
+    def check(text: str) -> list[str]:
+        refuse_locked(path, text)
+        return validate(shipdir, text)
+
+    return edit.Target(path, shipdir, FILE, check, apply_ops)

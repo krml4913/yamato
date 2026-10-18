@@ -106,6 +106,26 @@ class TeamEditTest(ShipTestCase):
         self.assertTrue(p["valid"], p["errors"])
         self.assertFalse(p["changed"])
 
+    def test_locked_key_is_refused_from_form_and_raw_yaml(self):
+        text = self.path.read_text(encoding="utf-8")
+        ops = [{"op": "set_value", "path": ["name"], "value": "other"}]
+        base = edit.handle("preview", self.body([{"op": "set_value", "path": ["grace"], "value": "5m"}]))["base_hash"]
+        for op, args in (("preview", {}), ("commit", {"base_hash": base})):
+            with self.assertRaises(edit.EditError) as cm:
+                edit.handle(op, self.body(ops, **args))
+            self.assertEqual((cm.exception.status, cm.exception.code), (400, "locked_key"))
+            with self.assertRaises(edit.EditError) as cm:
+                edit.handle(op, {"ship": "t1", "file": "team.yaml", "content": text.replace("name: t1", "name: other", 1), **args})
+            self.assertEqual(cm.exception.status, 400)
+        self.assertEqual(self.path.read_text(encoding="utf-8"), text)
+
+    def test_save_without_changing_locked_key_still_passes(self):
+        ops = [{"op": "set_value", "path": ["grace"], "value": "5m"}]
+        p = self.preview(ops)
+        self.assertTrue(p["valid"], p["errors"])
+        self.commit(ops, p["base_hash"])
+        self.assertEqual(self.team()["name"], "t1")
+
     def raw(self, content):
         return edit.handle("preview", {"ship": "t1", "file": "team.yaml", "content": content})
 
