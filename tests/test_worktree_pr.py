@@ -656,6 +656,36 @@ class PrTest(GitShipTestCase):
         self.assertEqual(conflict["item"], third)
         self.assertIn("release が進んで", self.board().read(third)[1])
 
+    def test_merge_does_not_wait_for_mergeable_of_prs_on_another_base(self):
+        from yamato import pr
+
+        self.set_requires([])
+        first = self.item()
+        self.board().set(first, {"branch": "yamato/t1/a"}, by="impl")
+        self.quiet(pr.open_pr, self.shipdir, self.team(), first, by="impl", base="release")
+        second = self.ready()            # aimed at git.base
+        st = self.gh()
+        st["prs"]["2"]["mergeable"] = "UNKNOWN"
+        self.set_gh(prs=st["prs"])
+        with mock.patch.object(pr, "MERGEABLE_WAIT", 7.5), mock.patch.object(pr.time, "sleep") as sleep:
+            self.quiet(pr.merge_pr, self.shipdir, self.team(), first, by="pm")
+        self.assertNotIn(mock.call(7.5), sleep.call_args_list)
+        self.assertEqual(self.recorded(pr.PR_CONFLICT), [])
+
+    def test_merge_waits_for_mergeable_of_prs_on_the_same_base(self):
+        from yamato import pr
+
+        self.set_requires([])
+        first = self.ready()
+        self.ready()
+        st = self.gh()
+        st["prs"]["2"]["mergeable"] = "UNKNOWN"
+        self.set_gh(prs=st["prs"])
+        with mock.patch.object(pr, "MERGEABLE_WAIT", 7.5), mock.patch.object(pr.time, "sleep") as sleep:
+            _, out = self.quiet(pr.merge_pr, self.shipdir, self.team(), first, by="pm")
+        self.assertEqual(sleep.call_args_list.count(mock.call(7.5)), pr.MERGEABLE_TRIES - 1)
+        self.assertIn("衝突の有無がまだ分からない", out)
+
     def test_open_is_recorded_in_events(self):
         from yamato import pr
 

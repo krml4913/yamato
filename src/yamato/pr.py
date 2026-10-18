@@ -283,6 +283,8 @@ def _check_conflicts(shipdir: Path, team: dict, merged_id: str, merged_pr, who: 
         st = {}
         for i in range(MERGEABLE_TRIES):
             st = _pr_state(team, meta, number, r)
+            if (st.get("baseRefName") or conf["base"]) != merged_base:
+                break       # a merge into another branch cannot conflict it: no point waiting for `mergeable`
             if st.get("mergeable") != "UNKNOWN":
                 break
             if i + 1 < MERGEABLE_TRIES:
