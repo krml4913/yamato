@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { shipFilePath } from "../api/files";
-import { editToken, getShipConfig, type ShipConfig } from "../api/client";
+import { editToken, getOverview, getShipConfig, type Overview, type ShipConfig } from "../api/client";
+import { ShipCard } from "../overview/ShipCard";
+import { isRunning } from "../overview/summary";
 import { OpPanel, type OpSpec } from "../ops/OpPanel";
 import styles from "./ship.module.css";
 
@@ -23,7 +25,7 @@ export function seatNames(config: ShipConfig): string[] | null {
 
 // 艦の操作。--edit で起動したとき (index.html にトークンがあるとき) だけ入口を出す。
 // どれも確認画面 (OpPanel) を経てから yamato の CLI を呼ぶ。
-function ShipOps({ ship }: { ship: string }) {
+function ShipOps({ ship, running }: { ship: string; running: boolean | null }) {
   const [pending, setPending] = useState<OpSpec | null>(null);
   const [forSpan, setForSpan] = useState("");
   const [seats, setSeats] = useState("");
@@ -44,38 +46,53 @@ function ShipOps({ ship }: { ship: string }) {
   }, [ship]);
 
   const ask = (spec: Omit<OpSpec, "ship">) => setPending({ ship, ...spec });
+  // 動いている艦では up、止まっている艦では down を目立たせない (押せるが、今は要らない側)
+  const quiet = (hide: boolean | null) => (hide ? styles.quiet : undefined);
   return (
     <div role="group" aria-label="艦の操作">
       <h2>艦の操作</h2>
-      <div className={styles.row}>
-        <label>稼働時間 <input value={forSpan} onChange={(e) => setForSpan(e.target.value)} placeholder="例 3h (省くと team.yaml の既定)" /></label>
-        <label>一緒に起こす席 <input value={seats} onChange={(e) => setSeats(e.target.value)} placeholder="例 impl,review" /></label>
-        <button onClick={() => ask({
-          op: "up", params: { for: forSpan, seats }, title: `艦 ${ship} を起動する`, confirmLabel: "起動する",
-          detail: "captain の席を起こし、稼働時間の上限を設定する (yamato up)。",
-        })}>up</button>
+      <p className={styles.runState}>
+        {running === null ? "艦が動いているかは読めなかった" : running ? "いま動いている" : "いま止まっている"}
+      </p>
+      <div className={styles.usual} role="group" aria-label="普段の操作">
+        <h3>普段の操作</h3>
+        <div className={styles.row}>
+          <label>稼働時間 <input className={styles.wide} value={forSpan} onChange={(e) => setForSpan(e.target.value)} placeholder="例 3h (省くと既定)" /></label>
+          <label>一緒に起こす席 <input className={styles.wide} value={seats} onChange={(e) => setSeats(e.target.value)} placeholder="例 impl,review" /></label>
+          <button className={quiet(running === true)} onClick={() => ask({
+            op: "up", params: { for: forSpan, seats }, title: `艦 ${ship} を起動する`, confirmLabel: "起動する",
+            detail: "captain の席を起こし、稼働時間の上限を設定する (yamato up)。",
+          })}>up</button>
+        </div>
+        <div className={styles.row}>
+          <label>延ばす時間 <input className={styles.wide} value={span} onChange={(e) => setSpan(e.target.value)} placeholder="例 1h" /></label>
+          <button onClick={() => ask({
+            op: "extend", params: { span }, title: `艦 ${ship} の deadline を延ばす`, confirmLabel: "延ばす",
+            detail: "稼働時間の上限を延ばす (yamato extend)。起動していない艦は断られる。",
+          })}>extend</button>
+        </div>
+        <div className={styles.row}>
+          <button className={quiet(running === false)} onClick={() => ask({
+            op: "down", params: {}, title: `艦 ${ship} を終業させる`, confirmLabel: "終業を指示する",
+            detail: "動いている席に引き継ぎを書かせて止める (yamato down)。猶予を過ぎても残る席は強制停止される。",
+          })}>down</button>
+          <span className={styles.hint}>席に引き継ぎを書かせてから止める</span>
+        </div>
       </div>
-      <div className={styles.row}>
-        <label>延ばす時間 <input value={span} onChange={(e) => setSpan(e.target.value)} placeholder="例 1h" /></label>
-        <button onClick={() => ask({
-          op: "extend", params: { span }, title: `艦 ${ship} の deadline を延ばす`, confirmLabel: "延ばす",
-          detail: "稼働時間の上限を延ばす (yamato extend)。起動していない艦は断られる。",
-        })}>extend</button>
-      </div>
-      <div className={styles.row}>
-        <button onClick={() => ask({
-          op: "down", params: {}, title: `艦 ${ship} を終業させる`, confirmLabel: "終業を指示する",
-          detail: "動いている席に引き継ぎを書かせて止める (yamato down)。猶予を過ぎても残る席は強制停止される。",
-        })}>down</button>
-        <button className={styles.danger} onClick={() => ask({
-          op: "down-force", params: {}, title: `艦 ${ship} を強制停止する (down --force)`, confirmLabel: "強制停止する",
-          detail: "猶予なしで全席を今すぐ強制停止する。席は引き継ぎを書けず、作業の途中で切れる。",
-        })}>down --force</button>
-        <button className={styles.danger} onClick={() => ask({
-          op: "halt", params: {}, title: `艦 ${ship} を緊急停止する (halt)`, confirmLabel: "緊急停止する",
-          detail: "猶予なしで全席を強制停止する緊急停止 (yamato halt)。席は引き継ぎを書けず、作業の途中で切れる。",
-        })}>halt</button>
-      </div>
+      <fieldset className={styles.dangerZone}>
+        <legend>危ない操作</legend>
+        <p className={styles.hint}>猶予なしで全席を止める。席は引き継ぎを書けず、作業の途中で切れる。</p>
+        <div className={styles.row}>
+          <button className={styles.danger} onClick={() => ask({
+            op: "down-force", params: {}, title: `艦 ${ship} を強制停止する (down --force)`, confirmLabel: "強制停止する",
+            detail: "猶予なしで全席を今すぐ強制停止する。席は引き継ぎを書けず、作業の途中で切れる。",
+          })}>down --force</button>
+          <button className={styles.danger} onClick={() => ask({
+            op: "halt", params: {}, title: `艦 ${ship} を緊急停止する (halt)`, confirmLabel: "緊急停止する",
+            detail: "猶予なしで全席を強制停止する緊急停止 (yamato halt)。席は引き継ぎを書けず、作業の途中で切れる。",
+          })}>halt</button>
+        </div>
+      </fieldset>
       <h2>席に送る</h2>
       <div className={styles.row}>
         <label>席 {seatList ? (
@@ -97,13 +114,22 @@ function ShipOps({ ship }: { ship: string }) {
   );
 }
 
-// ShipConfig.files に出る md (roles・charter・knowledge) の画面へのリンク。取れなければ何も出さない。
+type MdFile = NonNullable<ShipConfig["files"]>[number];
+
+// md の表示名。roles/pm.md → pm、charter.md → charter、knowledge.md → knowledge
+export function mdName(file: string): string {
+  const base = file.split("/").pop() ?? file;
+  return base.replace(/\.md$/, "");
+}
+
+// ShipConfig.files に出る md を、役割・charter・knowledge に分けて名前で出す。
+// _ で始まる役割は yamato 内部の役割なので小さく別に出す。取れなければ何も出さない。
 function ShipFiles({ ship }: { ship: string }) {
-  const [files, setFiles] = useState<string[]>([]);
+  const [files, setFiles] = useState<MdFile[]>([]);
   useEffect(() => {
     let live = true;
     getShipConfig(ship).then(
-      (c) => live && setFiles((c.files ?? []).map((f) => f.file)),
+      (c) => live && setFiles(c.files ?? []),
       () => live && setFiles([]),
     );
     return () => {
@@ -111,25 +137,70 @@ function ShipFiles({ ship }: { ship: string }) {
     };
   }, [ship]);
   if (files.length === 0) return null;
+  const link = (f: MdFile) => <Link to={shipFilePath(ship, f.file)} title={f.file}>{mdName(f.file)}</Link>;
+  const roles = files.filter((f) => f.kind === "role");
+  const normal = roles.filter((f) => !mdName(f.file).startsWith("_"));
+  const internal = roles.filter((f) => mdName(f.file).startsWith("_"));
+  const others = files.filter((f) => f.kind !== "role");
   return (
-    <>
+    <div role="group" aria-label="md の一覧">
       <h2>md</h2>
-      <ul aria-label="md の一覧">
-        {files.map((f) => <li key={f}><Link to={shipFilePath(ship, f)}>{f}</Link></li>)}
-      </ul>
-    </>
+      {normal.length > 0 && (
+        <div className={styles.mdGroup}>
+          <h3>役割</h3>
+          <ul className={styles.mdList}>{normal.map((f) => <li key={f.file}>{link(f)}</li>)}</ul>
+        </div>
+      )}
+      {others.length > 0 && (
+        <div className={styles.mdGroup}>
+          <h3>charter・knowledge</h3>
+          <ul className={styles.mdList}>{others.map((f) => <li key={f.file}>{link(f)}</li>)}</ul>
+        </div>
+      )}
+      {internal.length > 0 && (
+        <div className={`${styles.mdGroup} ${styles.mdInternal}`}>
+          <h3>内部の役割</h3>
+          <ul className={styles.mdList}>{internal.map((f) => <li key={f.file}>{link(f)}</li>)}</ul>
+        </div>
+      )}
+    </div>
   );
+}
+
+// その艦の状態・席・board・PR・日報。一覧の ShipCard をそのまま使い、取れなければ何も出さない。
+function ShipStatus({ ship, onRunning }: { ship: string; onRunning: (r: boolean | null) => void }) {
+  const [data, setData] = useState<Overview | null>(null);
+  useEffect(() => {
+    let live = true;
+    getOverview().then(
+      (d) => {
+        if (!live) return;
+        setData(d);
+        const s = Array.isArray(d.ships) ? d.ships.find((x) => x.name === ship) : undefined;
+        onRunning(s?.state ? isRunning(s) : null);
+      },
+      () => live && onRunning(null),
+    );
+    return () => {
+      live = false;
+    };
+  }, [ship, onRunning]);
+  const s = data && Array.isArray(data.ships) ? data.ships.find((x) => x.name === ship) : undefined;
+  if (!data || !s) return null;
+  return <ShipCard ship={s} now={data.generated_at} waits={data.waits ?? []} />;
 }
 
 export function ShipPage() {
   const { name } = useParams();
   const ship = name ?? "";
+  const [running, setRunning] = useState<boolean | null>(null);
   return (
     <>
       <h1>艦: {name}</h1>
       <p><Link to={`/ship/${encodeURIComponent(ship)}/config`}>設定</Link></p>
+      <ShipStatus key={`status-${ship}`} ship={ship} onRunning={setRunning} />
       <ShipFiles key={`files-${ship}`} ship={ship} />
-      {editToken() !== null && <ShipOps key={ship} ship={ship} />}
+      {editToken() !== null && <ShipOps key={ship} ship={ship} running={running} />}
     </>
   );
 }

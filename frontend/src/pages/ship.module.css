@@ -1,3 +1,33 @@
 .row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.5rem 0; }
 .row label { display: flex; gap: 0.25rem; align-items: center; }
-.danger { color: var(--color-danger); }
+.wide { width: 14em; }
+.runState { margin: 0 0 0.5rem; font-weight: 600; }
+.hint { font-size: 13px; opacity: 0.75; margin: 0; }
+.quiet { opacity: 0.55; }
+
+.usual { margin: 0.5rem 0 1rem; }
+.usual h3 { font-size: 14px; margin: 0 0 4px; }
+
+.dangerZone {
+  margin: 1rem 0;
+  padding: 0.5rem 0.75rem;
+  border: 2px solid var(--color-danger);
+  border-radius: 6px;
+}
+.dangerZone legend { padding: 0 0.4rem; font-weight: 700; color: var(--color-danger); }
+
+/* 白地の赤文字でなく、赤地の白文字にして読めるようにする */
+.danger {
+  background: var(--color-danger);
+  color: #fff;
+  border: 1px solid var(--color-danger);
+  border-radius: 4px;
+  padding: 0.3rem 0.8rem;
+  cursor: pointer;
+}
+.danger:hover { filter: brightness(0.9); }
+
+.mdGroup h3 { font-size: 14px; margin: 0.5rem 0 2px; }
+.mdList { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; list-style: none; padding: 0; margin: 0; }
+.mdInternal { font-size: 13px; opacity: 0.75; }
+.mdInternal h3 { font-size: 13px; }
