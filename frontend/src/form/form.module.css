@@ -4,6 +4,3 @@
 .head small { opacity: 0.7; }
 .row { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.25rem; }
 .small { font-size: 0.85em; }
-.actions { display: flex; gap: 0.5rem; margin: 1rem 0; }
-.diff { white-space: pre; }
-.saved { padding: 0.5rem; border: 1px solid var(--color-ok); }
