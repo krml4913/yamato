@@ -40,6 +40,10 @@
   .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
+/* 中身が無い節は見出しと一言を 1 行に */
+.emptyLine { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; }
+.emptyLine h3 { margin: 0; }
+
 /* 前回の日報の「一言」「明日」 */
 .label { margin: 8px 0 2px; font-size: 13px; font-weight: 700; color: var(--color-warn); letter-spacing: 0.04em; }
 .pre { margin: 0 0 4px; white-space: pre-wrap; overflow-wrap: anywhere; }

@@ -34,3 +34,20 @@ describe("Markdown", () => {
     expect(container.querySelectorAll("td")).toHaveLength(2);
   });
 });
+
+describe("Markdown の目次", () => {
+  const doc = "# 題\n\n## 一\n\nあ\n\n## 二\n\nい\n\n## 三\n\nう\n";
+  it("toc 指定で h2 が 3 つ以上あれば目次を出し、h2 に id を振る", () => {
+    render(<Markdown text={doc} toc />);
+    expect(screen.getByText("目次")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "二" })).toHaveAttribute("href", expect.stringMatching(/^#md-sec-/));
+    expect(screen.getByRole("heading", { level: 2, name: "二" })).toHaveAttribute("id");
+  });
+  it("toc 指定が無いか h2 が少なければ出さない", () => {
+    const { unmount } = render(<Markdown text={doc} />);
+    expect(screen.queryByText("目次")).toBeNull();
+    unmount();
+    render(<Markdown text={"## 一\n\n## 二\n"} toc />);
+    expect(screen.queryByText("目次")).toBeNull();
+  });
+});
