@@ -75,47 +75,7 @@ export function ShipCard({ ship, now, waits, showName = true, children }: {
       <div className={styles.secTable}>
         <SeatTable ship={ship.name} seats={g.seats} now={now} />
       </div>
-      <div className={styles.cols}>
-        <div className={styles.colMain}>
-          <div className={styles.sec}>
-            <h3>board</h3>
-            <p>
-              {counts.length ? counts.map(([k, n]) => <span className={styles.tag} key={k}>{k} {n}</span>) : "-"}
-            </p>
-            <ul>
-              {g.board.map((b) => (
-                <li key={b.id}>
-                  <b>{b.id}</b> [{b.state}] {b.title}{" "}
-                  <span className={status.dim}>
-                    {b.assignee ?? "-"}{b.blocked_on.length ? ` / blocked_on ${b.blocked_on.join(", ")}` : ""}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-          {g.prs.length > 0 && (
-            <div className={styles.sec}>
-              <h3>PR</h3>
-              <ul>
-                {g.prs.map((p) => (
-                  <li key={`${p.item}/${p.repo}/${p.number}`}>
-                    {p.link ? <a href={p.link}>#{p.number}</a> : `#${p.number}`}
-                    {g.multi_repo && ` [${p.repo}]`} <b>{p.item}</b> {p.title}{" "}
-                    <span className={status.dim}>({p.state})</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-        <div className={styles.colSide}>
-          <Anomalies list={g.anomalies} now={now} />
-        </div>
-      </div>
-      <div className={styles.cards}>
-        <Report g={g} />
-        <Orphans g={g} />
-      </div>
+      <ShipBody g={g} now={now} counts={counts} />
       <Inventory g={g} />
       <ContextUse g={g} />
     </section>
@@ -196,5 +156,79 @@ function Anomalies({ list, now }: { list: ShipState["anomalies"]; now: number })
         </details>
       )}
     </div>
+  );
+}
+
+// 中身の量に合わせて段を組む。board・PR が空なら 1 行にして異常を全幅に、
+// 異常が無ければ board を全幅に、孤児が無ければ 1 行にして日報を全幅にする
+function ShipBody({ g, now, counts }: { g: ShipState; now: number; counts: [string, number][] }) {
+  const boardEmpty = g.board.length === 0 && g.prs.length === 0 && counts.length === 0;
+  const hasAnomalies = g.anomalies.length > 0;
+  const boardSec = (
+    <>
+      <div className={styles.sec}>
+        <h3>board</h3>
+        <p>{counts.map(([k, n]) => <span className={styles.tag} key={k}>{k} {n}</span>)}</p>
+        <ul>
+          {g.board.map((b) => (
+            <li key={b.id}>
+              <b>{b.id}</b> [{b.state}] {b.title}{" "}
+              <span className={status.dim}>
+                {b.assignee ?? "-"}{b.blocked_on.length ? ` / blocked_on ${b.blocked_on.join(", ")}` : ""}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+      {g.prs.length > 0 && (
+        <div className={styles.sec}>
+          <h3>PR</h3>
+          <ul>
+            {g.prs.map((p) => (
+              <li key={`${p.item}/${p.repo}/${p.number}`}>
+                {p.link ? <a href={p.link}>#{p.number}</a> : `#${p.number}`}
+                {g.multi_repo && ` [${p.repo}]`} <b>{p.item}</b> {p.title}{" "}
+                <span className={status.dim}>({p.state})</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </>
+  );
+  return (
+    <>
+      {boardEmpty ? (
+        <div className={`${styles.sec} ${styles.emptyLine}`}>
+          <h3>board</h3>
+          <span className={status.dim}>空</span>
+        </div>
+      ) : null}
+      {boardEmpty || !hasAnomalies ? (
+        <>
+          {!boardEmpty && boardSec}
+          <Anomalies list={g.anomalies} now={now} />
+        </>
+      ) : (
+        <div className={styles.cols}>
+          <div className={styles.colMain}>{boardSec}</div>
+          <div className={styles.colSide}><Anomalies list={g.anomalies} now={now} /></div>
+        </div>
+      )}
+      {g.orphans.length === 0 ? (
+        <>
+          <div className={`${styles.sec} ${styles.emptyLine}`}>
+            <h3>孤児</h3>
+            <span className={status.dim}>無い (担当が落ちて active のまま残った項目)</span>
+          </div>
+          <Report g={g} />
+        </>
+      ) : (
+        <div className={styles.cards}>
+          <Report g={g} />
+          <Orphans g={g} />
+        </div>
+      )}
+    </>
   );
 }
