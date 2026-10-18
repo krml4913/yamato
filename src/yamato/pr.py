@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 
 from .board import Board
-from .team import git_conf
+from .team import GIT_STRATEGIES, git_conf
 from .util import YamatoError, env_command, merge_lock
 from .worktree import (caller, clip, field_get, field_map, field_put, multi, pick_repo, record, record_failure,
                        repo_root, repos)
@@ -90,12 +90,12 @@ def _send(shipdir: Path, team: dict, to: str, text: str, sender: str) -> None:
 
 # --- open --------------------------------------------------------------------
 
-def _ahead(team: dict, meta: dict, r: dict) -> bool:
-    """The repo's worktree branch has commits the base does not (a PR is worth opening)."""
+def _ahead(team: dict, meta: dict, r: dict, base: str | None = None) -> bool:
+    """The repo's worktree branch has commits the base (default ``git.base``) does not (a PR is worth opening)."""
     wt = field_get(team, meta, "worktree", r)
     if not wt or not Path(wt).is_dir():
         return False
-    b = git_conf(team)["base"]
+    b = base or git_conf(team)["base"]
     ref = f"origin/{b}" if _git_ok(Path(wt), f"refs/remotes/origin/{b}") else b
     cp = subprocess.run(["git", "rev-list", "--count", f"{ref}..HEAD"], cwd=wt, capture_output=True, text=True)
     return cp.returncode == 0 and int(cp.stdout.strip() or 0) > 0
@@ -107,30 +107,33 @@ def _git_ok(cwd: Path, ref: str) -> bool:
 
 
 def open_pr(shipdir: Path, team: dict, item_id: str, title: str | None = None, body: str | None = None,
-            draft: bool = False, by: str | None = None, repo: list[str] | None = None) -> int:
+            draft: bool = False, by: str | None = None, repo: list[str] | None = None,
+            base: str | None = None) -> int:
     """One PR per repo. ``repo`` names them; none named means the first repo, and in a several-repo ship
-    every repo whose worktree has commits ahead of the base and no PR yet."""
+    every repo whose worktree has commits ahead of the base and no PR yet. ``base`` is the branch the PR
+    targets (default ``git.base``)."""
     if repo is None and multi(team):
         meta = Board(shipdir, team).read(item_id)[0]
         have = field_map(team, meta, "pr")
-        chosen = [r for r in repos(team) if r["name"] not in have and _ahead(team, meta, r)]
+        chosen = [r for r in repos(team) if r["name"] not in have and _ahead(team, meta, r, base)]
         if not chosen:
             raise YamatoError(f"{item_id}: PR を開く repo がありません (worktree に base より進んだ commit があって"
                               "PR が無い repo が対象。`--repo <呼び名>` で指す)")
     else:
         chosen = _targets(team, repo)
     for r in chosen:
-        _open_one(shipdir, team, item_id, title, body, draft, by, r)
+        _open_one(shipdir, team, item_id, title, body, draft, by, r, base)
     return 0
 
 
 def _open_one(shipdir: Path, team: dict, item_id: str, title: str | None, body: str | None, draft: bool,
-              by: str | None, r: dict) -> None:
+              by: str | None, r: dict, base: str | None = None) -> None:
     brd = Board(shipdir, team)
     who = caller(shipdir, by)
     lab = _label(team, r)
     extra = {"repo": r["name"]} if multi(team) else {}
     meta: dict = {}
+    base = base or git_conf(team)["base"]
     try:
         meta, _, _ = brd.read(item_id)
         if field_get(team, meta, "pr", r):
@@ -139,7 +142,7 @@ def _open_one(shipdir: Path, team: dict, item_id: str, title: str | None, body: 
         branch = field_get(team, meta, "branch", r)
         if not branch:
             raise YamatoError(f"{item_id} に branch がありません{lab} (`yamato worktree add` か `board set {item_id} branch=...`)")
-        args = ["pr", "create", "--base", git_conf(team)["base"], "--head", branch,
+        args = ["pr", "create", "--base", base, "--head", branch,
                 "--title", title or f"{item_id} {meta.get('title')}",
                 "--body", body if body is not None else f"yamato 艦 {team['name']} の {item_id}"]
         if draft:
@@ -157,7 +160,7 @@ def _open_one(shipdir: Path, team: dict, item_id: str, title: str | None, body: 
         record_failure(shipdir, PR_OPEN_FAILED, item_id, who, e, meta, **extra)
         raise
     record(shipdir, PR_OPEN, item_id, who, f"{item_id} の PR #{number} を開いた{lab}", meta,
-           pr=number, url=url, branch=branch, column=fields.get("column"), draft=draft or None, **extra)
+           pr=number, url=url, branch=branch, base=base, column=fields.get("column"), draft=draft or None, **extra)
     print(f"PR #{number} を開いた{lab}: {url}")
     to = meta.get("reviewer") or team["hub"]
     if to != who:
@@ -194,17 +197,20 @@ def unmet(shipdir: Path, team: dict, meta: dict, r: dict | None = None) -> list[
 
 
 def _pr_state(team: dict, meta: dict, number, r: dict | None = None) -> dict:
-    cp = gh(["pr", "view", str(number), "--json", "state,mergeable"], _cwd(team, meta, r), check=False)
+    cp = gh(["pr", "view", str(number), "--json", "state,mergeable,baseRefName"], _cwd(team, meta, r), check=False)
     try:
         return json.loads(cp.stdout) if cp.returncode == 0 else {}
     except ValueError:
         return {}
 
 
-def merge_pr(shipdir: Path, team: dict, item_id: str, by: str | None = None, repo: list[str] | None = None) -> int:
+def merge_pr(shipdir: Path, team: dict, item_id: str, by: str | None = None, repo: list[str] | None = None,
+             strategy: str | None = None) -> int:
     """Merge the item's PRs, repo by repo in the order given (yamato does not order them: when one repo's
     merge has to come first is the team's business). None named: the first repo; in a several-repo ship
-    every repo with an open PR."""
+    every repo with an open PR. ``strategy`` (merge / squash / rebase) is how, default ``git.strategy``."""
+    if strategy is not None and strategy not in GIT_STRATEGIES:
+        raise YamatoError(f"--strategy は {' / '.join(GIT_STRATEGIES)} のどれか (今: {strategy})")
     if repo is None and multi(team):
         meta = Board(shipdir, team).read(item_id)[0]
         done = field_map(team, meta, "merged_by")
@@ -214,11 +220,12 @@ def merge_pr(shipdir: Path, team: dict, item_id: str, by: str | None = None, rep
     else:
         chosen = _targets(team, repo)
     for r in chosen:
-        _merge_one(shipdir, team, item_id, by, r)
+        _merge_one(shipdir, team, item_id, by, r, strategy)
     return 0
 
 
-def _merge_one(shipdir: Path, team: dict, item_id: str, by: str | None, r: dict) -> None:
+def _merge_one(shipdir: Path, team: dict, item_id: str, by: str | None, r: dict,
+               strategy: str | None = None) -> None:
     brd = Board(shipdir, team)
     who = caller(shipdir, by)
     lab = _label(team, r)
@@ -231,37 +238,43 @@ def _merge_one(shipdir: Path, team: dict, item_id: str, by: str | None, r: dict)
         if not number:
             raise YamatoError(f"{item_id} に pr がありません{lab} (`yamato pr open` か `board set {item_id} pr=<番号>`)")
         conf = git_conf(team)
+        strategy = strategy or conf["strategy"]
         with merge_lock(shipdir):
             refused = unmet(shipdir, team, meta, r)
             if refused:
                 raise YamatoError(f"{item_id} (PR #{number}){lab} は merge の条件 (git.merge_requires) を満たしていない:\n- "
                                   + "\n- ".join(refused))
-            already = _pr_state(team, meta, number, r).get("state") == "MERGED"
+            st = _pr_state(team, meta, number, r)
+            merged_base = st.get("baseRefName") or conf["base"]
+            already = st.get("state") == "MERGED"
             if already:
                 print(f"PR #{number} は既に merge されている{lab}")
             else:
-                gh(["pr", "merge", str(number), f"--{conf['strategy']}"], _cwd(team, meta, r))
-                print(f"PR #{number} を merge した{lab} ({conf['strategy']})")
+                gh(["pr", "merge", str(number), f"--{strategy}"], _cwd(team, meta, r))
+                print(f"PR #{number} を merge した{lab} ({strategy})")
             brd.set(item_id, {"merged_by": field_put(team, meta, "merged_by", r, who)},
                     note=f"PR #{number} を merge した{lab}", by=who)
             record(shipdir, PR_MERGE, item_id, who,
                    f"{item_id} の PR #{number} を merge した{lab}" + (" (既に merge 済み)" if already else ""), meta,
-                   pr=str(number), strategy=conf["strategy"], mergedBy=who, alreadyMerged=already or None, **extra)
+                   pr=str(number), strategy=strategy, mergedBy=who, alreadyMerged=already or None, **extra)
     except YamatoError as e:
         record_failure(shipdir, PR_MERGE_FAILED, item_id, who, e, meta, pr=field_get(team, meta, "pr", r),
                        unmet=[clip(x) for x in refused] or None, **extra)
         raise
-    _check_conflicts(shipdir, team, item_id, number, who, r)
+    _check_conflicts(shipdir, team, item_id, number, who, r, merged_base)
 
 
-def _check_conflicts(shipdir: Path, team: dict, merged_id: str, merged_pr, who: str, r: dict | None = None) -> None:
-    """After a merge, tell the owners of other open PRs in the same repo that now conflict (design-p1 §8.3 の 4).
-    A merge in one repo cannot conflict a PR of another."""
+def _check_conflicts(shipdir: Path, team: dict, merged_id: str, merged_pr, who: str, r: dict | None = None,
+                     merged_base: str | None = None) -> None:
+    """After a merge, tell the owners of other open PRs in the same repo and the same base branch that now
+    conflict (design-p1 §8.3 の 4). A merge in one repo cannot conflict a PR of another, nor can a merge
+    into one branch conflict a PR aimed at another."""
     r = r or repos(team)[0]
     lab = _label(team, r)
     extra = {"repo": r["name"]} if multi(team) else {}
     brd = Board(shipdir, team)
     conf = git_conf(team)
+    merged_base = merged_base or conf["base"]
     for meta in brd.items():
         number = field_get(team, meta, "pr", r)
         if (meta["id"] == merged_id or not number or meta.get("state") == "done"
@@ -270,18 +283,22 @@ def _check_conflicts(shipdir: Path, team: dict, merged_id: str, merged_pr, who: 
         st = {}
         for i in range(MERGEABLE_TRIES):
             st = _pr_state(team, meta, number, r)
+            if (st.get("baseRefName") or conf["base"]) != merged_base:
+                break       # a merge into another branch cannot conflict it: no point waiting for `mergeable`
             if st.get("mergeable") != "UNKNOWN":
                 break
             if i + 1 < MERGEABLE_TRIES:
                 time.sleep(MERGEABLE_WAIT)
+        if (st.get("baseRefName") or conf["base"]) != merged_base:
+            continue
         if st.get("state") != "OPEN" or st.get("mergeable") != "CONFLICTING":
             if st.get("mergeable") == "UNKNOWN":
                 print(f"注意: {meta['id']} の PR #{number}{lab} は衝突の有無がまだ分からない (あとで gh pr view で確かめる)")
             continue
         fields = {"column": "rebase"} if _column(team, "rebase") else {}
-        text = (f"{conf['base']} が進んで ({merged_id} の PR #{merged_pr} を merge){lab}、"
+        text = (f"{merged_base} が進んで ({merged_id} の PR #{merged_pr} を merge){lab}、"
                 f"{meta['id']} の PR #{number} が衝突している。"
-                f"origin/{conf['base']} を merge して push してください (rebase はしない)")
+                f"origin/{merged_base} を merge して push してください (rebase はしない)")
         brd.set(meta["id"], fields, note=text, by=who)
         print(f"衝突: {meta['id']} の PR #{number}{lab}")
         to = meta.get("assignee") if conf["conflict"] == "author" else conf["conflict"]
@@ -308,12 +325,14 @@ def register(sub) -> None:
     o.add_argument("--draft", action="store_true")
     o.add_argument("--repo", action="append", help="repo の呼び名 (繰り返せる)。省略時は先頭の repo、"
                    "複数 repo の艦では worktree に base より進んだ commit がある PR 未作成の repo すべて")
+    o.add_argument("--base", help="PR の向き先のブランチ。既定は git.base")
     o.add_argument("--by")
     m = ps.add_parser("merge", help="git.merge_requires を確かめて gh pr merge (艦ごとに 1 本ずつ)")
     m.add_argument("ship")
     m.add_argument("item")
     m.add_argument("--repo", action="append", help="repo の呼び名。指した順に 1 本ずつ merge する (順番は仕組みで決めない)。"
                    "省略時は先頭の repo、複数 repo の艦では PR がある repo すべて (workspace の順)")
+    m.add_argument("--strategy", choices=GIT_STRATEGIES, help="merge の仕方。既定は git.strategy")
     m.add_argument("--by")
 
 
@@ -324,5 +343,5 @@ def run(args) -> int:
     shipdir = resolve_ship(args.ship)
     team = current_team(shipdir)
     if args.pr_cmd == "open":
-        return open_pr(shipdir, team, args.item, args.title, args.body, args.draft, args.by, args.repo)
-    return merge_pr(shipdir, team, args.item, args.by, args.repo)
+        return open_pr(shipdir, team, args.item, args.title, args.body, args.draft, args.by, args.repo, args.base)
+    return merge_pr(shipdir, team, args.item, args.by, args.repo, args.strategy)

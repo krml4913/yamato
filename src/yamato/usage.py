@@ -14,6 +14,9 @@ from pathlib import Path
 from . import claude
 from .util import ship_lock
 
+# 作業ログに足す使用量の行の頭。dashboard が「最後の作業の行」から飛ばす判定にも使う。
+LOG_MARK = "使用量 "
+
 KEYS = ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
 
 
@@ -94,7 +97,7 @@ def append(shipdir: Path, line: dict) -> None:
 
 def summary(line: dict) -> str:
     if line.get("unknown"):
-        return f"使用量 shift#{line.get('shiftNo')}: 分からない (transcript を読めなかった)"
-    return (f"使用量 shift#{line.get('shiftNo')}: in={line['input_tokens']} out={line['output_tokens']} "
+        return f"{LOG_MARK}shift#{line.get('shiftNo')}: 分からない (transcript を読めなかった)"
+    return (f"{LOG_MARK}shift#{line.get('shiftNo')}: in={line['input_tokens']} out={line['output_tokens']} "
             f"cache_write={line['cache_creation_input_tokens']} cache_read={line['cache_read_input_tokens']} "
             f"(計 {line['total_tokens']}, {line['messages']} messages)")

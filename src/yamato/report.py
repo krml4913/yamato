@@ -59,7 +59,7 @@ FACT_KINDS = (events.BOARD_ADD, events.BOARD_SET, events.BOARD_ARCHIVE, events.D
               events.PERMISSION_DENIED,
               events.SPIN_SUSPECTED, events.DUPLICATE_SUSPECTED, events.CAPTAIN_GAP,
               PR_OPEN, PR_MERGE, PR_CONFLICT)
-FORCED_KINDS = ("down-force", "grace-exceeded")
+FORCED_KINDS = (*events.FORCED_FROM_OUTSIDE, "grace-exceeded")
 
 
 def _prs(v) -> str:

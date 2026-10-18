@@ -102,6 +102,13 @@ class BuildTest(ReportTestCase):
         self.assertEqual(secs["使用量"], "- シフト 2 回 / 合計 入力 1.2M・出力 86k・cache 0 トークン (席別は usage.jsonl)")
         self.assertLessEqual(len(text.splitlines()), report.MAX_LINES)
 
+    def test_a_shift_ended_by_an_outside_force_stop_is_not_listed_as_no_handoff(self):
+        for reason in ("down-force", "halt"):
+            with self.subTest(reason=reason):
+                events.emit(self.shipdir, events.SHIFT_END, seat="impl", now=at(12, 5),
+                            data={"reason": reason, "shiftNo": 7, "handoffWritten": False})
+                self.assertNotIn("引き継ぎなしで終了", report.sections(self.build()).get("異常", ""))
+
     def test_span_runs_to_now_while_a_seat_is_still_on_shift(self):
         # e2e-p1: the captain writes the report after the members stopped, before its own seat-stop
         events.emit(self.shipdir, events.SHIFT_START, seat="pm", now=at(9, 2), data={"shiftNo": 1})

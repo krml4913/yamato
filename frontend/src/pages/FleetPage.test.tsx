@@ -6,8 +6,10 @@ const ship = (name: string, extra: object = {}) => ({
   name, path: `/h/${name}`, registered: true, exists: true, team: name, error: null, ...extra,
 });
 
-function open(body: unknown, status = 200) {
-  vi.stubGlobal("fetch", vi.fn(async () => ({ ok: status < 400, status, json: async () => body })));
+function open(body: unknown, status = 200, overview: unknown = { ships: [] }) {
+  vi.stubGlobal("fetch", vi.fn(async (u: string) => (String(u).includes("/overview")
+    ? { ok: true, status: 200, json: async () => overview }
+    : { ok: status < 400, status, json: async () => body })));
   render(<MemoryRouter initialEntries={["/fleet"]}><App /></MemoryRouter>);
 }
 
@@ -33,6 +35,20 @@ describe("FleetPage", () => {
     const adm = screen.getByRole("region", { name: "admiral" });
     expect(within(adm).getByText("roles: admiral")).toBeInTheDocument();
     expect(within(table).queryByText("_admiral")).toBeNull();
+  });
+
+  it("艦が稼働か停止かを出す (分からない艦は -)", async () => {
+    const seat = (alive: boolean) => ({ alive });
+    open(
+      { home: "/h", ships: [ship("run"), ship("idle"), ship("unknown")], admiral: null },
+      200,
+      { ships: [{ name: "run", state: { seats: [seat(true)] } }, { name: "idle", state: { seats: [seat(false)] } }] },
+    );
+    const table = await screen.findByRole("table");
+    await within(table).findByRole("cell", { name: "稼働" });
+    expect(within(table).getByRole("cell", { name: "停止" })).toBeInTheDocument();
+    const rows = within(table).getAllByRole("row");
+    expect(within(rows[3]).getByText("-", { selector: "td span" })).toBeInTheDocument();
   });
 
   it("書き込みの入口 (ボタン・フォーム) を出さない", async () => {

@@ -92,6 +92,31 @@ class DashboardTest(ShipTestCase):
         self.assertEqual([b["id"] for b in self.state()["board"]], ["T-001"])
         self.assertEqual(self.state()["counts"], {"active": 1})
 
+    def test_log_line_skips_usage_lines(self):
+        from yamato.util import append_log
+
+        self.assertEqual(self.seat_of("impl")["log"], "")
+        append_log(self.shipdir, "impl", "使用量 shift#1: in=4 out=554 cache_write=1 cache_read=2 (計 9, 3 messages)")
+        self.assertEqual(self.seat_of("impl")["log"], "")   # 使用量しか無ければ空
+        append_log(self.shipdir, "impl", "テストを書いた")
+        append_log(self.shipdir, "impl", "使用量 shift#2 (transcript): in=4 out=5 cache_write=1 cache_read=2 (計 9)")
+        self.assertTrue(self.seat_of("impl")["log"].endswith("テストを書いた"))
+        append_log(self.shipdir, "impl", "使用量の話をした")   # 「使用量 」で始まらない作業の行は残る
+        self.assertTrue(self.seat_of("impl")["log"].endswith("使用量の話をした"))
+
+    def test_usage_log_lines_use_the_shared_mark(self):
+        from yamato import headless, usage
+
+        base = {"shiftNo": 1, "source": "result", "input_tokens": 1, "output_tokens": 2,
+                "cache_creation_input_tokens": 3, "cache_read_input_tokens": 4,
+                "total_tokens": 10, "messages": 1}
+        lines = [usage.summary(base), usage.summary({"shiftNo": 1, "unknown": True}),
+                 headless._summary(base), headless._summary({"shiftNo": 1, "unknown": True})]
+        for text in lines:
+            self.assertTrue(text.startswith(usage.LOG_MARK), text)
+            self.assertTrue(dashboard._is_usage_line(f"- 10:00:00 {text}"), text)
+        self.assertFalse(dashboard._is_usage_line("- 10:00:00 使用量の話をした"))
+
     def test_reviewing_item_is_listed_for_the_reviewer(self):
         board.Board(self.shipdir, self.team()).add(
             "T-001", {"assignee": "impl", "reviewer": "pm", "state": "active"}, by="pm")
@@ -270,6 +295,9 @@ class ServerTest(unittest.TestCase):
             self.assertEqual(self.get(srv, "/"), (200, "text/html; charset=utf-8", b"<p>app</p>"))
             self.assertEqual(self.get(srv, "/ship/alpha"), (200, "text/html; charset=utf-8", b"<p>app</p>"))
             self.assertEqual(self.get(srv, "/ship/v1.2")[0], 200)   # 知らない拡張子は画面の path
+            for p in ("/ship/dev/files/charter.md", "/ship/dev/files/roles%2Fpm.md", "/ship/dev/config.json"):
+                self.assertEqual(self.get(srv, p), (200, "text/html; charset=utf-8", b"<p>app</p>"), p)
+            self.assertEqual(self.get(srv, "/other/x.md")[0], 404)   # /ship/ の外の拡張子付きは今のまま
             self.assertEqual(self.get(srv, "/assets/a.js"), (200, "text/javascript; charset=utf-8", b"1"))
             self.assertEqual(self.get(srv, "/assets/a.css")[1], "text/css; charset=utf-8")
             for p in ("/assets/missing.js", "/%2e%2e/secret.txt", "/assets/../../secret.txt"):

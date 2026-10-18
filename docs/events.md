@@ -37,8 +37,8 @@ yamato が書くのは次の kind。定数は `src/yamato/events.py` (`notify_fa
 | `board_note` | `board note` (本文への追記。frontmatter は変えない。design-p1 §7.2) | 担当 | 項目 | `--by` (無ければ呼び出した席) | `chars` |
 | `send` | `send` (inbox に記録した時点。起動前・上限後も書く) | 宛先 | ― | 送り手 | `n` (inbox の番号)、`chars` |
 | `shift_start` | roster のシフト開始 (new / resume / headless) | 席 | ― | ― | `shiftNo`、`how`、`sessionId` |
-| `shift_end` | roster のシフト終了 | 席 | ― | ― | `shiftNo`、`reason` (`seat-stop` / `exited` / `down-force` / `grace-exceeded`。headless はほかに `max-duration` / `failed` / `wrapper-signal` (ラッパーが SIGTERM・SIGINT を受けて `-p` に転送した) / `wrapper-lost` (ラッパーが居ないのに `-p` が残っていたのを reconcile が止めた))、`handoffWritten`、`note` (「引き継ぎなしで終了」など) |
-| `force_stop` | `down --force`・猶予超えの強制停止 (このあと `shift_end` も出る) | 席 | ― | ― | `reason`、`shiftNo`、`sessionId` |
+| `shift_end` | roster のシフト終了 | 席 | ― | ― | `shiftNo`、`reason` (`seat-stop` / `exited` / `down-force` / `halt` / `grace-exceeded`。headless はほかに `max-duration` / `failed` / `wrapper-signal` (ラッパーが SIGTERM・SIGINT を受けて `-p` に転送した) / `wrapper-lost` (ラッパーが居ないのに `-p` が残っていたのを reconcile が止めた))、`handoffWritten`、`note` (「引き継ぎなしで終了」など) |
+| `force_stop` | 強制停止 (このあと `shift_end` も出る)。止めた理由は `reason` に入る: `down --force` は `down-force`、`halt` は `halt` (どちらも同じ強制停止の処理で、違いは理由だけ)、`admiral --stop --force` は `admiral-stop-force`、時間切れは `grace-exceeded`・`max-duration`、ラッパーが居ないまま残った孤児の `claude -p` を reconcile が止めたときは `wrapper-lost` | 席 | ― | ― | `reason`、`shiftNo`、`sessionId`、孤児のときだけ `orphan: true` と `pid`、席の hook から止めたときは `by: hook` |
 | `restop_failed` | `seat-stop` の遅延 stop (`sh -c 'sleep ...; claude stop ...'`) の**起動自体**が失敗した (稀。作業ログにも残す) | 席 | ― | ― | `sessionId`、`forced` |
 | `stopping_stuck` | `status` / watchdog が、`stopping` のまま `seat.STOPPING_STUCK_AFTER` (既定 5 分) を超えて生きている席を見つけ、遅延 stop を打ち直した (よくある原因: worktree を cwd にした遅延 stop が、その worktree の `worktree rm` で cwd ごと消えて動かなかった) | 席 | ― | ― | `stopRequestedAt`、`sessionId` |
 | `shift_failed` | headless のシフトの異常 (design-p1 §4.2 の 4、§4.4。このあと `shift_end` も出る) | 席 | ― | ― | `shiftNo`、`sessionId`、`exitCode`、`failures` (理由の文)、`is_error`、`api_error_status`、`terminal_reason` |
@@ -50,9 +50,9 @@ yamato が書くのは次の kind。定数は `src/yamato/events.py` (`notify_fa
 | `worktree_add` | `worktree add` が worktree を**新しく作った**とき (既にあるものを返しただけのときは書かない)。定数は `worktree.WORKTREE_ADD` | 項目の担当 | 項目 | 呼び出し元 (`--by`、無ければ席、無ければ `owner`) | `path`、`branch` |
 | `worktree_rm` | `worktree rm` が片付けたとき。定数は `worktree.WORKTREE_RM` | 項目の担当 | 項目 | 呼び出し元 | `path`、`branch`、`force` |
 | `worktree_add_failed` / `worktree_rm_failed` | `worktree add` / `rm` が失敗したとき。`rm` が未 commit・未 push で断ったのもここ | 項目の担当 (項目が無ければ null) | 項目 | 呼び出し元 | `reason` (1 行、300 文字まで)、`rm` は `force` も |
-| `pr_open` | `pr open` が PR を作ったとき (項目に PR が既にあって何もしなかったときは書かない)。定数は `pr.PR_OPEN` | 項目の担当 | 項目 | 呼び出し元 | `pr` (番号)、`url`、`branch`、`column` (review に動かしたとき)、`draft` (draft のとき) |
+| `pr_open` | `pr open` が PR を作ったとき (項目に PR が既にあって何もしなかったときは書かない)。定数は `pr.PR_OPEN` | 項目の担当 | 項目 | 呼び出し元 | `pr` (番号)、`url`、`branch`、`base` (PR の向き先。`--base` か `git.base`)、`column` (review に動かしたとき)、`draft` (draft のとき) |
 | `pr_open_failed` | `pr open` が失敗したとき (branch が無い、`gh` の失敗など) | 項目の担当 (項目が無ければ null) | 項目 | 呼び出し元 | `reason` |
-| `pr_merge` | `pr merge` が merge したとき。既に merge されていて記録しただけのときも書く (`alreadyMerged: true`)。定数は `pr.PR_MERGE` | 項目の担当 | 項目 | 呼び出し元 | `pr`、`strategy`、`mergedBy` (= `by`。項目の `merged_by` と同じ)、`alreadyMerged` |
+| `pr_merge` | `pr merge` が merge したとき。既に merge されていて記録しただけのときも書く (`alreadyMerged: true`)。定数は `pr.PR_MERGE` | 項目の担当 | 項目 | 呼び出し元 | `pr`、`strategy` (`--strategy` か `git.strategy`、実際に使った値)、`mergedBy` (= `by`。項目の `merged_by` と同じ)、`alreadyMerged` |
 | `pr_merge_failed` | `pr merge` が merge しなかったとき。`git.merge_requires` を満たさず断ったときは `unmet` に理由が入る。gh の失敗もここ | 項目の担当 (項目が無ければ null) | 項目 | 呼び出し元 | `reason`、`pr`、`unmet` (断ったときだけ。理由ごとに 1 行、300 文字まで) |
 | `pr_conflict` | `pr merge` のあと、他の開いている PR の衝突を見つけたとき。衝突の有無が分からなかった (UNKNOWN) ときは書かない。定数は `pr.PR_CONFLICT` | 衝突した項目の担当 | **衝突した項目** | merge した呼び出し元 | `pr` (衝突した PR)、`mergedItem`、`mergedPr` (merge した方)、`mergedBy`、`column` (`rebase` に動かしたとき)、`notified` (知らせた宛先。誰にも知らせなかったときは無い) |
 | `memory_migrate` | P0 の `seats/<seat>/memory.md` を `roles/<role>/memory.md` に移したとき (`memory migrate`・注入の前) | 元の席 | ― | ― | `role`、`lines`、`kept` (元のファイルを残した場所) |

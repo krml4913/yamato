@@ -1,3 +1,47 @@
 .row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.5rem 0; }
 .row label { display: flex; gap: 0.25rem; align-items: center; }
-.danger { color: var(--color-danger); }
+.wide { width: 14em; }
+.runStateRow { margin: 0 0 0.5rem; }
+/* 状態は見出しでなくバッジで出す (文字は本文と同じ大きさ・太字にしない) */
+.runState { display: inline-block; border-radius: 10px; padding: 1px 9px; font-size: 14px; background: var(--color-chip); }
+.runStateOn { color: var(--color-ok); }
+.hint { font-size: 13px; opacity: 0.75; margin: 0; }
+.quiet { opacity: 0.55; }
+
+.usual { margin: 0.5rem 0 1rem; }
+.usual h3 { font-size: 14px; margin: 0 0 4px; }
+
+.dangerZone {
+  margin: 1rem 0;
+  padding: 0.5rem 0.75rem;
+  border: 2px solid var(--color-danger);
+  border-radius: 6px;
+}
+.dangerZone legend { padding: 0 0.4rem; font-weight: 700; color: var(--color-danger); }
+
+/* 白地の赤文字でなく、赤地の白文字にして読めるようにする */
+.danger {
+  background: var(--color-danger);
+  color: #fff;
+  border: 1px solid var(--color-danger);
+  border-radius: 4px;
+  padding: 0.3rem 0.8rem;
+  cursor: pointer;
+}
+.danger:hover { filter: brightness(0.9); }
+
+.mdGroup h3 { font-size: 14px; margin: 0.5rem 0 2px; }
+.mdList { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; list-style: none; padding: 0; margin: 0; }
+.mdInternal { font-size: 13px; opacity: 0.75; }
+.mdInternal h3 { font-size: 13px; }
+
+/* 節と節の間に余白を取り、続いて見えないようにする */
+.section { margin: 1.5rem 0 0; }
+.section h2, .section h3 { margin: 0 0 0.5rem; }
+.dangerItem { display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; align-items: center; margin: 0.5rem 0; }
+
+/* 狭い幅では本文の欄を全幅にして、ボタンを下に回す */
+@media (max-width: 600px) {
+  .row label.sendBody { flex: 1 1 100%; flex-wrap: wrap; }
+  .sendBody textarea { flex: 1 1 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
+}

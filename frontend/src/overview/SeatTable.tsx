@@ -1,12 +1,11 @@
 import { useState } from "react";
 import { editToken } from "../api/client";
 import { OpPanel, type OpSpec } from "../ops/OpPanel";
+import { Legend } from "./Legend";
 import { fmtSpan, fmtTime, fmtTokens } from "./format";
 import type { Seat } from "./types";
 import status from "../status.module.css";
 import table from "../table.module.css";
-
-const HELP = "赤 = すぐ手が要る (詰まり・API エラー) / 黄 = 様子見 (動いていない・担当が無い)";
 
 // 席の操作。--edit で起動したとき (index.html にトークンがあるとき) だけ入口を出す
 function seatOp(ship: string, s: Seat): OpSpec {
@@ -31,15 +30,11 @@ export function SeatTable({ ship, seats, now }: { ship: string; seats: Seat[]; n
   const canOp = editToken() !== null;
   return (
     <>
-      <p className={status.dim}>
-        要対応の列: <span className={status.red}>赤</span> = すぐ手が要る (詰まり・API エラー) /{" "}
-        <span className={status.warn}>黄</span> = 様子見 (動いていない・担当が無い)。内部の言葉は文に重ねたとき (hover) に出る
-      </p>
       <table className={table.table}>
         <thead>
           <tr>
             <th>席</th><th>生存</th><th>status</th><th>最終</th><th>担当 (active)</th>
-            <th>未読</th><th title={HELP}>要対応</th><th>今日 tok</th><th>作業ログの最後</th>{canOp && <th>操作</th>}
+            <th>未読</th><th>要対応 <Legend /></th><th>今日 tok</th><th>作業ログの最後</th>{canOp && <th>操作</th>}
           </tr>
         </thead>
         <tbody>
@@ -81,7 +76,7 @@ function SeatRow({ s, now, onOp, onStop }: { s: Seat; now: number; onOp: (() => 
           </span></>
         )}
       </td>
-      <td className={status.dim}>{s.log.slice(0, 160)}</td>
+      <td className={status.dim}>{s.log ? s.log.slice(0, 160) : "-"}</td>
       {onOp && (
         <td>
           {s.alive && onStop && (

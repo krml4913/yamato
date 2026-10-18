@@ -84,6 +84,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ships/{name}/items/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * board の項目 1 件 (判断も task も同じ形)
+         * @description 艦は fleet の ships のうち exists=true のもの (config・files と同じ引き方)。id は [A-Z]-[0-9]+ の形だけ受け (path に使う前に検査)、board/items と board/archive から引く。艦が無い・項目が無い・id の形が違うときは 404。読むだけで何も書かない。
+         */
+        get: operations["getShipItem"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/edit/preview": {
         parameters: {
             query?: never;
@@ -349,7 +369,7 @@ export interface components {
                 text: string;
                 detail: string;
             }[];
-            /** @description 作業ログの最後の 1 行。無ければ空文字。 */
+            /** @description 使用量の行 (「使用量 」で始まる本文) を飛ばした最後の作業の行。無ければ空文字。 */
             log: string;
             /** @description 今日のトークン。 */
             tokens: number;
@@ -452,6 +472,21 @@ export interface components {
             schema: {
                 [key: string]: unknown;
             } | null;
+        };
+        ShipItem: {
+            id: string;
+            kind: string | null;
+            title: string;
+            state: string | null;
+            /** @description 判断 (kind=decision) だけ。他は null。 */
+            category: string | null;
+            /** @description 判断だけ。他は null。 */
+            urgent: boolean | null;
+            assignee: string | null;
+            blocked_on: string[];
+            links: string[];
+            /** @description 本文の markdown (frontmatter を除いた生の文字列)。 */
+            body: string;
         };
         ShipFile: {
             name: string;
@@ -570,6 +605,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ShipFile"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getShipItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 艦の名前 (fleet の ships[].name)。 */
+                name: components["parameters"]["ShipName"];
+                /** @description 項目の id (D-001・T-001 の形)。 */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 項目 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShipItem"];
                 };
             };
             default: components["responses"]["Error"];

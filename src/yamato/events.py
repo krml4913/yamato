@@ -29,6 +29,9 @@ SHIFT_END = "shift_end"
 DECISION_OPEN = "decision_open"     # P1-2 (design-p1 §1)
 DECISION_CLOSE = "decision_close"   # P1-2
 FORCE_STOP = "force_stop"
+# force_stop の reason のうち、外から (down --force / halt) 強制停止したもの。ラッパー自身の時間切れ
+# (max-duration / grace-exceeded) とは区別する
+FORCED_FROM_OUTSIDE = ("down-force", "halt")
 SHIFT_FAILED = "shift_failed"     # a headless shift that failed (design-p1 §4.2, §4.4)
 LAUNCH_FAILED = "launch_failed"   # a bg seat's launch / resume that did not come up (verify-p0-c Q5)
 PERMISSION_DENIED = "permission_denied"

@@ -1,4 +1,10 @@
-/* 一覧・設定の表 */
+/* 一覧・設定の表。広い幅では今までどおり全幅の表 */
 .table { border-collapse: collapse; width: 100%; }
-.table th, .table td { text-align: left; padding: 3px 8px; border-bottom: 1px solid var(--color-line); vertical-align: top; }
-.table th { font-weight: 600; font-size: 12px; opacity: 0.75; }
+.table th, .table td { text-align: left; padding: 3px 8px; border-bottom: 1px solid var(--color-line); vertical-align: top; overflow-wrap: normal; word-break: normal; }
+.table th { font-weight: 600; font-size: 13px; opacity: 0.75; }
+/* 狭い幅では表の枠の中で横にスクロールし (ページ全体は広げない)、値は折り返さない。
+   ハイフンや空白の位置で値が割れるより、スクロールさせる */
+@media (max-width: 1000px) {
+  .table { display: block; max-width: 100%; overflow-x: auto; }
+  .table th, .table td { white-space: nowrap; }
+}
