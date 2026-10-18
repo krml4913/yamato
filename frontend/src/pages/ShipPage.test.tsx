@@ -73,15 +73,44 @@ describe("艦ページの操作", () => {
     expect(screen.getByRole("columnheader", { name: "席" })).toBeTruthy();
   });
 
-  it("普段の操作と危ない操作を分け、危ない 2 つは枠の中に置く", () => {
+  it("普段の操作と危ない操作を分け、危ない 2 つは枠の中に置く", async () => {
     setToken(true);
     page();
+    await screen.findByRole("group", { name: "艦の操作" });
     const danger = screen.getByRole("group", { name: "危ない操作" });
     expect(within(danger).getByRole("button", { name: "down --force" })).toBeTruthy();
     expect(within(danger).getByRole("button", { name: "halt" })).toBeTruthy();
     expect(within(danger).queryByRole("button", { name: "down" })).toBeNull();
     const usual = screen.getByRole("group", { name: "普段の操作" });
     for (const n of ["up", "extend", "down"]) expect(within(usual).getByRole("button", { name: n })).toBeTruthy();
+  });
+
+  it("操作は状態の要点のすぐ下 (席の表・board の上) に出し、艦名を二重に出さない", async () => {
+    setToken(true);
+    vi.stubGlobal("fetch", vi.fn().mockImplementation((u: string) => Promise.resolve(new Response(JSON.stringify(
+      String(u).includes("/overview")
+        ? { generated_at: 0, waits: [], ships: [{ name: "dev", error: null, state: {
+          seats: [], deadline: "", hub: "pm", hub_last: null, tokens: 0, orphans: [], owner_unread: 0,
+          counts: {}, board: [], prs: [], anomalies: [], multi_repo: false, team: "dev", report: null, memory: [] } }] }
+        : { fields: [] },
+    ), { status: 200 }))));
+    page();
+    const send = await screen.findByRole("group", { name: "メッセージを送る" });
+    const opsGroup = screen.getByRole("group", { name: "艦の操作" });
+    const board = screen.getByRole("heading", { name: "board" });
+    expect(send.compareDocumentPosition(opsGroup) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(opsGroup.compareDocumentPosition(board) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getAllByText("dev", { exact: false }).filter((e) => /^H[12]$/.test(e.tagName) || e.closest("h2"))).toHaveLength(1);
+  });
+
+  it("down --force と halt の説明を別々に書く", async () => {
+    setToken(true);
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.resolve(new Response("{}", { status: 200 }))));
+    page();
+    const danger = await screen.findByRole("group", { name: "危ない操作" });
+    const hints = [...danger.querySelectorAll("span")].map((e) => e.textContent);
+    expect(hints).toHaveLength(2);
+    expect(hints[0]).not.toBe(hints[1]);
   });
 
   it("止まっている艦では down を、動いている艦では up を目立たせない", async () => {
@@ -116,9 +145,10 @@ describe("艦ページの操作", () => {
     expect(screen.queryByLabelText("md の一覧")).toBeNull();
   });
 
-  it("5 つの操作を出す", () => {
+  it("5 つの操作を出す", async () => {
     setToken(true);
     page();
+    await screen.findByRole("group", { name: "艦の操作" });
     for (const n of ["up", "down", "extend", "down --force", "halt"]) {
       expect(screen.getByRole("button", { name: n })).toBeTruthy();
     }
@@ -136,6 +166,7 @@ describe("艦ページの操作", () => {
     }), { status: 200 })));
     vi.stubGlobal("fetch", fetchMock);
     page();
+    await screen.findByRole("group", { name: "艦の操作" });
     fireEvent.click(screen.getByRole("button", { name: label }));
     expect(ops(fetchMock)).toHaveLength(0);
     const region = screen.getByRole("region");
@@ -156,6 +187,7 @@ describe("艦ページの操作", () => {
     }), { status: 200 })));
     vi.stubGlobal("fetch", fetchMock);
     page();
+    await screen.findByRole("group", { name: "艦の操作" });
     fireEvent.change(screen.getByLabelText(/稼働時間/), { target: { value: "3h" } });
     fireEvent.change(screen.getByLabelText(/一緒に起こす席/), { target: { value: "impl,review" } });
     fireEvent.click(screen.getByRole("button", { name: "up" }));
@@ -178,6 +210,7 @@ describe("艦ページの操作", () => {
     }), { status: 200 })));
     vi.stubGlobal("fetch", fetchMock);
     page();
+    await screen.findByRole("group", { name: "艦の操作" });
     fireEvent.change(screen.getByLabelText(/^席/), { target: { value: "pm" } });
     fireEvent.change(screen.getByLabelText(/本文/), { target: { value: "--from x\n二行目" } });
     fireEvent.click(screen.getByRole("button", { name: "send" }));
@@ -195,6 +228,7 @@ describe("艦ページの操作", () => {
     const cfg = { fields: [{ key: "roles", set: true, value: { pm: {}, impl: { count: 2 } } }] };
     vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify(cfg), { status: 200 }))));
     page();
+    await screen.findByRole("group", { name: "艦の操作" });
     const select = await screen.findByRole("combobox", { name: /^席/ });
     expect([...select.querySelectorAll("option")].map((o) => o.textContent)).toEqual(["(選ぶ)", "pm", "impl-1", "impl-2"]);
     fireEvent.change(select, { target: { value: "impl-2" } });
@@ -206,6 +240,7 @@ describe("艦ページの操作", () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ error: { message: "壊れている" } }), { status: 500 })));
     vi.stubGlobal("fetch", fetchMock);
     page();
+    await screen.findByRole("group", { name: "艦の操作" });
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(screen.queryByRole("combobox")).toBeNull();
     expect(screen.getByRole("textbox", { name: /^席/ })).toBeTruthy();
@@ -220,11 +255,12 @@ describe("艦ページの操作", () => {
     expect(seatNames(mk({}))).toBeNull();
   });
 
-  it("やめるを押せば呼ばない", () => {
+  it("やめるを押せば呼ばない", async () => {
     setToken(true);
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     page();
+    await screen.findByRole("group", { name: "艦の操作" });
     fireEvent.click(screen.getByRole("button", { name: "halt" }));
     fireEvent.click(screen.getByRole("button", { name: "やめる" }));
     expect(ops(fetchMock)).toHaveLength(0);
