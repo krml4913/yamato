@@ -294,7 +294,9 @@ class AdmiralTest(ShipTestCase):
         with mock.patch.object(seat, "WATCHDOG_POLL", 0.02), mock.patch.object(seat, "WATCHDOG_MIN_SLEEP", 0.01):
             t = threading.Thread(target=seat.watchdog, args=(self.shipdir, dl["token"]))
             t.start()
-            time.sleep(0.2)                        # several polls
+            give_up = time.monotonic() + 5         # an upper bound only; the poll is 0.02s
+            while not self.spawn_mock.called and time.monotonic() < give_up:
+                time.sleep(0.005)
             self.assertTrue(t.is_alive())           # still watching the (unchanged) deadline
             self.spawn_mock.assert_called()
             [(args, kwargs)] = [(c.args[0], c.kwargs) for c in self.spawn_mock.call_args_list]
