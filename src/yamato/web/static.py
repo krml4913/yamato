@@ -2,7 +2,7 @@
 
 起動時に dist の実在する通常ファイルの一覧を作り、その一覧にある URL path だけ返す
 (リクエストの path からファイルの path を組み立てない。``..``・シンボリックリンク・
-一覧に無いファイルは 404)。SPA の画面の path (``/ship/<艦名>`` など拡張子の無い path) は
+一覧に無いファイルは 404)。SPA の画面の path (``/ship/`` 以下と、拡張子の無い path) は
 ``index.html`` を返す。dist がまだ無い (index.html が無い) ときは「build されていない」ページ。
 """
 from __future__ import annotations
@@ -42,6 +42,11 @@ def _is_asset(url_path: str) -> bool:
     return ext in MIME or mimetypes.guess_type(url_path)[0] is not None
 
 
+def _is_screen(url_path: str) -> bool:
+    # /ship/<艦>/files/roles%2Fpm.md のように、画面の path は拡張子で終わることがある
+    return url_path.startswith("/ship/")
+
+
 class Dist:
     def __init__(self, root: Path):
         self.files: dict[str, Path] = {}
@@ -61,7 +66,7 @@ class Dist:
         target = self.files.get(url)
         if target is None and url == "/":
             target = self.files.get(INDEX)
-        if target is None and not _is_asset(url):   # 知っている拡張子の無い path は SPA の画面
+        if target is None and (_is_screen(url) or not _is_asset(url)):   # /ship/ 以下と、知っている拡張子の無い path は SPA の画面
             if INDEX in self.files:
                 target = self.files[INDEX]
             else:
