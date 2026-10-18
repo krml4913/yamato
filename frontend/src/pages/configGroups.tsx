@@ -66,16 +66,25 @@ export function Groups({ groups, render }: { groups: Group[]; render: (f: Field)
   );
 }
 
+/** 表・入れ子の大きい値は全幅で下に置く。小さい値だけ 2 段 (名前と説明 / 値) にする。 */
+export function isWide(f: Field, editing: boolean): boolean {
+  if (editing) return f.type === "object" || f.type === "array";
+  const v = f.value;
+  if (!f.set || typeof v !== "object" || v === null) return false;
+  if (Array.isArray(v)) return v.some((x) => typeof x === "object" && x !== null);
+  return Object.values(v).some((x) => typeof x === "object" && x !== null && !Array.isArray(x));
+}
+
 /** 項目の見出しと説明。値は主役なので説明は小さく薄くする。 */
 export function FieldHead({ field }: { field: Field }) {
   return (
-    <>
+    <div className={styles.head}>
       <h3>
         <code>{field.key}</code>
         {field.required && <small className={styles.badge}>必須</small>}
         {field.type && <small className={styles.badge}>{field.type}</small>}
       </h3>
       {field.description && <p className={styles.desc}>{field.description}</p>}
-    </>
+    </div>
   );
 }
