@@ -1,5 +1,4 @@
 .card { background: var(--color-card); border-radius: 8px; padding: 12px 16px; margin: 12px 0; box-shadow: 0 1px 2px #0002; }
-.card h3 { font-size: 13px; margin: 12px 0 4px; opacity: 0.7; }
 .top { border-left: 6px solid var(--color-danger); }
 .quiet { border-left: 6px solid var(--color-ok); }
 .tag { display: inline-block; border-radius: 4px; padding: 0 6px; background: var(--color-chip); margin-right: 4px; }
@@ -7,3 +6,28 @@
 
 .closeRow { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.5rem 0; }
 .closeRow label { display: flex; gap: 0.25rem; align-items: center; }
+
+/* 艦の枠の頭: 名前と要点のバッジ */
+.head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.head h2 { margin: 0 8px 0 0; font-size: 20px; }
+.badge { display: inline-block; border-radius: 10px; padding: 1px 9px; font-size: 13px; background: var(--color-chip); }
+.badgeOk { color: var(--color-ok); }
+.badgeWarn { color: var(--color-warn); font-weight: 600; }
+.badgeRed { background: var(--color-danger); color: #fff; font-weight: 600; }
+.badgeDim { opacity: 0.65; }
+.sub { margin: 4px 0 8px; }
+
+/* 止まっている艦: 1 行に畳む。開けば中身 */
+.stopped { margin: 8px 0; }
+.stopped > summary { cursor: pointer; padding: 6px 12px; border-radius: 8px; background: var(--color-card); opacity: 0.8; list-style-position: inside; }
+.stopped[open] > summary { opacity: 1; }
+.stopped[open] > section { margin-top: 4px; }
+.groupHead { font-size: 14px; margin: 20px 0 4px; opacity: 0.75; font-weight: 600; }
+
+/* 節の重み: 表 > board > PR > 日報 > その他 */
+.secTable h3 { font-size: 16px; margin: 14px 0 6px; }
+.secBoard h3 { font-size: 15px; margin: 16px 0 4px; }
+.secPr h3 { font-size: 14px; margin: 14px 0 4px; opacity: 0.85; }
+.secReport h3 { font-size: 13px; margin: 14px 0 4px; opacity: 0.7; }
+.secMisc { font-size: 12px; }
+.secMisc h3 { font-size: 12px; margin: 10px 0 2px; opacity: 0.55; font-weight: 600; }

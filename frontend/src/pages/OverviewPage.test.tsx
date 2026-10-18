@@ -49,13 +49,48 @@ describe("OverviewPage", () => {
     expect(screen.getByText(/前回 \$0\.50 \/ 上限 \$2/)).toBeInTheDocument();
     expect(screen.getByText("rotate が近い")).toBeInTheDocument();
     expect(screen.getByText(/1\.5M tok/)).toBeInTheDocument();
-    expect(screen.getByText(/owner 宛て未読 2 件/)).toBeInTheDocument();
+    expect(screen.getByText("owner 宛て未読 2")).toBeInTheDocument();
     expect(screen.getByText("一言: 良い日", { exact: false })).toBeInTheDocument();
     expect(screen.getByText("席が落ちた")).toBeInTheDocument();
     expect(screen.getByText("棚卸しの目安に達した")).toBeInTheDocument();
     expect(screen.getByText("#7")).toHaveAttribute("href", "https://github.com/o/r/pull/7");
     expect(screen.getByText("crash")).toHaveClass(status.red);
     expect(screen.getByText(/読めない: ValueError/)).toBeInTheDocument();
+    expect(screen.getAllByText(/要対応の列/)).toHaveLength(1);   // 凡例はページに 1 回
+  });
+
+  it("艦の頭に要点のバッジを出し、0 件のものは出さない", async () => {
+    const d = data();
+    d.ships[0].state!.deadline = "deadline 10-17 17:23 (残り 1h54m)";
+    d.ships[0].state!.owner_unread = 0;
+    d.ships[0].state!.orphans = [];
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(d)));
+    render(<OverviewPage />);
+    expect(await screen.findByText("稼働 2/2")).toBeInTheDocument();
+    expect(screen.getByText("残り 1h54m")).toBeInTheDocument();
+    expect(screen.getByText("判断待ち 1")).toBeInTheDocument();
+    expect(screen.getAllByText("active 1")).toHaveLength(2);   // バッジと board の件数
+    expect(screen.queryByText(/^孤児 \d/)).toBeNull();
+    expect(screen.queryByText(/^owner 宛て未読/)).toBeNull();
+    expect(screen.queryByText(/^open \d/)).toBeNull();
+  });
+
+  it("止まっている艦は動いている艦の下で 1 行に畳む", async () => {
+    const d = data();
+    const stoppedShip = structuredClone(d.ships[0]);
+    stoppedShip.name = "old";
+    stoppedShip.state!.seats = [seat({ alive: false, pid: null, last: d.generated_at - 3600 * 137 })];
+    d.ships = [stoppedShip, d.ships[0]];   // 止まっている艦が先でも下に回る
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(d)));
+    const { container } = render(<OverviewPage />);
+    expect(await screen.findByText("止まっている艦 (1)")).toBeInTheDocument();
+    const details = container.querySelector("details")!;
+    expect(details).not.toHaveAttribute("open");
+    expect(details.querySelector("summary")).toHaveTextContent("old");
+    expect(details.querySelector("summary")).toHaveTextContent("最後の動き 137h00m前");
+    const names = [...container.querySelectorAll("h2")].map((h) => h.textContent);
+    expect(names.indexOf("dev")).toBeLessThan(names.indexOf("止まっている艦 (1)"));
+    expect(names.indexOf("止まっている艦 (1)")).toBeLessThan(names.indexOf("old"));
   });
 
   it("判断待ちが無いときは静かな枠", async () => {

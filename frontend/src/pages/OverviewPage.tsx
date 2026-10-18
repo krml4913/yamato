@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { getOverview, type Overview } from "../api/client";
 import { fmtDateTime } from "../overview/format";
+import { Legend } from "../overview/Legend";
 import { ShipCard } from "../overview/ShipCard";
+import { isRunning, stoppedSummary } from "../overview/summary";
 import { Waits } from "../overview/Waits";
 import status from "../status.module.css";
+import styles from "../overview/overview.module.css";
 
 // 一覧を取り直す間隔 (ミリ秒)
 export const REFRESH_MS = 60_000;
@@ -27,6 +30,9 @@ export function OverviewPage() {
     return () => { live = false; clearInterval(t); };
   }, []);
 
+  const running = data ? data.ships.filter(isRunning) : [];
+  const stopped = data ? data.ships.filter((s) => !isRunning(s)) : [];
+
   return (
     <>
       <h1>yamato dashboard</h1>
@@ -41,8 +47,16 @@ export function OverviewPage() {
           </p>
           <Waits waits={data.waits} />
           {data.ships.length === 0 && <p className={status.dim}>艦がありません (yamato ship create で作る)</p>}
-          {data.ships.map((s) => (
-            <ShipCard key={s.name} ship={s} now={data.generated_at} />
+          {data.ships.length > 0 && <Legend />}
+          {running.map((s) => (
+            <ShipCard key={s.name} ship={s} now={data.generated_at} waits={data.waits} />
+          ))}
+          {stopped.length > 0 && <h2 className={styles.groupHead}>止まっている艦 ({stopped.length})</h2>}
+          {stopped.map((s) => (
+            <details key={s.name} className={styles.stopped}>
+              <summary><b>{s.name}</b> <span className={status.dim}>停止 / {stoppedSummary(s, data.generated_at)}</span></summary>
+              <ShipCard ship={s} now={data.generated_at} waits={data.waits} />
+            </details>
           ))}
         </>
       )}

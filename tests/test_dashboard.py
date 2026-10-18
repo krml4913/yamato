@@ -92,6 +92,18 @@ class DashboardTest(ShipTestCase):
         self.assertEqual([b["id"] for b in self.state()["board"]], ["T-001"])
         self.assertEqual(self.state()["counts"], {"active": 1})
 
+    def test_log_line_skips_usage_lines(self):
+        from yamato.util import append_log
+
+        self.assertEqual(self.seat_of("impl")["log"], "")
+        append_log(self.shipdir, "impl", "使用量 shift#1: in=4 out=554 cache_write=1 cache_read=2 (計 9, 3 messages)")
+        self.assertEqual(self.seat_of("impl")["log"], "")   # 使用量しか無ければ空
+        append_log(self.shipdir, "impl", "テストを書いた")
+        append_log(self.shipdir, "impl", "使用量 shift#2 (transcript): in=4 out=5 cache_write=1 cache_read=2 (計 9)")
+        self.assertTrue(self.seat_of("impl")["log"].endswith("テストを書いた"))
+        append_log(self.shipdir, "impl", "使用量の話をした")   # 「使用量 」で始まらない作業の行は残る
+        self.assertTrue(self.seat_of("impl")["log"].endswith("使用量の話をした"))
+
     def test_reviewing_item_is_listed_for_the_reviewer(self):
         board.Board(self.shipdir, self.team()).add(
             "T-001", {"assignee": "impl", "reviewer": "pm", "state": "active"}, by="pm")
