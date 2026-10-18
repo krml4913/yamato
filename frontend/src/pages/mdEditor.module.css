@@ -1,3 +1,3 @@
 .editor { display: flex; flex-direction: column; gap: 0.5rem; max-width: 60rem; }
-.text { width: 100%; min-height: 24rem; font-family: ui-monospace, monospace; box-sizing: border-box; }
+.text { width: 100%; min-height: max(24rem, 55vh); box-sizing: border-box; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.5; tab-size: 2; white-space: pre; overflow: auto; resize: vertical; padding: 0.5rem 0.75rem; }
 .error { color: var(--color-danger); }

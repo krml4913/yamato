@@ -54,4 +54,27 @@ describe("RawYamlPage", () => {
     const commit = bodies.find((b) => b.url.endsWith("/commit"))!;
     expect(commit.body).toMatchObject({ ship: "t1", file: "team.yaml", content: "name: t2\n", base_hash: "h1" });
   });
+
+  it("差分を確認したあと、バーが確定で書くと言う。保存中は押せない", async () => {
+    document.head.innerHTML = '<meta name="yamato-token" content="tok">';
+    let release: () => void = () => {};
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.endsWith("/commit")) {
+        await new Promise<void>((r) => { release = r; });
+        return json({ written: true, hash: "h2" });
+      }
+      if (url.includes("/edit/")) return json({ valid: true, errors: [], changed: true, diff: "-name: t1\n+name: t2\n", base_hash: "h1" });
+      return json(cfg);
+    }));
+    open();
+    fireEvent.change(await screen.findByRole("textbox"), { target: { value: "name: t2\n" } });
+    fireEvent.click(screen.getByRole("button", { name: "差分を見る" }));
+    await screen.findByLabelText("差分");
+    expect(screen.getByRole("region", { name: "保存" })).toHaveTextContent("確定で書く");
+    fireEvent.click(screen.getByRole("button", { name: "確定" }));
+    expect(await screen.findByText("保存している…")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "確定" })).toBeDisabled();
+    release();
+    expect(await screen.findByRole("status")).toHaveTextContent("保存した");
+  });
 });

@@ -96,6 +96,18 @@ describe("ConfigForm", () => {
     expect(calls.find((c) => c.url.endsWith("commit"))?.body?.base_hash).toBe("h1");
   });
 
+  it("変えた欄に印が付き、差分を確認するとバーが次の操作を言う", async () => {
+    open({ ...cfg, "/api/v1/edit/preview": { status: 200, body: previewOk } });
+    const grace = await screen.findByLabelText("grace");
+    expect(grace.closest("section")).not.toHaveClass(/changed/);
+    fireEvent.change(grace, { target: { value: "5m" } });
+    expect(grace.closest("section")).toHaveClass(/changed/);
+    expect(grace.closest("section")).toHaveTextContent("変えた");
+    expect(screen.getByLabelText("name").closest("section")).not.toHaveClass(/changed/);
+    fireEvent.click(screen.getByRole("button", { name: "差分を確認" }));
+    expect(await screen.findByRole("region", { name: "保存" })).toHaveTextContent("保存で書く");
+  });
+
   it("変えた欄を元に戻すとバーが消える", async () => {
     open(cfg);
     fireEvent.change(await screen.findByLabelText("grace"), { target: { value: "5m" } });

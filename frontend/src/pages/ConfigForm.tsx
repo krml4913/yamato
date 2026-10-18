@@ -7,7 +7,7 @@ import styles from "./config.module.css";
 import { FieldHead, groupFields, Groups, type Field } from "./configGroups";
 import form from "../form/form.module.css";
 import { DiffView } from "../edit/DiffView";
-import { SaveBar, SavedNotice } from "../edit/SaveBar";
+import { SaveBar, saveBarStyles, SavedNotice } from "../edit/SaveBar";
 
 type Draft = Record<string, Json | undefined>;
 
@@ -34,6 +34,8 @@ export function ConfigForm({ name, config, saved, onSaved, onDirty }: {
   const [busy, setBusy] = useState(false);
 
   const ops = diffFields(base, draft);
+  const changedKeys = new Set(ops.map((o) => o.path[0] ?? (o as { key?: string }).key));
+  const [doing, setDoing] = useState<"preview" | "commit" | null>(null);
   const change = (key: string, v: Json | undefined) => {
     setDraft({ ...draft, [key]: v });
     setPrev(null);
@@ -49,6 +51,7 @@ export function ConfigForm({ name, config, saved, onSaved, onDirty }: {
 
   async function check() {
     setBusy(true);
+    setDoing("preview");
     setError(null);
     try {
       setPrev(await previewEdit({ ship: name, file: "team.yaml", ops }));
@@ -57,12 +60,14 @@ export function ConfigForm({ name, config, saved, onSaved, onDirty }: {
       setError(message(e));
     } finally {
       setBusy(false);
+      setDoing(null);
     }
   }
 
   async function save() {
     if (!prev) return;
     setBusy(true);
+    setDoing("commit");
     setError(null);
     try {
       await commitEdit({ ship: name, file: "team.yaml", ops, base_hash: prev.base_hash });
@@ -72,6 +77,7 @@ export function ConfigForm({ name, config, saved, onSaved, onDirty }: {
       setError(e instanceof EditApiError && e.code === "conflict" ? `${e.message}。読み込み直して、もう一度直す` : message(e));
     } finally {
       setBusy(false);
+      setDoing(null);
     }
   }
 
@@ -81,8 +87,9 @@ export function ConfigForm({ name, config, saved, onSaved, onDirty }: {
         const v = draft[f.key];
         const schema = f.schema as Schema | null;
         return (
-          <section key={f.key} id={`field-${f.key}`} className={styles.field}>
+          <section key={f.key} id={`field-${f.key}`} className={`${styles.field} ${changedKeys.has(f.key) ? styles.changed : ""}`}>
             <FieldHead field={f} />
+            {changedKeys.has(f.key) && <span className={styles.changedMark}>変えた</span>}
             {v === undefined ? (
               <button
                 type="button"
@@ -110,7 +117,8 @@ export function ConfigForm({ name, config, saved, onSaved, onDirty }: {
       {saved && <SavedNotice />}
       {ops.length > 0 && (
         <SaveBar
-          count={`${ops.length} 項目を変えた`}
+          count={doing === "preview" ? "差分を取っている…" : doing === "commit" ? "保存している…" : prev?.valid && prev.changed ? `${ops.length} 項目を変えた。差分を確認した、保存で書く` : `${ops.length} 項目を変えた`}
+          busy={busy}
           error={error}
           panel={
             <>
@@ -125,7 +133,7 @@ export function ConfigForm({ name, config, saved, onSaved, onDirty }: {
           }
         >
           <button type="button" disabled={busy} onClick={check}>差分を確認</button>
-          <button type="button" disabled={busy || !prev || !prev.valid || !prev.changed} onClick={save}>保存</button>
+          <button type="button" className={saveBarStyles.primary} disabled={busy || !prev || !prev.valid || !prev.changed} onClick={save}>保存</button>
           <button type="button" disabled={busy} onClick={revert}>元に戻す</button>
         </SaveBar>
       )}

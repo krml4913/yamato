@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { commitEdit, EditApiError, previewEdit, type EditPreview } from "../api/client";
 import { DiffView } from "../edit/DiffView";
-import { SaveBar } from "../edit/SaveBar";
+import { SaveBar, saveBarStyles } from "../edit/SaveBar";
 import styles from "./mdEditor.module.css";
 
 // 書き込みは 2 段。差分 (preview) を見てから確定 (commit) する。
@@ -17,11 +17,13 @@ export function MdEditor(props: {
   const [pv, setPv] = useState<EditPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [doing, setDoing] = useState<"preview" | "commit" | null>(null);
 
   const dirty = text !== props.initial;
 
-  async function run(f: () => Promise<void>) {
+  async function run(kind: "preview" | "commit", f: () => Promise<void>) {
     setBusy(true);
+    setDoing(kind);
     setError(null);
     try {
       await f();
@@ -30,12 +32,13 @@ export function MdEditor(props: {
       setPv(null);
     } finally {
       setBusy(false);
+      setDoing(null);
     }
   }
 
-  const showDiff = () => run(async () => setPv(await previewEdit({ ship, file, content: text })));
+  const showDiff = () => run("preview", async () => setPv(await previewEdit({ ship, file, content: text })));
   const confirm = () =>
-    run(async () => {
+    run("commit", async () => {
       if (!pv) return;
       await commitEdit({ ship, file, content: text, base_hash: pv.base_hash });
       props.onSaved();
@@ -50,7 +53,8 @@ export function MdEditor(props: {
         onChange={(e) => { setText(e.target.value); setPv(null); }}
       />
       <SaveBar
-        count={dirty ? "変更あり" : "変更なし"}
+        count={doing === "preview" ? "差分を取っている…" : doing === "commit" ? "保存している…" : pv?.changed && pv.valid ? "差分を確認した。確定で書く" : dirty ? "変更あり" : "変更なし"}
+        busy={busy}
         error={error}
         panel={
           <>
@@ -63,7 +67,7 @@ export function MdEditor(props: {
         }
       >
         <button onClick={showDiff} disabled={busy}>差分を見る</button>
-        <button onClick={confirm} disabled={busy || !pv || !pv.valid || !pv.changed}>確定</button>
+        <button className={saveBarStyles.primary} onClick={confirm} disabled={busy || !pv || !pv.valid || !pv.changed}>確定</button>
         <button onClick={() => { setText(props.initial); setPv(null); setError(null); }} disabled={busy || !dirty}>元に戻す</button>
         <button onClick={props.onCancel} disabled={busy}>やめる</button>
       </SaveBar>
