@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { getShipFile, type ShipFile } from "../api/files";
 import { editToken } from "../api/client";
 import { Markdown } from "../markdown/Markdown";
+import { parseBlocks } from "../markdown/parse";
 import { SavedNotice } from "../edit/SaveBar";
 import { MdEditor } from "./MdEditor";
 import styles from "./mdEditor.module.css";
@@ -29,9 +30,13 @@ export function ShipFilePage() {
   }, [name, file, key, reload]);
 
   const cur = state.key === key ? state : { key };
+  // 題は 1 つだけ: md が h1 で始まればそれを題にし、無ければ (roles/*.md など) ファイル名を h1 にする
+  const first = cur.file ? parseBlocks(cur.file.text).find((b) => b.t !== "hr") : undefined;
+  const hasTitle = first?.t === "heading" && first.level === 1;
   return (
     <>
-      <p className={styles.crumb}><Link to={`/ship/${encodeURIComponent(name)}`}>← {name}</Link> / <span>{file}</span></p>
+      <p className={styles.crumb}><Link to={`/ship/${encodeURIComponent(name)}`}>← {name}</Link> {hasTitle && <> / <span>{file}</span></>}</p>
+      {cur.file && !hasTitle && <h1 className={styles.title}>{file}</h1>}
       {savedKey === key && !editing && <SavedNotice />}
       {cur.error && <p role="alert">読めない: {cur.error}</p>}
       {cur.file && !(editing && cur.file.kind !== "knowledge") && (
