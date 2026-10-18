@@ -2,6 +2,13 @@
 .panel:focus { outline: 2px solid var(--color-link); outline-offset: 2px; }
 .cmd { opacity: 0.85; font-family: ui-monospace, monospace; font-size: 13px; overflow-wrap: anywhere; }
 .output { background: var(--color-chip); padding: 0.75rem; border-radius: 4px; white-space: pre-wrap; max-height: 20rem; overflow: auto; }
-.actions { display: flex; gap: 0.5rem; }
+.actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.panel button {
+  font: inherit; font-size: 14px; color: inherit; min-height: 36px; padding: 0.25rem 1rem; cursor: pointer;
+  background: var(--color-chip); border: 1px solid var(--color-line-strong); border-radius: 6px;
+}
+.panel button:hover:not(:disabled) { filter: brightness(0.95); }
+.panel button:disabled { cursor: not-allowed; opacity: 0.5; }
+.panel button:focus-visible { outline: 2px solid var(--color-link); outline-offset: 1px; }
 .error { color: var(--color-danger); }
 .ok { color: var(--color-ok); }

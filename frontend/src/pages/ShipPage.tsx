@@ -63,7 +63,7 @@ function ShipOps({ ship, running }: { ship: string; running: boolean | null }) {
             <input value={seat} onChange={(e) => setSeat(e.target.value)} placeholder="例 pm" />
           )}</label>
           <label className={styles.sendBody}>本文 <textarea aria-label="本文 (席に送る)" value={message} onChange={(e) => setMessage(e.target.value)} rows={3} cols={48} /></label>
-          <button onClick={() => ask({
+          <button disabled={!seat.trim() || !message.trim()} title={!seat.trim() || !message.trim() ? "席と本文を入れると送れる" : undefined} onClick={() => ask({
             op: "send", params: { seat, message }, title: `席 ${seat || "(未入力)"} に送る`, confirmLabel: "送る",
             detail: `owner として席にメッセージを送る (yamato send --from owner)。止まっている席は起きる。本文: ${message}`,
           })}>send</button>

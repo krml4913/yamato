@@ -1,6 +1,22 @@
-.row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.5rem 0; }
-.row label { display: flex; gap: 0.25rem; align-items: center; }
-.wide { width: 14em; }
+.row { display: flex; flex-wrap: wrap; gap: 0.5rem 0.75rem; align-items: flex-end; margin: 0.5rem 0; }
+/* ラベルを入力の上に置き、入力の下端とボタンを揃える */
+.row label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 13px; }
+.wide { width: 14em; max-width: 100%; }
+
+/* 押せる大きさ (高さ 36px) と枠をそろえる。操作の節の中だけに効かせる */
+.section button, .section input, .section select, .section textarea {
+  font: inherit; font-size: 14px; color: inherit; min-height: 36px; box-sizing: border-box;
+  border: 1px solid var(--color-line-strong); border-radius: 6px; padding: 0.25rem 0.6rem;
+}
+.section input, .section select, .section textarea { background: var(--color-bg); }
+.section input::placeholder, .section textarea::placeholder { color: inherit; opacity: 0.55; }
+.section button { background: var(--color-chip); padding: 0.25rem 1rem; cursor: pointer; }
+.section button:hover:not(:disabled) { filter: brightness(0.95); }
+.section button:disabled { cursor: not-allowed; opacity: 0.5; }
+.section input:focus-visible, .section select:focus-visible, .section textarea:focus-visible, .section button:focus-visible {
+  outline: 2px solid var(--color-link); outline-offset: 1px;
+}
+.section textarea { min-width: 16rem; resize: vertical; }
 .runStateRow { margin: 0 0 0.5rem; }
 /* 状態は見出しでなくバッジで出す (文字は本文と同じ大きさ・太字にしない) */
 .runState { display: inline-block; border-radius: 10px; padding: 1px 9px; font-size: 14px; background: var(--color-chip); }
@@ -11,7 +27,7 @@
 .usual { margin: 0.5rem 0 1rem; }
 .opGroup { border: 1px solid var(--color-line-strong); border-radius: 6px; margin: 0.5rem 0; padding: 0 0.75rem; min-width: 0; }
 .opGroup legend { padding: 0 0.4rem; font-size: 14px; font-weight: 600; }
-.usual h3 { font-size: 14px; margin: 0 0 4px; }
+.usual h4 { font-size: 14px; margin: 0.75rem 0 0.25rem; }
 
 .dangerZone {
   margin: 1rem 0;
@@ -26,11 +42,10 @@
   background: var(--color-danger);
   color: #fff;
   border: 1px solid var(--color-danger);
-  border-radius: 4px;
-  padding: 0.3rem 0.8rem;
   cursor: pointer;
 }
-.danger:hover { filter: brightness(0.9); }
+.section button.danger { background: var(--color-danger); color: #fff; border-color: var(--color-danger); }
+.section button.danger:hover:not(:disabled) { filter: brightness(0.9); }
 
 .mdGroup h3 { font-size: 14px; margin: 0.5rem 0 2px; }
 .mdList { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; list-style: none; padding: 0; margin: 0; }
@@ -40,12 +55,15 @@
 /* 節と節の間に余白を取り、続いて見えないようにする */
 .section { margin: 1.5rem 0 0; }
 .section h2, .section h3 { margin: 0 0 0.5rem; }
+.sendBody { flex: 1 1 20rem; max-width: 44rem; }
 .dangerItem { display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; align-items: center; margin: 0.5rem 0; }
 
 /* 狭い幅では本文の欄を全幅にして、ボタンを下に回す */
 @media (max-width: 600px) {
-  .row label.sendBody { flex: 1 1 100%; flex-wrap: wrap; }
-  .sendBody textarea { flex: 1 1 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
+  .row label.sendBody { flex: 1 1 100%; }
+  .sendBody textarea { min-width: 0; width: 100%; }
+  .wide { width: 100%; }
+  .row label:has(.wide) { flex: 1 1 100%; }
 }
 
 /* 状態の枠。読み込み中は表が入る分の高さを先に取る */

@@ -53,7 +53,7 @@ export function OpPanel({ spec, onClose, onDone }: { spec: OpSpec; onClose: () =
   }
 
   return (
-    <section ref={panel} tabIndex={-1} className={styles.panel} role="region" aria-label={spec.title}>
+    <section ref={panel} tabIndex={-1} className={styles.panel} aria-busy={busy} role="region" aria-label={spec.title}>
       <h3>{spec.title}</h3>
       {!result && (
         <>
@@ -74,7 +74,7 @@ export function OpPanel({ spec, onClose, onDone }: { spec: OpSpec; onClose: () =
         </>
       )}
       <div className={styles.actions}>
-        {!result && <button onClick={run} disabled={busy}>{spec.confirmLabel}</button>}
+        {!result && <button onClick={run} disabled={busy}>{busy ? "実行中…" : spec.confirmLabel}</button>}
         <button onClick={close} disabled={busy}>{result ? "閉じる" : "やめる"}</button>
       </div>
     </section>

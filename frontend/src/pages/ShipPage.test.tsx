@@ -272,6 +272,20 @@ describe("艦ページの操作", () => {
     expect((await screen.findByLabelText("出力")).textContent).toBe("<i>送った</i>");
   });
 
+  it("send は席と本文が揃うまで押せない", async () => {
+    setToken(true);
+    page();
+    await screen.findByRole("group", { name: "艦の操作" });
+    const send = screen.getByRole("button", { name: "send" }) as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText(/^席/), { target: { value: "pm" } });
+    expect(send.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText(/本文/), { target: { value: "  " } });
+    expect(send.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText(/本文/), { target: { value: "hi" } });
+    expect(send.disabled).toBe(false);
+  });
+
   it("席は艦の roles から select にする", async () => {
     setToken(true);
     const cfg = { fields: [{ key: "roles", set: true, value: { pm: {}, impl: { count: 2 } } }] };
