@@ -11,6 +11,8 @@ export function MdEditor(props: {
   initial: string;
   onSaved: () => void;
   onCancel: () => void;
+  /** 折り返さない (yaml のようにインデントが意味を持つ中身用)。md は折り返す。 */
+  nowrap?: boolean;
 }) {
   const { ship, file } = props;
   const [text, setText] = useState(props.initial);
@@ -47,7 +49,7 @@ export function MdEditor(props: {
   return (
     <div className={styles.editor}>
       <textarea
-        className={styles.text}
+        className={props.nowrap ? `${styles.text} ${styles.nowrap}` : styles.text}
         aria-label={`${file} の中身`}
         value={text}
         onChange={(e) => { setText(e.target.value); setPv(null); }}

@@ -77,4 +77,11 @@ describe("RawYamlPage", () => {
     release();
     expect(await screen.findByRole("status")).toHaveTextContent("保存した");
   });
+
+  it("yaml の編集欄だけ折り返さない", async () => {
+    document.head.innerHTML = '<meta name="yamato-token" content="tok">';
+    vi.stubGlobal("fetch", vi.fn(async () => json(cfg)));
+    open();
+    expect(await screen.findByRole("textbox")).toHaveClass(/nowrap/);
+  });
 });

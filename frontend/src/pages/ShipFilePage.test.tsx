@@ -68,6 +68,7 @@ describe("ShipFilePage の編集", () => {
     fireEvent.click(await screen.findByRole("button", { name: "編集" }));
     expect(screen.getByRole("button", { name: "確定" })).toBeDisabled();
     const box = screen.getByRole("textbox");
+    expect(box).not.toHaveClass(/nowrap/);
     fireEvent.change(box, { target: { value: "# 新憲章" } });
     fireEvent.click(screen.getByRole("button", { name: "差分を見る" }));
     expect(await screen.findByLabelText("差分")).toHaveTextContent("+# 新憲章");
