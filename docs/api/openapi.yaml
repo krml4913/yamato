@@ -464,12 +464,13 @@ components:
             error: {type: [string, "null"], description: "team.yaml を読めなかった理由。"}
     FleetShip:
       type: object
-      required: [name, path, registered, exists, team, error]
+      required: [name, path, registered, exists, running, team, error]
       properties:
         name: {type: string}
         path: {type: string}
         registered: {type: boolean, description: "ships.json にあるか (false は $YAMATO_HOME 直下の拾い上げ)。"}
         exists: {type: boolean, description: "path に team.yaml があるか (ships.json にあってフォルダが消えた艦は false)。"}
+        running: {type: [boolean, "null"], description: "生きている席が 1 つでもあれば true (一覧と同じ判定)。フォルダが無い・team.yaml を読めない・claude agents を読めないときは null。"}
         team: {type: [string, "null"]}
         error: {type: [string, "null"], description: "team.yaml を読めなかった理由。"}
     ShipConfig:

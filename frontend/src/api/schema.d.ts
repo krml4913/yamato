@@ -428,6 +428,8 @@ export interface components {
             registered: boolean;
             /** @description path に team.yaml があるか (ships.json にあってフォルダが消えた艦は false)。 */
             exists: boolean;
+            /** @description 生きている席が 1 つでもあれば true (一覧と同じ判定)。フォルダが無い・team.yaml を読めない・claude agents を読めないときは null。 */
+            running: boolean | null;
             team: string | null;
             /** @description team.yaml を読めなかった理由。 */
             error: string | null;
