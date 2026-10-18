@@ -187,10 +187,10 @@ export interface components {
         Error: {
             error: {
                 /**
-                 * @description not_found (艦・ファイルが無い) / bad_request / unreadable (読めない・壊れている) / internal / forbidden (書き込みのトークン・Host・Origin が合わない) / conflict (preview のあとにファイルが変わった) / invalid (検証に通らない) / unpatchable (その yaml の形には部分置き換えで当てられない。生の yaml で直す)。
+                 * @description not_found (艦・ファイルが無い) / bad_request / unreadable (読めない・壊れている) / internal / forbidden (書き込みのトークン・Host・Origin が合わない) / conflict (preview のあとにファイルが変わった) / invalid (検証に通らない) / locked_key (dashboard から変えられない項目。今は name) / unpatchable (その yaml の形には部分置き換えで当てられない。生の yaml で直す)。
                  * @enum {string}
                  */
-                code: "not_found" | "bad_request" | "unreadable" | "internal" | "forbidden" | "conflict" | "invalid" | "unpatchable";
+                code: "not_found" | "bad_request" | "unreadable" | "internal" | "forbidden" | "conflict" | "invalid" | "locked_key" | "unpatchable";
                 message: string;
                 /** @description 例外名など補足。無ければ null または省略。 */
                 detail?: string | null;
@@ -463,6 +463,8 @@ export interface components {
             /** @description team.yaml に書かれているか。 */
             set: boolean;
             required: boolean;
+            /** @description dashboard から書き換えさせない項目 (今は name)。サーバーは変更を 400 locked_key で断り、フォームは読むだけにする。 */
+            locked: boolean;
             /** @description team.yaml の値 (JSON にした形)。未設定は null。 */
             value: unknown;
             /** @description schema の type (複数なら | で連結)。anyOf だけなら null。 */

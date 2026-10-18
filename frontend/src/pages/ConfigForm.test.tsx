@@ -20,7 +20,7 @@ const schema = {
 };
 const field = (key: string, value: unknown, extra: object = {}) => ({
   key, set: value !== undefined, required: false, value: value ?? null, type: null, description: `${key} の説明`,
-  enum: null, schema: (schema as Record<string, object>)[key], ...extra,
+  enum: null, locked: key === "name", schema: (schema as Record<string, object>)[key], ...extra,
 });
 const config = () => ({
   name: "t1", path: "/s/team.yaml", raw: "name: t1\n", files: [], pending: { changed: false, keys: [] },
@@ -76,6 +76,15 @@ describe("ConfigForm", () => {
     expect(document.getElementById("group-basics")!.querySelector("#field-name")).not.toBeNull();
   });
 
+  it("艦の名前は入力欄にならず、読むだけの表示と理由が出る", async () => {
+    open(cfg);
+    await screen.findByLabelText("roles.impl.model");
+    const field = document.getElementById("field-name")!;
+    expect(field.querySelector("input, select, textarea")).toBeNull();
+    expect(field).toHaveTextContent("t1");
+    expect(field).toHaveTextContent("dashboard からは変えられない");
+  });
+
   it("直す → 差分を確認 → 保存。保存後は『次の yamato up で効く』を出す", async () => {
     open({
       ...cfg,
@@ -103,7 +112,7 @@ describe("ConfigForm", () => {
     fireEvent.change(grace, { target: { value: "5m" } });
     expect(grace.closest("section")).toHaveClass(/changed/);
     expect(grace.closest("section")).toHaveTextContent("変えた");
-    expect(screen.getByLabelText("name").closest("section")).not.toHaveClass(/changed/);
+    expect(document.getElementById("field-roles")).not.toHaveClass(/changed/);
     fireEvent.click(screen.getByRole("button", { name: "差分を確認" }));
     expect(await screen.findByRole("region", { name: "保存" })).toHaveTextContent("保存で書く");
   });
