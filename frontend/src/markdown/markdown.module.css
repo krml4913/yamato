@@ -1,7 +1,33 @@
-.md { max-width: 60rem; line-height: 1.6; overflow-wrap: anywhere; }
+.md { max-width: 60rem; line-height: 1.7; overflow-wrap: anywhere; }
+/* 見出しは大きさと上の余白で段をつける。h2 は節の区切りに罫線を引く */
+.md h1 { font-size: 28px; line-height: 1.3; margin: 0.5rem 0 1rem; }
+.md h2 { font-size: 21px; line-height: 1.4; margin: 2.5rem 0 0.75rem; padding-top: 1.25rem; border-top: 1px solid var(--color-line-strong); }
+.md h3 { font-size: 17px; line-height: 1.4; margin: 1.75rem 0 0.5rem; }
+.md h4, .md h5, .md h6 { font-size: 15px; margin: 1.25rem 0 0.4rem; }
+.md > :first-child { margin-top: 0; padding-top: 0; border-top: none; }
+.md p { margin: 0.75rem 0; }
+/* 箇条書きは項目の間を詰め、まとまりは外側の余白で分ける */
+.md ul, .md ol { margin: 0.5rem 0 1rem; padding-left: 1.5rem; }
+.md li { margin: 0.25rem 0; }
+.md li > p { margin: 0.25rem 0; }
+.md li > ul, .md li > ol { margin: 0.25rem 0; }
 .md pre { background: #8881; padding: 0.75rem; overflow-x: auto; border-radius: 4px; }
 .md code { background: #8882; padding: 0 0.25em; border-radius: 3px; }
 .md pre code { background: none; padding: 0; }
 .md blockquote { margin: 0.5rem 0; padding-left: 1rem; border-left: 3px solid #8886; }
 .md table { border-collapse: collapse; display: block; overflow-x: auto; }
 .md th, .md td { border: 1px solid #8886; padding: 0.25rem 0.5rem; text-align: left; }
+.md :target { scroll-margin-top: 1rem; }
+
+/* 目次: 狭い画面は文書の先頭に畳み、広い画面は右の列に開いて付いてくる */
+.toc { margin: 0 0 1.5rem; padding: 0.5rem 0.75rem; border: 1px solid var(--color-line-strong); border-radius: 4px; }
+.toc summary { cursor: pointer; font-weight: 600; }
+.toc ol { margin: 0.5rem 0 0; padding-left: 1.25rem; }
+.toc li { margin: 0.25rem 0; }
+.toc a { text-decoration: none; }
+.toc a:hover { text-decoration: underline; }
+@media (min-width: 1100px) {
+  .withToc { display: grid; grid-template-columns: minmax(0, 60rem) 16rem; gap: 3rem; align-items: start; }
+  .withToc .md { grid-column: 1; grid-row: 1; }
+  .toc { grid-column: 2; grid-row: 1; position: sticky; top: 1rem; margin: 0; max-height: calc(100vh - 2rem); overflow-y: auto; }
+}

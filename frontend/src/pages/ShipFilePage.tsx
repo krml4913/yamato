@@ -5,6 +5,7 @@ import { editToken } from "../api/client";
 import { Markdown } from "../markdown/Markdown";
 import { SavedNotice } from "../edit/SaveBar";
 import { MdEditor } from "./MdEditor";
+import styles from "./mdEditor.module.css";
 
 // roles/*.md・charter.md・knowledge.md を markdown で出す。--edit で起動していれば role・charter は直せる
 // (knowledge.md は memory apply の記録のため読むだけ)。
@@ -30,14 +31,13 @@ export function ShipFilePage() {
   const cur = state.key === key ? state : { key };
   return (
     <>
-      <p><Link to={`/ship/${encodeURIComponent(name)}`}>← {name}</Link></p>
-      <h1>{file}</h1>
+      <p className={styles.crumb}><Link to={`/ship/${encodeURIComponent(name)}`}>← {name}</Link> / <span>{file}</span></p>
       {savedKey === key && !editing && <SavedNotice />}
       {cur.error && <p role="alert">読めない: {cur.error}</p>}
       {cur.file && !(editing && cur.file.kind !== "knowledge") && (
         <>
           {editToken() && cur.file.kind !== "knowledge" && <p><button onClick={() => { setSavedKey(null); setEditing(true); }}>編集</button></p>}
-          <Markdown text={cur.file.text} />
+          <Markdown text={cur.file.text} toc />
         </>
       )}
       {cur.file && editing && cur.file.kind !== "knowledge" && (
