@@ -11,7 +11,7 @@ from unittest import mock
 
 from tests import api_schema
 from tests.helpers import ShipTestCase
-from yamato import board, claude, cli, dashboard, events, feed, inbox, report, roster, seat
+from yamato import board, claude, cli, dashboard, events, feed, fleet, inbox, report, roster, seat
 from yamato.util import YamatoError
 
 
@@ -434,7 +434,8 @@ def yaml_keys(path: Path) -> set:
 
 class FleetTest(ShipTestCase):
     def get(self):
-        status, body = dashboard.api_get("/api/v1/fleet")
+        with mock.patch.object(fleet.claude, "agents", return_value=[]):
+            status, body = dashboard.api_get("/api/v1/fleet")
         body = json.loads(json.dumps(body))
         api_schema.assert_valid(self, body, "/api/v1/fleet")
         return status, body
@@ -446,7 +447,19 @@ class FleetTest(ShipTestCase):
         ship = next(s for s in body["ships"] if s["name"] == "t1")
         self.assertEqual((ship["path"], ship["exists"], ship["error"]), (str(self.shipdir), True, None))
         self.assertEqual(ship["team"], "t1")
+        self.assertIs(ship["running"], False)
         self.assertIsNone(body["admiral"])
+
+    def test_running_is_true_when_a_seat_is_alive_and_null_without_a_folder(self):
+        from yamato.util import register_ship
+
+        register_ship("gone", self.tmp / "gone")
+        with mock.patch.object(fleet.claude, "agents", return_value=[]), \
+                mock.patch.object(fleet.claude, "is_alive", return_value=True):
+            _, body = self.get()
+        by = {s["name"]: s for s in body["ships"]}
+        self.assertIs(by["t1"]["running"], True)
+        self.assertIsNone(by["gone"]["running"])
 
     def test_missing_folder_and_broken_team_yaml_do_not_drop_the_ship(self):
         from yamato.util import register_ship

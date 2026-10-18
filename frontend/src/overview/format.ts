@@ -19,6 +19,21 @@ export function fmtSpan(seconds: number): string {
   return `${sign}${s % 60}s`;
 }
 
+// 「3 分前」のような相対時刻。表で 1 行に収めるため、いちばん大きい単位だけ出す。
+export function fmtAgo(seconds: number): string {
+  const s = Math.trunc(seconds);
+  if (s < 10) return "たった今";
+  if (s < 60) return `${s} 秒前`;
+  if (s < 3600) return `${Math.floor(s / 60)} 分前`;
+  if (s < 86400) return `${Math.floor(s / 3600)} 時間前`;
+  return `${Math.floor(s / 86400)} 日前`;
+}
+
+// 作業ログの 1 行に混じる長い id (uuid 形) を先頭 8 文字と … に縮める。全文は title で読める。
+export function shortenIds(text: string): string {
+  return text.replace(/\b([0-9a-f]{8})-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g, "$1…");
+}
+
 export function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${Math.round(n / 1_000)}k`;

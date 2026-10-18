@@ -63,7 +63,9 @@ describe("ConfigForm", () => {
     expect([...shift.options].map((o) => o.text)).toEqual(["per_task", "persistent", "headless"]);
     expect(screen.getByLabelText("roles.impl.count")).toHaveValue(2);
     expect(screen.getAllByText(/生の yaml で直す/).length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: "差分を確認" })).toBeDisabled();
+    // 変えるまで保存バーは出ない
+    expect(screen.queryByRole("button", { name: "差分を確認" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "保存" })).toBeNull();
   });
 
   it("閲覧と同じまとまりと目次で並ぶ", async () => {
@@ -81,15 +83,51 @@ describe("ConfigForm", () => {
       "/api/v1/edit/commit": { status: 200, body: { written: true, hash: "h2" } },
     });
     fireEvent.change(await screen.findByLabelText("grace"), { target: { value: "5m" } });
+    expect(screen.getByRole("region", { name: "保存" })).toHaveTextContent("1 項目を変えた");
     expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "差分を確認" }));
-    expect(await screen.findByText(/\+grace: 5m/)).toBeInTheDocument();
+    expect(await screen.findByText(/\+grace: 5m/)).toHaveClass(/add/);
+    expect(screen.getByText(/-grace: 20m/)).toHaveClass(/del/);
     expect(calls.find((c) => c.url.endsWith("preview"))?.body).toMatchObject({
       ship: "t1", file: "team.yaml", ops: [{ op: "set_value", path: ["grace"], value: "5m" }],
     });
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
     expect(await screen.findByRole("status")).toHaveTextContent("次の yamato up で効く");
     expect(calls.find((c) => c.url.endsWith("commit"))?.body?.base_hash).toBe("h1");
+  });
+
+  it("変えた欄に印が付き、差分を確認するとバーが次の操作を言う", async () => {
+    open({ ...cfg, "/api/v1/edit/preview": { status: 200, body: previewOk } });
+    const grace = await screen.findByLabelText("grace");
+    expect(grace.closest("section")).not.toHaveClass(/changed/);
+    fireEvent.change(grace, { target: { value: "5m" } });
+    expect(grace.closest("section")).toHaveClass(/changed/);
+    expect(grace.closest("section")).toHaveTextContent("変えた");
+    expect(screen.getByLabelText("name").closest("section")).not.toHaveClass(/changed/);
+    fireEvent.click(screen.getByRole("button", { name: "差分を確認" }));
+    expect(await screen.findByRole("region", { name: "保存" })).toHaveTextContent("保存で書く");
+  });
+
+  it("変えた欄を元に戻すとバーが消える", async () => {
+    open(cfg);
+    fireEvent.change(await screen.findByLabelText("grace"), { target: { value: "5m" } });
+    fireEvent.click(screen.getByRole("button", { name: "元に戻す" }));
+    expect(screen.queryByRole("region", { name: "保存" })).toBeNull();
+    expect(screen.getByLabelText("grace")).toHaveValue("20m");
+  });
+
+  it("保存に失敗したらエラーをバーの中に出し、保存したとは出さない", async () => {
+    open({
+      ...cfg,
+      "/api/v1/edit/preview": { status: 200, body: previewOk },
+      "/api/v1/edit/commit": { status: 500, body: { error: { code: "io", message: "書けなかった" } } },
+    });
+    fireEvent.change(await screen.findByLabelText("grace"), { target: { value: "5m" } });
+    fireEvent.click(screen.getByRole("button", { name: "差分を確認" }));
+    fireEvent.click(await screen.findByRole("button", { name: "保存" }).then(async (b) => { await waitFor(() => expect(b).toBeEnabled()); return b; }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("書けなかった");
+    expect(screen.getByRole("region", { name: "保存" })).toContainElement(screen.getByRole("alert"));
+    expect(screen.queryByRole("status")).toBeNull();
   });
 
   it("検証に通らなければ errors を出し、保存できない", async () => {

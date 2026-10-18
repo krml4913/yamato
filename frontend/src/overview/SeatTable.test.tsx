@@ -95,3 +95,40 @@ describe("SeatTable の操作", () => {
     await waitFor(() => expect(screen.getByRole("alert").textContent).toBe("トークンが合わない"));
   });
 });
+
+describe("SeatTable の読みやすさ", () => {
+  it("生存は印で、pid は title に回す。最終は相対時刻で絶対時刻は title", () => {
+    const { container } = render(<SeatTable ship="dev" seats={[seat({ last: 1000 })]} now={1000 + 180} />);
+    const alive = screen.getByText("● 生");
+    expect(alive.getAttribute("title")).toBe("pid 42");
+    expect(screen.getByText("3 分前")).toBeTruthy();
+    expect(container.textContent).not.toContain("pid 42");
+  });
+
+  it("作業ログの長い id を縮め、全文は title に残す", () => {
+    const id = "010fb653-aaaa-bbbb-cccc-0123456789ab";
+    render(<SeatTable ship="dev" seats={[seat({ log: `session=${id} 終了` })]} now={0} />);
+    const cell = screen.getByText(/session=010fb653…/);
+    expect(cell.getAttribute("title")).toContain(id);
+  });
+});
+
+describe("SeatTable の横スクロール", () => {
+  it("表は横に動かせる入れ物に入っている (狭い幅でも全部の列に届く)", () => {
+    const { container } = render(<SeatTable ship="dev" seats={seats} now={0} />);
+    const table = container.querySelector("table");
+    expect(table?.parentElement?.className).toMatch(/scroll/);
+  });
+});
+
+describe("要対応の凡例", () => {
+  it("開くと入れ物の切れる absolute でなく画面に対して置き、スクロールで閉じる", () => {
+    render(<SeatTable ship="dev" seats={seats.slice(0, 1)} now={0} />);
+    fireEvent.click(screen.getByRole("button", { name: "要対応の見方" }));
+    const note = screen.getByRole("note");
+    expect(note.style.top).not.toBe("");
+    expect(note.style.left).not.toBe("");
+    fireEvent.scroll(window);
+    expect(screen.queryByRole("note")).toBeNull();
+  });
+});

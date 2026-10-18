@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { editToken, getShipConfig } from "../api/client";
 import status from "../status.module.css";
 import styles from "./config.module.css";
+import { SavedNotice } from "../edit/SaveBar";
 import { MdEditor } from "./MdEditor";
 
 /** 生の team.yaml を textarea で直す画面 (--edit のとき)。フォームで扱えない項目の行き先。 */
@@ -32,9 +33,7 @@ export function RawYamlPage() {
       <p><Link to={back}>設定へ戻る</Link></p>
       {!editToken() && <p role="alert" className={styles.error}>書き込みは dashboard --edit で起動したときだけ</p>}
       {current?.error && <p role="alert" className={styles.error}>読み込めない: {current.error}</p>}
-      {saved && (
-        <p role="status">保存した。次の yamato up で効く (自動では up しない)。</p>
-      )}
+      {saved && <SavedNotice />}
       {editToken() && current?.raw !== undefined && (
         <>
           <p className={status.dim}>
@@ -43,6 +42,7 @@ export function RawYamlPage() {
           <MdEditor
             key={`${round}`}
             ship={name}
+            nowrap
             file="team.yaml"
             initial={current.raw}
             onSaved={() => {

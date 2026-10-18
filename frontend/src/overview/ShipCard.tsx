@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Misc, Report } from "./Extras";
+import { ContextUse, Inventory, Orphans, Report } from "./Extras";
 import { deadlineAt, fmtTime, fmtTokens, remaining } from "./format";
 import { SeatTable } from "./SeatTable";
 import type { Ship, ShipState, Wait } from "./types";
@@ -63,19 +64,111 @@ export function ShipCard({ ship, now, waits, showName = true, children }: {
         <Badges ship={ship} waits={waits} />
       </div>
       <p className={`${status.dim} ${styles.sub}`}>
-        {deadlineAt(g.deadline)}
-        {g.hub_last ? ` / captain ${g.hub} の最終 ${fmtTime(g.hub_last)}` : ""}
-        {` / 今日 ${fmtTokens(g.tokens)} tok`}
+        {[
+          // 「未起動 (deadline なし)」のように残りが無い表示は、バッジが全文を出している。地の文で繰り返さない
+          remaining(g.deadline) === g.deadline ? null : deadlineAt(g.deadline),
+          g.hub_last ? `captain ${g.hub} の最終 ${fmtTime(g.hub_last)}` : null,
+          `今日 ${fmtTokens(g.tokens)} tok`,
+        ].filter((x) => x !== null).join(" / ")}
       </p>
       {children}
       <div className={styles.secTable}>
         <SeatTable ship={ship.name} seats={g.seats} now={now} />
       </div>
-      <div className={styles.secBoard}>
+      <ShipBody g={g} now={now} counts={counts} />
+      <Inventory g={g} />
+      <ContextUse g={g} />
+    </section>
+  );
+}
+
+// 異常は直近 24 時間を上に出し、それより古いものは畳む (済んだものと今のものを混ぜない)。
+// 24 時間以内でも 1 時間より前のものは赤を弱める (解決済みかもしれない)
+const RECENT_SEC = 24 * 3600;
+const FRESH_SEC = 3600;
+
+// 種類名の短い日本語。無いものは種類名をそのまま主に出す
+const KIND_LABEL: Record<string, string> = {
+  force_stop: "強制停止",
+  shift_failed: "シフトが失敗",
+  launch_failed: "席の起動に失敗",
+  permission_denied: "権限で拒否",
+  spin_suspected: "送信の空回り",
+  duplicate_suspected: "同じ送信の重複",
+  captain_gap: "captain が長く止まっている",
+  notify_failed: "通知に失敗",
+  pr_open_failed: "PR の作成に失敗",
+  pr_merge_failed: "PR の merge に失敗",
+  pr_conflict: "PR が衝突",
+  worktree_add_failed: "worktree の作成に失敗",
+  worktree_rm_failed: "worktree の片付けに失敗",
+};
+
+type Anomaly = ShipState["anomalies"][number];
+
+function AnomalyRow({ a, tone }: { a: Anomaly; tone: "fresh" | "stale" | "old" }) {
+  const [open, setOpen] = useState(false);
+  const label = KIND_LABEL[a.kind];
+  const long = a.summary.length > 80 || a.summary.includes("\n");
+  return (
+    <li className={styles.anomaly}>
+      <div className={styles.anomalyHead}>
+        <span className={tone === "fresh" ? status.red : tone === "stale" ? styles.staleKind : styles.oldKind}>
+          {label ?? a.kind}
+        </span>
+        {label && <span className={styles.rawKind}>{a.kind}</span>}
+        <span className={styles.anomalyTime}>{fmtTime(a.ts)}</span>
+      </div>
+      {a.summary && (
+        <div className={open ? styles.anomalyBody : `${styles.anomalyBody} ${styles.clamp}`}>{a.summary}</div>
+      )}
+      {long && (
+        <button type="button" className={styles.more} aria-expanded={open} onClick={() => setOpen(!open)}>
+          {open ? "たたむ" : "全文を開く"}
+        </button>
+      )}
+    </li>
+  );
+}
+
+function Anomalies({ list, now }: { list: ShipState["anomalies"]; now: number }) {
+  if (list.length === 0) return null;
+  const recent = list.filter((a) => a.ts >= now - RECENT_SEC);
+  const old = list.filter((a) => a.ts < now - RECENT_SEC);
+  return (
+    <div className={styles.sec}>
+      <h3>直近の異常</h3>
+      {recent.length > 0 ? (
+        <ul className={styles.anomalies}>
+          {recent.map((a, i) => (
+            <AnomalyRow key={i} a={a} tone={a.ts >= now - FRESH_SEC ? "fresh" : "stale"} />
+          ))}
+        </ul>
+      ) : (
+        <p className={status.dim}>24 時間以内の異常は無い</p>
+      )}
+      {old.length > 0 && (
+        <details className={styles.oldAnomalies}>
+          <summary>24 時間より前の異常 ({old.length} 件)</summary>
+          <ul className={styles.anomalies}>
+            {old.map((a, i) => <AnomalyRow key={i} a={a} tone="old" />)}
+          </ul>
+        </details>
+      )}
+    </div>
+  );
+}
+
+// 中身の量に合わせて段を組む。board・PR が空なら 1 行にして異常を全幅に、
+// 異常が無ければ board を全幅に、孤児が無ければ 1 行にして日報を全幅にする
+function ShipBody({ g, now, counts }: { g: ShipState; now: number; counts: [string, number][] }) {
+  const boardEmpty = g.board.length === 0 && g.prs.length === 0 && counts.length === 0;
+  const hasAnomalies = g.anomalies.length > 0;
+  const boardSec = (
+    <>
+      <div className={styles.sec}>
         <h3>board</h3>
-        <p>
-          {counts.length ? counts.map(([k, n]) => <span className={styles.tag} key={k}>{k} {n}</span>) : "-"}
-        </p>
+        <p>{counts.map(([k, n]) => <span className={styles.tag} key={k}>{k} {n}</span>)}</p>
         <ul>
           {g.board.map((b) => (
             <li key={b.id}>
@@ -88,7 +181,7 @@ export function ShipCard({ ship, now, waits, showName = true, children }: {
         </ul>
       </div>
       {g.prs.length > 0 && (
-        <div className={styles.secPr}>
+        <div className={styles.sec}>
           <h3>PR</h3>
           <ul>
             {g.prs.map((p) => (
@@ -101,42 +194,41 @@ export function ShipCard({ ship, now, waits, showName = true, children }: {
           </ul>
         </div>
       )}
-      <Anomalies list={g.anomalies} now={now} />
-      <div className={styles.secReport}><Report g={g} /></div>
-      <div className={styles.secMisc}><Misc g={g} /></div>
-    </section>
+    </>
   );
-}
-
-// 異常は直近 24 時間を上に赤で出し、それより古いものは畳む (済んだものと今のものを混ぜない)
-const RECENT_SEC = 24 * 3600;
-
-function Anomalies({ list, now }: { list: ShipState["anomalies"]; now: number }) {
-  if (list.length === 0) return null;
-  const recent = list.filter((a) => a.ts >= now - RECENT_SEC);
-  const old = list.filter((a) => a.ts < now - RECENT_SEC);
   return (
-    <div className={styles.secPr}>
-      <h3>直近の異常</h3>
-      {recent.length > 0 ? (
-        <ul>
-          {recent.map((a, i) => (
-            <li key={i}><span className={status.red}>{a.kind}</span> {fmtTime(a.ts)} {a.summary}</li>
-          ))}
-        </ul>
+    <>
+      {boardEmpty ? (
+        <div className={`${styles.sec} ${styles.emptyLine}`}>
+          <h3>board</h3>
+          <span className={status.dim}>空</span>
+        </div>
+      ) : null}
+      {boardEmpty || !hasAnomalies ? (
+        <>
+          {!boardEmpty && boardSec}
+          <Anomalies list={g.anomalies} now={now} />
+        </>
       ) : (
-        <p className={status.dim}>24 時間以内の異常は無い</p>
+        <div className={styles.cols}>
+          <div className={styles.colMain}>{boardSec}</div>
+          <div className={styles.colSide}><Anomalies list={g.anomalies} now={now} /></div>
+        </div>
       )}
-      {old.length > 0 && (
-        <details className={styles.oldAnomalies}>
-          <summary>24 時間より前の異常 ({old.length} 件)</summary>
-          <ul>
-            {old.map((a, i) => (
-              <li key={i}>{a.kind} {fmtTime(a.ts)} {a.summary}</li>
-            ))}
-          </ul>
-        </details>
+      {g.orphans.length === 0 ? (
+        <>
+          <div className={`${styles.sec} ${styles.emptyLine}`}>
+            <h3>孤児</h3>
+            <span className={status.dim}>無い (担当が落ちて active のまま残った項目)</span>
+          </div>
+          <Report g={g} />
+        </>
+      ) : (
+        <div className={styles.cards}>
+          <Report g={g} />
+          <Orphans g={g} />
+        </div>
       )}
-    </div>
+    </>
   );
 }

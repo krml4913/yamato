@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useRefreshRequest } from "../api/refresh";
 import { editToken, getOverview, type Overview } from "../api/client";
 import { fmtDateTime } from "../overview/format";
 import { ShipCard, ShipLink } from "../overview/ShipCard";
@@ -14,6 +15,10 @@ export function OverviewPage() {
   const [data, setData] = useState<Overview | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const [tick, setTick] = useState(0);
+  // 操作が成功したら次の定期更新を待たず読み直す
+  useRefreshRequest(useCallback(() => setTick((n) => n + 1), []));
+
   useEffect(() => {
     let live = true;
     const load = async () => {
@@ -27,7 +32,7 @@ export function OverviewPage() {
     void load();
     const t = setInterval(() => void load(), REFRESH_MS);
     return () => { live = false; clearInterval(t); };
-  }, []);
+  }, [tick]);
 
   const running = data ? data.ships.filter(isRunning) : [];
   const stopped = data ? data.ships.filter((s) => !isRunning(s)) : [];

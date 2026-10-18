@@ -1,0 +1,30 @@
+/* 席の表。見出しと短い値は折り返さず、長い作業ログは 1 行に省略して全文は title に回す */
+.seats th { white-space: nowrap; }
+.seats td { white-space: nowrap; }
+.seats td.log { max-width: 32em; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 1000px) {
+  .seats td.log { max-width: 20em; }
+}
+/* 要対応の文は長いので折り返してよい。行の高さは文の行数で決まる */
+.seats td.flags { white-space: normal; min-width: 16em; }
+
+/* 表は幅が足りないとき、この入れ物の中で横に動かす (全部の列に届く)。
+   動かせるときだけ、端に影を出して続きがあると分かるようにする (背景の影はスクロールで隠れる)。
+   席の名前の列は横に動かしても左に残す */
+.scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  background:
+    linear-gradient(to right, var(--color-card) 30%, transparent) 0 0 / 24px 100% no-repeat local,
+    linear-gradient(to left, var(--color-card) 30%, transparent) 100% 0 / 24px 100% no-repeat local,
+    linear-gradient(to right, var(--color-line-strong), transparent) 0 0 / 10px 100% no-repeat scroll,
+    linear-gradient(to left, var(--color-line-strong), transparent) 100% 0 / 10px 100% no-repeat scroll;
+}
+/* 表の共通の狭い幅の規則 (表自身をスクロールさせる) を、入れ物に任せるため打ち消す */
+.scroll .seats { display: table; max-width: none; overflow: visible; }
+.scroll .seats th:first-child, .scroll .seats td:first-child {
+  position: sticky; left: 0; z-index: 1; background: var(--color-card);
+}
+/* 共通の見出しは opacity で薄くしていて、固定した列の背景まで透けて下の列が重なって見える。
+   固定する見出しは opacity をやめ、文字の色だけ薄くする */
+.scroll .seats th:first-child { opacity: 1; color: color-mix(in srgb, currentColor 75%, transparent); }

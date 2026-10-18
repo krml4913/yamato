@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useRefreshRequest } from "../api/refresh";
 import { Link, useParams } from "react-router-dom";
 import { shipFilePath } from "../api/files";
 import { editToken, getOverview, getShipConfig, type Overview, type ShipConfig } from "../api/client";
@@ -61,8 +62,8 @@ function ShipOps({ ship, running }: { ship: string; running: boolean | null }) {
           ) : (
             <input value={seat} onChange={(e) => setSeat(e.target.value)} placeholder="例 pm" />
           )}</label>
-          <label className={styles.sendBody}>本文 <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={3} cols={48} /></label>
-          <button onClick={() => ask({
+          <label className={styles.sendBody}>本文 <textarea aria-label="本文 (席に送る)" value={message} onChange={(e) => setMessage(e.target.value)} rows={3} cols={48} /></label>
+          <button disabled={!seat.trim() || !message.trim()} title={!seat.trim() || !message.trim() ? "席と本文を入れると送れる" : undefined} onClick={() => ask({
             op: "send", params: { seat, message }, title: `席 ${seat || "(未入力)"} に送る`, confirmLabel: "送る",
             detail: `owner として席にメッセージを送る (yamato send --from owner)。止まっている席は起きる。本文: ${message}`,
           })}>send</button>
@@ -77,21 +78,27 @@ function ShipOps({ ship, running }: { ship: string; running: boolean | null }) {
         </p>
         <div className={styles.usual} role="group" aria-label="普段の操作">
           <h4>普段の操作</h4>
-          <div className={styles.row}>
-            <label>稼働時間 <input className={styles.wide} value={forSpan} onChange={(e) => setForSpan(e.target.value)} placeholder="例 3h (省くと既定)" /></label>
-            <label>一緒に起こす席 <input className={styles.wide} value={seats} onChange={(e) => setSeats(e.target.value)} placeholder="例 impl,review" /></label>
-            <button className={quiet(running === true)} onClick={() => ask({
-              op: "up", params: { for: forSpan, seats }, title: `艦 ${ship} を起動する`, confirmLabel: "起動する",
-              detail: "captain の席を起こし、稼働時間の上限を設定する (yamato up)。",
-            })}>up</button>
-          </div>
-          <div className={styles.row}>
-            <label>延ばす時間 <input className={styles.wide} value={span} onChange={(e) => setSpan(e.target.value)} placeholder="例 1h" /></label>
-            <button className={quiet(running === false)} onClick={() => ask({
-              op: "extend", params: { span }, title: `艦 ${ship} の deadline を延ばす`, confirmLabel: "延ばす",
-              detail: "稼働時間の上限を延ばす (yamato extend)。起動していない艦は断られる。",
-            })}>extend</button>
-          </div>
+          <fieldset className={styles.opGroup}>
+            <legend>艦を起こす</legend>
+            <div className={styles.row}>
+              <label>稼働時間 <input aria-label="稼働時間" className={styles.wide} value={forSpan} onChange={(e) => setForSpan(e.target.value)} placeholder="例 3h (省くと既定)" /></label>
+              <label>一緒に起こす席 <input aria-label="一緒に起こす席" className={styles.wide} value={seats} onChange={(e) => setSeats(e.target.value)} placeholder="例 impl,review" /></label>
+              <button className={quiet(running === true)} onClick={() => ask({
+                op: "up", params: { for: forSpan, seats }, title: `艦 ${ship} を起動する`, confirmLabel: "起動する",
+                detail: "captain の席を起こし、稼働時間の上限を設定する (yamato up)。",
+              })}>up</button>
+            </div>
+          </fieldset>
+          <fieldset className={styles.opGroup}>
+            <legend>稼働時間を延ばす</legend>
+            <div className={styles.row}>
+              <label>延ばす時間 <input aria-label="延ばす時間" className={styles.wide} value={span} onChange={(e) => setSpan(e.target.value)} placeholder="例 1h" /></label>
+              <button className={quiet(running === false)} onClick={() => ask({
+                op: "extend", params: { span }, title: `艦 ${ship} の deadline を延ばす`, confirmLabel: "延ばす",
+                detail: "稼働時間の上限を延ばす (yamato extend)。起動していない艦は断られる。",
+              })}>extend</button>
+            </div>
+          </fieldset>
           <div className={styles.row}>
             <button className={quiet(running === false)} onClick={() => ask({
               op: "down", params: {}, title: `艦 ${ship} を終業させる`, confirmLabel: "終業を指示する",
@@ -102,20 +109,13 @@ function ShipOps({ ship, running }: { ship: string; running: boolean | null }) {
         </div>
         <fieldset className={styles.dangerZone}>
           <legend>危ない操作</legend>
-          <p className={styles.hint}>どちらも猶予なしで全席を止める。席は引き継ぎを書けず、作業の途中で切れる。</p>
-          <div className={styles.dangerItem}>
-            <button className={styles.danger} onClick={() => ask({
-              op: "down-force", params: {}, title: `艦 ${ship} を強制停止する (down --force)`, confirmLabel: "強制停止する",
-              detail: "終業 (down) の強制版。猶予を待たず、動いている席を今すぐ止める。席は引き継ぎを書けず、作業の途中で切れる。止めた理由は down-force として記録に残る。",
-            })}>down --force</button>
-            <span className={styles.hint}>down の猶予を待たずに終わらせる。</span>
-          </div>
+          <p className={styles.hint}>猶予なしで全席を止める。席は引き継ぎを書けず、作業の途中で切れる。猶予つきで止めるなら上の down。</p>
           <div className={styles.dangerItem}>
             <button className={styles.danger} onClick={() => ask({
               op: "halt", params: {}, title: `艦 ${ship} を緊急停止する (halt)`, confirmLabel: "緊急停止する",
-              detail: "緊急停止 (yamato halt)。down --force と同じ強制停止で、猶予なしに全席を止める。席は引き継ぎを書けず、作業の途中で切れる。止めた理由は halt として記録に残る。",
+              detail: "緊急停止 (yamato halt)。猶予なしに全席を止める。席は引き継ぎを書けず、作業の途中で切れる。止めた理由は halt として記録に残る。",
             })}>halt</button>
-            <span className={styles.hint}>down --force と同じ強制停止。違うのは記録に残る理由が halt になる点だけ。</span>
+            <span className={styles.hint}>down --force と同じ強制停止は CLI からも打てる。</span>
           </div>
         </fieldset>
       </div>
@@ -177,17 +177,22 @@ function ShipFiles({ ship }: { ship: string }) {
   );
 }
 
-// その艦の状態・席・board・PR・日報。一覧の ShipCard をそのまま使い、取れなければ何も出さない。
+// その艦の状態・席・board・PR・日報。一覧の ShipCard をそのまま使い、取れなければエラーを出す。
 function ShipStatus({ ship, onRunning, children }: { ship: string; onRunning: (r: boolean | null) => void; children?: React.ReactNode }) {
   const [data, setData] = useState<Overview | null>(null);
-  // 読み込みが済む (成否は問わない) まで何も出さない。済んでから出せば、操作の入力が途中で作り直されない
+  // 読み込み中は枠だけを出し、済んで (成否は問わない) から中身を出す。済んでから出せば、操作の入力が途中で作り直されない
   const [settled, setSettled] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [tick, setTick] = useState(0);
+  // 操作が成功したら読み直す
+  useRefreshRequest(useCallback(() => setTick((n) => n + 1), []));
   useEffect(() => {
     let live = true;
     getOverview().then(
       (d) => {
         if (!live) return;
         setData(d);
+        setFailed(false);
         setSettled(true);
         const s = Array.isArray(d.ships) ? d.ships.find((x) => x.name === ship) : undefined;
         onRunning(s?.state ? isRunning(s) : null);
@@ -195,17 +200,28 @@ function ShipStatus({ ship, onRunning, children }: { ship: string; onRunning: (r
       () => {
         if (!live) return;
         onRunning(null);
+        setFailed(true);
         setSettled(true);
       },
     );
     return () => {
       live = false;
     };
-  }, [ship, onRunning]);
+  }, [ship, onRunning, tick]);
   const s = data && Array.isArray(data.ships) ? data.ships.find((x) => x.name === ship) : undefined;
-  if (!settled) return null;
+  // 読み込み中は状態の枠の場所を先に取り、後から出る表で下のリンクが動かないようにする
+  if (!settled) return <div className={styles.loading} role="status">状態を読み込み中…</div>;
   // 状態が読めなくても操作は出す (操作は状態に依らない)
-  if (!data || !s) return <>{children}</>;
+  if (!data || !s) {
+    return (
+      <>
+        <div className={styles.loadError} role="alert">
+          {failed || !data ? "艦の状態を読めなかった。" : `艦 ${ship} の状態が見つからなかった。`}
+        </div>
+        {children}
+      </>
+    );
+  }
   return <ShipCard ship={s} now={data.generated_at} waits={data.waits ?? []} showName={false}>{children}</ShipCard>;
 }
 
@@ -216,10 +232,10 @@ export function ShipPage() {
   return (
     <>
       <h1>艦: {name}</h1>
-      <p><Link to={`/ship/${encodeURIComponent(ship)}/config`}>設定</Link></p>
       <ShipStatus key={`status-${ship}`} ship={ship} onRunning={setRunning}>
         {editToken() !== null && <ShipOps key={ship} ship={ship} running={running} />}
       </ShipStatus>
+      <p className={styles.section}><Link to={`/ship/${encodeURIComponent(ship)}/config`}>設定</Link></p>
       <ShipFiles key={`files-${ship}`} ship={ship} />
     </>
   );

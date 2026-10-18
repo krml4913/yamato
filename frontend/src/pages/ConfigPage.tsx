@@ -5,14 +5,16 @@ import status from "../status.module.css";
 import styles from "./config.module.css";
 import { ConfigForm } from "./ConfigForm";
 import { ConfigValue } from "./ConfigValue";
-import { FieldHead, groupFields, Groups, Toc, type Field } from "./configGroups";
+import { FieldHead, groupFields, isWide, Groups, Toc, type Field } from "./configGroups";
 
 function Section({ field }: { field: Field }) {
   return (
-    <section id={`field-${field.key}`} className={styles.field}>
+    <section id={`field-${field.key}`} className={`${styles.field} ${isWide(field, false) ? styles.wide : ""}`}>
       <FieldHead field={field} />
-      {field.enum && <p className={styles.desc}>選べる値: {field.enum.map((v) => String(v)).join(" / ")}</p>}
-      <ConfigValue field={field} />
+      <div className={styles.body}>
+        {field.enum && <p className={styles.desc}>選べる値: {field.enum.map((v) => String(v)).join(" / ")}</p>}
+        <ConfigValue field={field} />
+      </div>
     </section>
   );
 }

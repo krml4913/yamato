@@ -20,6 +20,26 @@ describe("ShipFilePage", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/ships/a/files/roles%2Fimpl.md");
   });
 
+  const open = async (file: string, text: string) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true, json: async () => ({ name: "a", file, kind: "role", text, bytes: text.length }),
+    }));
+    render(<MemoryRouter initialEntries={[`/ship/a/files/${encodeURIComponent(file)}`]}><App /></MemoryRouter>);
+    await screen.findByText("本文");
+  };
+
+  it("md が h1 で始まれば題はその h1 の 1 つだけ", async () => {
+    await open("charter.md", "# 憲章\n\n本文");
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("憲章");
+  });
+
+  it("md に h1 が無ければファイル名を h1 にする", async () => {
+    await open("roles/pm.md", "あなたは pm。\n\n## 進め方\n\n本文");
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("roles/pm.md");
+  });
+
   it("404 は理由を出す", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: false, status: 404, json: async () => ({ error: { code: "not_found", message: "その md は読めない" } }),
@@ -68,6 +88,7 @@ describe("ShipFilePage の編集", () => {
     fireEvent.click(await screen.findByRole("button", { name: "編集" }));
     expect(screen.getByRole("button", { name: "確定" })).toBeDisabled();
     const box = screen.getByRole("textbox");
+    expect(box).not.toHaveClass(/nowrap/);
     fireEvent.change(box, { target: { value: "# 新憲章" } });
     fireEvent.click(screen.getByRole("button", { name: "差分を見る" }));
     expect(await screen.findByLabelText("差分")).toHaveTextContent("+# 新憲章");

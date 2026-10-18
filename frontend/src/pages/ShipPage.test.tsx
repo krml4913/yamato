@@ -73,12 +73,13 @@ describe("艦ページの操作", () => {
     expect(screen.getByRole("columnheader", { name: "席" })).toBeTruthy();
   });
 
-  it("普段の操作と危ない操作を分け、危ない 2 つは枠の中に置く", async () => {
+  it("普段の操作と危ない操作を分け、危ない操作は halt だけを枠の中に置く", async () => {
     setToken(true);
     page();
     await screen.findByRole("group", { name: "艦の操作" });
     const danger = screen.getByRole("group", { name: "危ない操作" });
-    expect(within(danger).getByRole("button", { name: "down --force" })).toBeTruthy();
+    expect(within(danger).queryByRole("button", { name: "down --force" })).toBeNull();
+    expect(within(danger).getAllByRole("button")).toHaveLength(1);
     expect(within(danger).getByRole("button", { name: "halt" })).toBeTruthy();
     expect(within(danger).queryByRole("button", { name: "down" })).toBeNull();
     const usual = screen.getByRole("group", { name: "普段の操作" });
@@ -103,14 +104,14 @@ describe("艦ページの操作", () => {
     expect(screen.getAllByText("dev", { exact: false }).filter((e) => /^H[12]$/.test(e.tagName) || e.closest("h2"))).toHaveLength(1);
   });
 
-  it("down --force と halt の説明を別々に書く", async () => {
+  it("halt 1 つ向けの説明を書く", async () => {
     setToken(true);
     vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.resolve(new Response("{}", { status: 200 }))));
     page();
     const danger = await screen.findByRole("group", { name: "危ない操作" });
     const hints = [...danger.querySelectorAll("span")].map((e) => e.textContent);
-    expect(hints).toHaveLength(2);
-    expect(hints[0]).not.toBe(hints[1]);
+    expect(hints).toHaveLength(1);
+    expect(danger.textContent).toContain("猶予つきで止めるなら");
   });
 
   it("艦の状態が読めなくても操作を出し、艦名を二重にしない", async () => {
@@ -125,6 +126,27 @@ describe("艦ページの操作", () => {
     expect(screen.getByRole("group", { name: "艦の操作" })).toBeTruthy();
     expect(screen.getByRole("group", { name: "メッセージを送る" })).toBeTruthy();
     expect(screen.queryByRole("heading", { level: 2, name: "dev" })).toBeNull();
+  });
+
+  it("読み込み中は状態の枠を先に出し、設定リンクは状態の下に置く", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockImplementation((u: string) => Promise.resolve(new Response(JSON.stringify(
+      String(u).includes("/overview")
+        ? { generated_at: 0, waits: [], ships: [{ name: "dev", error: "x", state: null }] }
+        : { fields: [] },
+    ), { status: 200 }))));
+    page();
+    expect(screen.getByRole("status").textContent).toContain("読み込み中");
+    await waitFor(() => expect(screen.queryByText(/読み込み中/)).toBeNull());
+    const link = screen.getByRole("link", { name: "設定" });
+    const h1 = screen.getByRole("heading", { level: 1 });
+    expect(h1.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText(/読めない: x/).compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("状態が取れなかったらエラーを出す", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("down")));
+    page();
+    expect((await screen.findByRole("alert")).textContent).toContain("読めなかった");
   });
 
   it("止まっている艦では down を、動いている艦では up を目立たせない", async () => {
@@ -159,18 +181,17 @@ describe("艦ページの操作", () => {
     expect(screen.queryByLabelText("役割と方針のファイル")).toBeNull();
   });
 
-  it("5 つの操作を出す", async () => {
+  it("4 つの操作を出す", async () => {
     setToken(true);
     page();
     await screen.findByRole("group", { name: "艦の操作" });
-    for (const n of ["up", "down", "extend", "down --force", "halt"]) {
+    for (const n of ["up", "down", "extend", "halt"]) {
       expect(screen.getByRole("button", { name: n })).toBeTruthy();
     }
   });
 
   it.each([
     ["halt", "halt", {}, "緊急停止する"],
-    ["down --force", "down-force", {}, "強制停止する"],
     ["down", "down", {}, "終業を指示する"],
   ])("%s は確認画面を経てから POST する (alert は使わない)", async (label, op, params, confirm) => {
     setToken(true);
@@ -217,6 +238,20 @@ describe("艦ページの操作", () => {
     expect(JSON.parse(ops(fetchMock)[1][1].body).params).toEqual({ span: "1h" });
   });
 
+  it("up と extend の入力はそれぞれ名前のあるまとまりで囲み、入力に名前がある", async () => {
+    setToken(true);
+    page();
+    await screen.findByRole("group", { name: "艦の操作" });
+    const up = screen.getByRole("group", { name: "艦を起こす" });
+    expect(within(up).getByRole("textbox", { name: "稼働時間" })).toBeTruthy();
+    expect(within(up).getByRole("textbox", { name: "一緒に起こす席" })).toBeTruthy();
+    expect(within(up).getByRole("button", { name: "up" })).toBeTruthy();
+    const ext = screen.getByRole("group", { name: "稼働時間を延ばす" });
+    expect(within(ext).getByRole("textbox", { name: "延ばす時間" })).toBeTruthy();
+    expect(within(ext).getByRole("button", { name: "extend" })).toBeTruthy();
+    expect(screen.getByRole("textbox", { name: "本文 (席に送る)" })).toBeTruthy();
+  });
+
   it("send は席と本文をそのまま params で送り、出力は text で描く", async () => {
     setToken(true);
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({
@@ -235,6 +270,20 @@ describe("艦ページの操作", () => {
     expect(JSON.parse(ops(fetchMock)[0][1].body)).toEqual({
       ship: "dev", params: { seat: "pm", message: "--from x\n二行目" }, confirmed: true });
     expect((await screen.findByLabelText("出力")).textContent).toBe("<i>送った</i>");
+  });
+
+  it("send は席と本文が揃うまで押せない", async () => {
+    setToken(true);
+    page();
+    await screen.findByRole("group", { name: "艦の操作" });
+    const send = screen.getByRole("button", { name: "send" }) as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText(/^席/), { target: { value: "pm" } });
+    expect(send.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText(/本文/), { target: { value: "  " } });
+    expect(send.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText(/本文/), { target: { value: "hi" } });
+    expect(send.disabled).toBe(false);
   });
 
   it("席は艦の roles から select にする", async () => {

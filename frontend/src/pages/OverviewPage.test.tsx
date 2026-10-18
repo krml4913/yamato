@@ -1,9 +1,11 @@
-import { act, fireEvent, render as rtlRender, screen } from "@testing-library/react";
+import { act, fireEvent, render as rtlRender, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import type { ReactElement } from "react";
 import { REFRESH_MS, OverviewPage } from "./OverviewPage";
 import type { Overview } from "../api/client";
+import { REFRESH_EVENT } from "../api/refresh";
 import status from "../status.module.css";
+import styles from "../overview/overview.module.css";
 
 const seat = (over: Record<string, unknown>) => ({
   name: "impl", role: "impl", shift: "per_task", alive: true, pid: 42, status: "busy", waiting_for: null,
@@ -61,10 +63,11 @@ describe("OverviewPage", () => {
     expect(screen.getByText("止まってる")).toHaveClass(status.warn);
     expect(screen.getAllByText("T-1, T-2 (レビュー)").length).toBeGreaterThan(0);
     expect(screen.getByText(/前回 \$0\.50 \/ 上限 \$2/)).toBeInTheDocument();
-    expect(screen.getByText("rotate が近い")).toBeInTheDocument();
+    expect(screen.getAllByText(/rotate が近い/).length).toBeGreaterThan(0);
     expect(screen.getByText(/1\.5M tok/)).toBeInTheDocument();
     expect(screen.getByText("owner 宛て未読 2")).toBeInTheDocument();
-    expect(screen.getByText("一言: 良い日", { exact: false })).toBeInTheDocument();
+    expect(screen.getByText("一言")).toHaveClass(styles.label);
+    expect(screen.getByText("良い日")).toBeInTheDocument();
     expect(screen.getByText("席が落ちた")).toBeInTheDocument();
     expect(screen.getByText("棚卸しの目安に達した")).toBeInTheDocument();
     expect(screen.getByText("#7")).toHaveAttribute("href", "https://github.com/o/r/pull/7");
@@ -103,6 +106,24 @@ describe("OverviewPage", () => {
     expect(cells[cells.length - 1]).toHaveTextContent(/^-$/);
   });
 
+  it("残りの無い deadline の表示 (未起動) はバッジだけに出し、地の文で繰り返さない", async () => {
+    const d = data();
+    d.ships[0].state!.deadline = "未起動 (deadline なし)";
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(d)));
+    render(<OverviewPage />);
+    await screen.findByText("稼働 2/2");
+    expect(screen.getAllByText(/未起動 \(deadline なし\)/)).toHaveLength(1);
+  });
+
+  it("操作が成功した合図で、定期更新を待たずに読み直す", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() => Promise.resolve(new Response(JSON.stringify(data()))));
+    render(<OverviewPage />);
+    await screen.findByText("稼働 2/2");
+    const before = fetchSpy.mock.calls.length;
+    window.dispatchEvent(new Event(REFRESH_EVENT));
+    await waitFor(() => expect(fetchSpy.mock.calls.length).toBe(before + 1));
+  });
+
   it("艦の頭に要点のバッジを出し、0 件のものは出さない", async () => {
     const d = data();
     d.ships[0].state!.deadline = "deadline 10-17 17:23 (残り 1h54m)";
@@ -129,7 +150,7 @@ describe("OverviewPage", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(d)));
     const { container } = render(<OverviewPage />);
     expect(await screen.findByText("止まっている艦 (1)")).toBeInTheDocument();
-    const details = container.querySelector("details")!;
+    const details = container.querySelector("details[class*=stopped]")!;
     expect(details).not.toHaveAttribute("open");
     expect(details.querySelector("summary")).toHaveTextContent("old");
     expect(details.querySelector("summary")).toHaveTextContent("最後の動き 137h00m前");
@@ -194,11 +215,12 @@ describe("OverviewPage", () => {
     ];
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(d)));
     const { container } = render(<OverviewPage />);
-    expect(await screen.findByText("spin_suspected")).toHaveClass(status.red);
+    expect(await screen.findByText("送信の空回り")).toHaveClass(status.red);
+    expect(screen.getByText("spin_suspected")).toBeInTheDocument();   // 種類名は小さく添える
     const old = container.querySelector("details[class*=oldAnomalies]")!;
     expect(old).not.toHaveAttribute("open");
     expect(old.querySelector("summary")).toHaveTextContent("24 時間より前の異常 (1 件)");
-    expect(screen.getByText(/pr_conflict/)).not.toHaveClass(status.red);
+    expect(screen.getByText("PR が衝突")).not.toHaveClass(status.red);
     expect(old.textContent).toContain("昨日");
   });
 
@@ -208,5 +230,30 @@ describe("OverviewPage", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(d)));
     render(<OverviewPage />);
     expect(await screen.findByText("24 時間以内の異常は無い")).toBeInTheDocument();
+  });
+
+  it("1 時間より前の異常は赤を弱め、長い本文は開いて全文を読める", async () => {
+    const d = data();
+    const now = d.generated_at;
+    const long = "長い本文 ".repeat(40);
+    d.ships[0].state!.anomalies = [{ kind: "pr_merge_failed", ts: now - 3 * 3600, summary: long }];
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(d)));
+    render(<OverviewPage />);
+    expect(await screen.findByText("PR の merge に失敗")).not.toHaveClass(status.red);
+    const btn = screen.getByRole("button", { name: "全文を開く" });
+    expect(btn).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(btn);
+    expect(screen.getByRole("button", { name: "たたむ" })).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("memory の棚卸しと席の文脈量は畳み、要約 1 行に近い席・目安を出す", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(data())));
+    const { container } = render(<OverviewPage />);
+    await screen.findByText("owner 宛て未読 2");
+    const folds = [...container.querySelectorAll("details[class*=fold]")];
+    expect(folds).toHaveLength(2);
+    for (const f of folds) expect(f).not.toHaveAttribute("open");
+    expect(folds[0].querySelector("summary")).toHaveTextContent("棚卸しの目安に達した");
+    expect(folds[1].querySelector("summary")).toHaveTextContent("rotate が近い");
   });
 });
