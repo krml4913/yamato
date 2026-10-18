@@ -39,3 +39,9 @@
 .section { margin: 1.5rem 0 0; }
 .section h2, .section h3 { margin: 0 0 0.5rem; }
 .dangerItem { display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; align-items: center; margin: 0.5rem 0; }
+
+/* 狭い幅では本文の欄を全幅にして、ボタンを下に回す */
+@media (max-width: 600px) {
+  .row label.sendBody { flex: 1 1 100%; flex-wrap: wrap; }
+  .sendBody textarea { flex: 1 1 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
+}
