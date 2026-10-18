@@ -87,7 +87,7 @@ class ValidatorTest(unittest.TestCase):
 
 
 class OpenApiDocTest(unittest.TestCase):
-    PATHS = ["/api/v1/overview", "/api/v1/fleet", "/api/v1/ships/{name}/config", "/api/v1/ships/{name}/files/{file}",
+    PATHS = ["/api/v1/overview", "/api/v1/fleet", "/api/v1/ships/{name}/config", "/api/v1/ships/{name}/files/{file}", "/api/v1/ships/{name}/items/{id}",
              "/api/v1/edit/preview", "/api/v1/edit/commit", "/api/v1/ops/{op}"]
 
     def test_version_and_paths(self):

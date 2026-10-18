@@ -27,6 +27,7 @@ from . import board as board_mod
 from .decide import _epoch
 from .web import edit, md_edit, ops, seat_ops, ship_ops, teamedit  # noqa: F401  (md_edit・seat_ops・ship_ops・teamedit は import で RESOLVERS・OPERATIONS に足される)
 from .web import files as web_files
+from .web import items as web_items
 from .web import static
 from .util import YamatoError, fmt_span, fmt_time, today
 from .worktree import field_map
@@ -228,6 +229,7 @@ TOKEN_HEADER = "X-Yamato-Token"
 TOKEN_META = "yamato-token"
 MAX_BODY = 1024 * 1024
 SHIP_FILE = re.compile(r"^/api/v1/ships/([^/]+)/files/([^/]+)$")
+SHIP_ITEM = re.compile(r"^/api/v1/ships/([^/]+)/items/([^/]+)$")
 
 
 def overview(ships: dict[str, Path], by: dict, now: float, agents_error: str | None = None) -> dict:
@@ -274,6 +276,20 @@ def ship_file(name: str, file: str) -> tuple[int, dict]:
     return 200, body
 
 
+def ship_item(name: str, item_id: str) -> tuple[int, dict]:
+    """``items/{id}``: 艦は ``admiral.find_ship`` で。id は形を検査してから board/items・board/archive で引く。"""
+    shipdir = admiral.find_ship(name)
+    if shipdir is None:
+        return 404, _error("not_found", "その艦は無い", name)
+    try:
+        body = web_items.read(shipdir, item_id)
+    except (OSError, YamatoError) as ex:
+        return 500, _error("unreadable", "項目を読めなかった", type(ex).__name__)
+    if body is None:
+        return 404, _error("not_found", "その項目は無い", item_id)
+    return 200, body
+
+
 def api_get(path: str) -> tuple[int, dict]:
     """``/api/v1/`` 以下の GET を (status, JSON にする値) にする。HTTP なし。"""
     if path == API_OVERVIEW:
@@ -289,6 +305,9 @@ def api_get(path: str) -> tuple[int, dict]:
     m = SHIP_FILE.match(path)
     if m:
         return ship_file(unquote(m.group(1)), unquote(m.group(2)))
+    m = SHIP_ITEM.match(path)
+    if m:
+        return ship_item(unquote(m.group(1)), unquote(m.group(2)))
     m = re.fullmatch(r"/api/v1/ships/([^/]+)/config", path)
     if m:
         return ship_config_get(unquote(m.group(1)))
