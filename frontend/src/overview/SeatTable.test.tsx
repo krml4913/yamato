@@ -120,3 +120,15 @@ describe("SeatTable の横スクロール", () => {
     expect(table?.parentElement?.className).toMatch(/scroll/);
   });
 });
+
+describe("要対応の凡例", () => {
+  it("開くと入れ物の切れる absolute でなく画面に対して置き、スクロールで閉じる", () => {
+    render(<SeatTable ship="dev" seats={seats.slice(0, 1)} now={0} />);
+    fireEvent.click(screen.getByRole("button", { name: "要対応の見方" }));
+    const note = screen.getByRole("note");
+    expect(note.style.top).not.toBe("");
+    expect(note.style.left).not.toBe("");
+    fireEvent.scroll(window);
+    expect(screen.queryByRole("note")).toBeNull();
+  });
+});
