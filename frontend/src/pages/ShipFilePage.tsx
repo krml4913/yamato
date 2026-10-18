@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { getShipFile, type ShipFile } from "../api/files";
 import { editToken } from "../api/client";
 import { Markdown } from "../markdown/Markdown";
+import { SavedNotice } from "../edit/SaveBar";
 import { MdEditor } from "./MdEditor";
 
 // roles/*.md・charter.md・knowledge.md を markdown で出す。--edit で起動していれば role・charter は直せる
@@ -11,6 +12,7 @@ export function ShipFilePage() {
   const { name = "", file = "" } = useParams();
   const [state, setState] = useState<{ key: string; file?: ShipFile; error?: string }>({ key: "" });
   const [reload, setReload] = useState(0);
+  const [savedKey, setSavedKey] = useState<string | null>(null);
   const key = `${name}\n${file}`;
   const [editKey, setEditKey] = useState<string | null>(null);
   const editing = editKey === key;   // 別の file に移ったら編集は閉じる
@@ -30,10 +32,11 @@ export function ShipFilePage() {
     <>
       <p><Link to={`/ship/${encodeURIComponent(name)}`}>← {name}</Link></p>
       <h1>{file}</h1>
+      {savedKey === key && !editing && <SavedNotice />}
       {cur.error && <p role="alert">読めない: {cur.error}</p>}
       {cur.file && !(editing && cur.file.kind !== "knowledge") && (
         <>
-          {editToken() && cur.file.kind !== "knowledge" && <p><button onClick={() => setEditing(true)}>編集</button></p>}
+          {editToken() && cur.file.kind !== "knowledge" && <p><button onClick={() => { setSavedKey(null); setEditing(true); }}>編集</button></p>}
           <Markdown text={cur.file.text} />
         </>
       )}
@@ -42,7 +45,7 @@ export function ShipFilePage() {
           ship={name}
           file={file}
           initial={cur.file.text}
-          onSaved={() => { setEditing(false); setReload((n) => n + 1); }}
+          onSaved={() => { setEditing(false); setSavedKey(key); setReload((n) => n + 1); }}
           onCancel={() => setEditing(false)}
         />
       )}

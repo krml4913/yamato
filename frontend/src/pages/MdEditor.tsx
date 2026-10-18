@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { commitEdit, EditApiError, previewEdit, type EditPreview } from "../api/client";
+import { DiffView } from "../edit/DiffView";
+import { SaveBar } from "../edit/SaveBar";
 import styles from "./mdEditor.module.css";
 
 // 書き込みは 2 段。差分 (preview) を見てから確定 (commit) する。
@@ -15,6 +17,8 @@ export function MdEditor(props: {
   const [pv, setPv] = useState<EditPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const dirty = text !== props.initial;
 
   async function run(f: () => Promise<void>) {
     setBusy(true);
@@ -45,17 +49,24 @@ export function MdEditor(props: {
         value={text}
         onChange={(e) => { setText(e.target.value); setPv(null); }}
       />
-      {error && <p role="alert" className={styles.error}>{error}</p>}
-      {pv && !pv.valid && (
-        <ul role="alert" className={styles.error}>{pv.errors.map((m) => <li key={m}>{m}</li>)}</ul>
-      )}
-      {pv && pv.valid && !pv.changed && <p>変更なし</p>}
-      {pv && pv.changed && <pre className={styles.diff} aria-label="差分">{pv.diff}</pre>}
-      <div className={styles.actions}>
+      <SaveBar
+        count={dirty ? "変更あり" : "変更なし"}
+        error={error}
+        panel={
+          <>
+            {pv && !pv.valid && (
+              <ul role="alert" className={styles.error}>{pv.errors.map((m) => <li key={m}>{m}</li>)}</ul>
+            )}
+            {pv && pv.valid && !pv.changed && <p>変更なし</p>}
+            {pv && pv.changed && pv.valid && <DiffView diff={pv.diff} />}
+          </>
+        }
+      >
         <button onClick={showDiff} disabled={busy}>差分を見る</button>
         <button onClick={confirm} disabled={busy || !pv || !pv.valid || !pv.changed}>確定</button>
+        <button onClick={() => { setText(props.initial); setPv(null); setError(null); }} disabled={busy || !dirty}>元に戻す</button>
         <button onClick={props.onCancel} disabled={busy}>やめる</button>
-      </div>
+      </SaveBar>
     </div>
   );
 }

@@ -6,6 +6,8 @@ import status from "../status.module.css";
 import styles from "./config.module.css";
 import { FieldHead, groupFields, Groups, type Field } from "./configGroups";
 import form from "../form/form.module.css";
+import { DiffView } from "../edit/DiffView";
+import { SaveBar, SavedNotice } from "../edit/SaveBar";
 
 type Draft = Record<string, Json | undefined>;
 
@@ -39,6 +41,12 @@ export function ConfigForm({ name, config, saved, onSaved, onDirty }: {
     setError(null);
   };
 
+  const revert = () => {
+    setDraft(base);
+    setPrev(null);
+    setError(null);
+  };
+
   async function check() {
     setBusy(true);
     setError(null);
@@ -69,11 +77,6 @@ export function ConfigForm({ name, config, saved, onSaved, onDirty }: {
 
   return (
     <>
-      {saved && (
-        <p role="status" className={form.saved}>
-          保存した。次の yamato up で効く (自動では up しない)。
-        </p>
-      )}
       <Groups groups={groupFields(config.fields)} render={(f) => {
         const v = draft[f.key];
         const schema = f.schema as Schema | null;
@@ -104,23 +107,29 @@ export function ConfigForm({ name, config, saved, onSaved, onDirty }: {
           </section>
         );
       }} />
-      <div className={form.actions}>
-        <button type="button" disabled={busy || ops.length === 0} onClick={check}>差分を確認</button>
-        <button type="button" disabled={busy || !prev || !prev.valid || !prev.changed} onClick={save}>保存</button>
-      </div>
-      {error && <p role="alert" className={styles.error}>{error}</p>}
-      {prev && !prev.valid && (
-        <div role="alert" className={styles.error}>
-          <p>検証に通らない。直してからもう一度確認する。</p>
-          <ul>{prev.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
-        </div>
+      {saved && <SavedNotice />}
+      {ops.length > 0 && (
+        <SaveBar
+          count={`${ops.length} 項目を変えた`}
+          error={error}
+          panel={
+            <>
+              {prev && !prev.valid && (
+                <div role="alert" className={styles.error}>
+                  <p>検証に通らない。直してからもう一度確認する。</p>
+                  <ul>{prev.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
+                </div>
+              )}
+              {prev && prev.valid && (prev.changed ? <DiffView diff={prev.diff} /> : <p className={status.dim}>変更なし</p>)}
+            </>
+          }
+        >
+          <button type="button" disabled={busy} onClick={check}>差分を確認</button>
+          <button type="button" disabled={busy || !prev || !prev.valid || !prev.changed} onClick={save}>保存</button>
+          <button type="button" disabled={busy} onClick={revert}>元に戻す</button>
+        </SaveBar>
       )}
-      {prev && prev.valid && (
-        <>
-          <h2>差分</h2>
-          {prev.changed ? <pre className={form.diff}>{prev.diff}</pre> : <p className={status.dim}>変更なし</p>}
-        </>
-      )}
+      {ops.length === 0 && error && <p role="alert" className={styles.error}>{error}</p>}
     </>
   );
 }
