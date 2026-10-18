@@ -349,7 +349,7 @@ export interface components {
                 text: string;
                 detail: string;
             }[];
-            /** @description 作業ログの最後の 1 行。無ければ空文字。 */
+            /** @description 使用量の行 (「使用量 」で始まる本文) を飛ばした最後の作業の行。無ければ空文字。 */
             log: string;
             /** @description 今日のトークン。 */
             tokens: number;

@@ -59,6 +59,17 @@ describe("OverviewPage", () => {
     expect(screen.getAllByText(/要対応の列/)).toHaveLength(1);   // 凡例はページに 1 回
   });
 
+  it("作業ログの列は行が無ければ「-」", async () => {
+    const d = data();
+    d.ships[0].state!.seats = [seat({ name: "quiet", log: "", active: [], reviewing: [], unread: 0 })];
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(d)));
+    render(<OverviewPage />);
+    await screen.findByText("稼働 1/1");
+    const row = screen.getAllByText("quiet").map((e) => e.closest("tr")).find((r) => r)!;
+    const cells = row.querySelectorAll("td");
+    expect(cells[cells.length - 1]).toHaveTextContent(/^-$/);
+  });
+
   it("艦の頭に要点のバッジを出し、0 件のものは出さない", async () => {
     const d = data();
     d.ships[0].state!.deadline = "deadline 10-17 17:23 (残り 1h54m)";

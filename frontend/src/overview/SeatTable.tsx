@@ -77,7 +77,7 @@ function SeatRow({ s, now, onOp, onStop }: { s: Seat; now: number; onOp: (() => 
           </span></>
         )}
       </td>
-      <td className={status.dim}>{s.log.slice(0, 160)}</td>
+      <td className={status.dim}>{s.log ? s.log.slice(0, 160) : "-"}</td>
       {onOp && (
         <td>
           {s.alive && onStop && (
