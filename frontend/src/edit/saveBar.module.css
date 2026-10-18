@@ -1,0 +1,13 @@
+.bar { position: sticky; bottom: 0; z-index: 5; margin: 1rem 0 0; padding: 0.5rem 0.75rem; background: var(--color-card); border: 1px solid var(--color-line-strong); border-radius: 4px; box-shadow: 0 -2px 8px #0003; display: grid; gap: 0.5rem; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.count { font-size: 14px; font-weight: 600; margin-right: auto; }
+.row button { font-size: 14px; min-height: 2rem; }
+.panel { max-height: 40vh; overflow: auto; display: grid; gap: 0.5rem; }
+.panel p, .panel ul { margin: 0; }
+.error { color: var(--color-danger); }
+.saved { position: sticky; bottom: 0; z-index: 5; margin: 1rem 0 0; padding: 0.5rem 0.75rem; font-size: 14px; background: var(--color-card); border: 1px solid var(--color-ok); border-left-width: 6px; border-radius: 4px; box-shadow: 0 -2px 8px #0003; }
+.diff { margin: 0; padding: 0.5rem 0; background: var(--color-chip); border-radius: 4px; overflow-x: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+.line { display: block; white-space: pre; padding: 0 0.75rem; }
+.add { background: #16a34a33; }
+.del { background: #dc262633; }
+.hunk { opacity: 0.6; }
