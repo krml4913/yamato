@@ -24,13 +24,42 @@
 .stopped[open] > section { margin-top: 4px; }
 .groupHead { font-size: 14px; margin: 20px 0 4px; opacity: 0.75; font-weight: 600; }
 
-/* 節の重み: 表 > board > PR > 日報 > その他 */
+/* 節: 見出しを本文より目立たせ、節ごとに区切る */
 .secTable h3 { font-size: 16px; margin: 14px 0 6px; }
-.secBoard h3 { font-size: 15px; margin: 16px 0 4px; }
-.secPr h3 { font-size: 14px; margin: 14px 0 4px; opacity: 0.85; }
-.secReport h3 { font-size: 13px; margin: 14px 0 4px; opacity: 0.7; }
-.secMisc { font-size: 13px; }
-.secMisc h3 { font-size: 13px; margin: 10px 0 2px; opacity: 0.55; font-weight: 600; }
+.sec { margin: 14px 0 0; padding-top: 8px; border-top: 1px solid var(--color-line); min-width: 0; }
+.sec h3 { font-size: 16px; margin: 0 0 6px; }
+.secNote { margin-left: 8px; font-size: 13px; font-weight: normal; opacity: 0.7; }
+.sec ul { margin: 4px 0; padding-left: 1.2rem; }
+.sec li { overflow-wrap: anywhere; }
+
+/* 表の下の段組: 広い画面では board と異常を左右に、狭い画面では 1 列 */
+.cols, .cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 24px; }
+.colMain, .colSide { min-width: 0; }
+@media (min-width: 900px) {
+  .cols { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+  .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* 前回の日報の「一言」「明日」 */
+.label { margin: 8px 0 2px; font-size: 13px; font-weight: 700; color: var(--color-warn); letter-spacing: 0.04em; }
+.pre { margin: 0 0 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* 普段は見ない節: 要約 1 行だけ出し、開けば中身 */
+.fold > summary { cursor: pointer; display: flex; flex-wrap: wrap; gap: 2px 12px; align-items: baseline; }
+.foldTitle { font-size: 16px; font-weight: 700; }
+.foldSum { font-size: 13px; opacity: 0.85; }
+
+/* 直近の異常 */
+.anomalies { list-style: none; padding-left: 0 !important; margin: 4px 0; }
+.anomaly { padding: 4px 0; border-bottom: 1px dotted var(--color-line); }
+.anomalyHead { display: flex; flex-wrap: wrap; gap: 0 8px; align-items: baseline; }
+.staleKind { opacity: 0.75; font-weight: 600; }
+.oldKind { opacity: 0.7; }
+.rawKind { font-size: 13px; opacity: 0.55; font-family: ui-monospace, monospace; }
+.anomalyTime { font-size: 13px; opacity: 0.65; margin-left: auto; }
+.anomalyBody { overflow-wrap: anywhere; white-space: pre-wrap; }
+.clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.more { font-size: 13px; background: none; border: 0; padding: 0; color: inherit; text-decoration: underline; cursor: pointer; opacity: 0.75; }
 
 /* 艦の名前は艦のページへのリンク。見出しの見た目は変えない */
 .shipLink { color: inherit; text-decoration: none; }

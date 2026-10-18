@@ -1,6 +1,7 @@
 import { CONTEXT_NEAR } from "./format";
 import type { Seat, ShipState } from "./types";
 import status from "../status.module.css";
+import styles from "./overview.module.css";
 
 function Ctx({ ctx }: { ctx: Seat["context"] }) {
   if (!ctx) return <>-</>;
@@ -15,29 +16,27 @@ function Ctx({ ctx }: { ctx: Seat["context"] }) {
   );
 }
 
-// 前回の日報
+// 前回の日報。「一言」「明日」は見出しにして地の文から分ける
 export function Report({ g }: { g: ShipState }) {
   const r = g.report;
   return (
-    <>
-      <h3>前回の日報</h3>
+    <div className={styles.sec}>
+      <h3>前回の日報{r && <span className={styles.secNote}>{r.date}</span>}</h3>
       {r ? (
-        <p style={{ whiteSpace: "pre-wrap" }}>
-          <b>{r.date}</b>
-          {r.word && <><br />一言: {r.word}</>}
-          {r.tomorrow && <><br />明日: {r.tomorrow}</>}
-        </p>
+        <>
+          {r.word && <><h4 className={styles.label}>一言</h4><p className={styles.pre}>{r.word}</p></>}
+          {r.tomorrow && <><h4 className={styles.label}>明日</h4><p className={styles.pre}>{r.tomorrow}</p></>}
+        </>
       ) : (
         <p className={status.dim}>まだ無い</p>
       )}
-    </>
+    </div>
   );
 }
 
-// 孤児・memory の棚卸しの目安・文脈量。いちばん軽い節
-export function Misc({ g }: { g: ShipState }) {
+export function Orphans({ g }: { g: ShipState }) {
   return (
-    <>
+    <div className={styles.sec}>
       <h3>孤児 (担当が落ちて active のまま)</h3>
       {g.orphans.length ? (
         <ul>
@@ -48,7 +47,23 @@ export function Misc({ g }: { g: ShipState }) {
       ) : (
         <p className={status.dim}>無い</p>
       )}
-      <h3>memory の棚卸し</h3>
+    </div>
+  );
+}
+
+// memory の棚卸し。普段は見ないので畳む。目安に達した役割があれば畳んでいても要約に出す
+export function Inventory({ g }: { g: ShipState }) {
+  const due = g.memory.filter((m) => m.due).map((m) => m.role ?? "knowledge");
+  const total = g.memory.reduce((n, m) => n + m.count, 0);
+  return (
+    <details className={`${styles.sec} ${styles.fold}`}>
+      <summary>
+        <span className={styles.foldTitle}>memory の棚卸し</span>
+        <span className={styles.foldSum}>
+          候補 {total} 件
+          {due.length > 0 && <> / <span className={status.warn}>棚卸しの目安に達した: {due.join(", ")}</span></>}
+        </span>
+      </summary>
       <ul>
         {g.memory.map((m) => (
           <li key={m.role ?? "knowledge"}>
@@ -58,12 +73,28 @@ export function Misc({ g }: { g: ShipState }) {
           </li>
         ))}
       </ul>
-      <h3>席の文脈量 (rotate の閾値に対して)</h3>
+    </details>
+  );
+}
+
+// 席の文脈量 (rotate の閾値に対して)。普段は見ないので畳む。閾値に近い席は畳んでいても要約に出す
+export function ContextUse({ g }: { g: ShipState }) {
+  const near = g.seats.filter((s) => s.context?.limit && s.context.tokens / s.context.limit >= CONTEXT_NEAR);
+  return (
+    <details className={`${styles.sec} ${styles.fold}`}>
+      <summary>
+        <span className={styles.foldTitle}>席の文脈量 (rotate の閾値に対して)</span>
+        <span className={styles.foldSum}>
+          {near.length > 0
+            ? <span className={status.warn}>rotate が近い: {near.map((s) => s.name).join(", ")}</span>
+            : "近い席は無い"}
+        </span>
+      </summary>
       <ul>
         {g.seats.map((s) => (
           <li key={s.name}><b>{s.name}</b> <Ctx ctx={s.context} /></li>
         ))}
       </ul>
-    </>
+    </details>
   );
 }
