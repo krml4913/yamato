@@ -2,10 +2,11 @@ import { useState } from "react";
 import { editToken } from "../api/client";
 import { OpPanel, type OpSpec } from "../ops/OpPanel";
 import { Legend } from "./Legend";
-import { fmtSpan, fmtTime, fmtTokens } from "./format";
+import { fmtAgo, fmtTime, fmtTokens, shortenIds } from "./format";
 import type { Seat } from "./types";
 import status from "../status.module.css";
 import table from "../table.module.css";
+import styles from "./SeatTable.module.css";
 
 // 席の操作。--edit で起動したとき (index.html にトークンがあるとき) だけ入口を出す
 function seatOp(ship: string, s: Seat): OpSpec {
@@ -30,7 +31,7 @@ export function SeatTable({ ship, seats, now }: { ship: string; seats: Seat[]; n
   const canOp = editToken() !== null;
   return (
     <>
-      <table className={table.table}>
+      <table className={`${table.table} ${styles.seats}`}>
         <thead>
           <tr>
             <th>席</th><th>生存</th><th>status</th><th>最終</th><th>担当 (active)</th>
@@ -55,14 +56,16 @@ function SeatRow({ s, now, onOp, onStop }: { s: Seat; now: number; onOp: (() => 
   return (
     <tr>
       <td><b>{s.name}</b> <span className={status.dim}>{s.shift}</span></td>
-      <td>{s.alive ? <span className={status.ok}>pid {s.pid}</span> : <span className={status.dim}>止</span>}</td>
-      <td>{s.status ?? "-"}{s.waiting_for && <> <span className={status.warn}>{s.waiting_for}</span></>}</td>
       <td>
-        {s.last ? <>{fmtTime(s.last)} <span className={status.dim}>({fmtSpan(now - s.last)}前)</span></> : "-"}
+        {s.alive
+          ? <span className={status.ok} title={s.pid != null ? `pid ${s.pid}` : undefined}>● 生</span>
+          : <span className={status.dim}>○ 止</span>}
       </td>
+      <td>{s.status ?? "-"}{s.waiting_for && <> <span className={status.warn}>{s.waiting_for}</span></>}</td>
+      <td title={s.last ? fmtTime(s.last) : undefined}>{s.last ? fmtAgo(now - s.last) : "-"}</td>
       <td>{active}</td>
       <td>{s.unread || "-"}</td>
-      <td>
+      <td className={styles.flags}>
         {s.flags.map((f, i) => (
           <div key={i}><span className={f.level === "red" ? status.red : status.warn} title={f.detail}>{f.text}</span></div>
         ))}
@@ -76,7 +79,7 @@ function SeatRow({ s, now, onOp, onStop }: { s: Seat; now: number; onOp: (() => 
           </span></>
         )}
       </td>
-      <td className={status.dim}>{s.log ? s.log.slice(0, 160) : "-"}</td>
+      <td className={`${status.dim} ${styles.log}`} title={s.log || undefined}>{s.log ? shortenIds(s.log.slice(0, 160)) : "-"}</td>
       {onOp && (
         <td>
           {s.alive && onStop && (

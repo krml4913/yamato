@@ -1,0 +1,9 @@
+/* 席の表。見出しと短い値は折り返さず、長い作業ログは 1 行に省略して全文は title に回す */
+.seats th { white-space: nowrap; }
+.seats td { white-space: nowrap; }
+.seats td.log { max-width: 32em; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 1000px) {
+  .seats td.log { max-width: 20em; }
+}
+/* 要対応の文は長いので折り返してよい。行の高さは文の行数で決まる */
+.seats td.flags { white-space: normal; min-width: 16em; }
