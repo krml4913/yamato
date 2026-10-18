@@ -1,7 +1,10 @@
 .row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.5rem 0; }
 .row label { display: flex; gap: 0.25rem; align-items: center; }
 .wide { width: 14em; }
-.runState { margin: 0 0 0.5rem; font-weight: 600; }
+.runStateRow { margin: 0 0 0.5rem; }
+/* 状態は見出しでなくバッジで出す (文字は本文と同じ大きさ・太字にしない) */
+.runState { display: inline-block; border-radius: 10px; padding: 1px 9px; font-size: 14px; background: var(--color-chip); }
+.runStateOn { color: var(--color-ok); }
 .hint { font-size: 13px; opacity: 0.75; margin: 0; }
 .quiet { opacity: 0.55; }
 

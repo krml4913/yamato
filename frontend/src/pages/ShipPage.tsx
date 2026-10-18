@@ -46,7 +46,7 @@ function ShipOps({ ship, running }: { ship: string; running: boolean | null }) {
   }, [ship]);
 
   const ask = (spec: Omit<OpSpec, "ship">) => setPending({ ship, ...spec });
-  // 動いている艦では up、止まっている艦では down を目立たせない (押せるが、今は要らない側)
+  // 動いている艦では up、止まっている艦では down・extend を目立たせない (押せるが、今は要らない側)
   const quiet = (hide: boolean | null) => (hide ? styles.quiet : undefined);
   return (
     <>
@@ -70,8 +70,10 @@ function ShipOps({ ship, running }: { ship: string; running: boolean | null }) {
       </div>
       <div className={styles.section} role="group" aria-label="艦の操作">
         <h3>艦の操作</h3>
-        <p className={styles.runState}>
-          {running === null ? "艦が動いているかは読めなかった" : running ? "いま動いている" : "いま止まっている"}
+        <p className={styles.runStateRow}>
+          <span className={`${styles.runState} ${running ? styles.runStateOn : ""}`} role="status">
+            {running === null ? "艦が動いているかは読めなかった" : running ? "いま動いている" : "いま止まっている"}
+          </span>
         </p>
         <div className={styles.usual} role="group" aria-label="普段の操作">
           <h4>普段の操作</h4>
@@ -85,7 +87,7 @@ function ShipOps({ ship, running }: { ship: string; running: boolean | null }) {
           </div>
           <div className={styles.row}>
             <label>延ばす時間 <input className={styles.wide} value={span} onChange={(e) => setSpan(e.target.value)} placeholder="例 1h" /></label>
-            <button onClick={() => ask({
+            <button className={quiet(running === false)} onClick={() => ask({
               op: "extend", params: { span }, title: `艦 ${ship} の deadline を延ばす`, confirmLabel: "延ばす",
               detail: "稼働時間の上限を延ばす (yamato extend)。起動していない艦は断られる。",
             })}>extend</button>
