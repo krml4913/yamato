@@ -1,8 +1,9 @@
-import { act, fireEvent, render as rtlRender, screen } from "@testing-library/react";
+import { act, fireEvent, render as rtlRender, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import type { ReactElement } from "react";
 import { REFRESH_MS, OverviewPage } from "./OverviewPage";
 import type { Overview } from "../api/client";
+import { REFRESH_EVENT } from "../api/refresh";
 import status from "../status.module.css";
 
 const seat = (over: Record<string, unknown>) => ({
@@ -101,6 +102,24 @@ describe("OverviewPage", () => {
     const row = screen.getAllByText("quiet").map((e) => e.closest("tr")).find((r) => r)!;
     const cells = row.querySelectorAll("td");
     expect(cells[cells.length - 1]).toHaveTextContent(/^-$/);
+  });
+
+  it("残りの無い deadline の表示 (未起動) はバッジだけに出し、地の文で繰り返さない", async () => {
+    const d = data();
+    d.ships[0].state!.deadline = "未起動 (deadline なし)";
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(d)));
+    render(<OverviewPage />);
+    await screen.findByText("稼働 2/2");
+    expect(screen.getAllByText(/未起動 \(deadline なし\)/)).toHaveLength(1);
+  });
+
+  it("操作が成功した合図で、定期更新を待たずに読み直す", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() => Promise.resolve(new Response(JSON.stringify(data()))));
+    render(<OverviewPage />);
+    await screen.findByText("稼働 2/2");
+    const before = fetchSpy.mock.calls.length;
+    window.dispatchEvent(new Event(REFRESH_EVENT));
+    await waitFor(() => expect(fetchSpy.mock.calls.length).toBe(before + 1));
   });
 
   it("艦の頭に要点のバッジを出し、0 件のものは出さない", async () => {

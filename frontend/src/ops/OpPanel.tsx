@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { requestRefresh } from "../api/refresh";
 import { EditApiError, runOp, type OpResult } from "../api/client";
 import styles from "./ops.module.css";
 
@@ -18,11 +19,31 @@ export function OpPanel({ spec, onClose, onDone }: { spec: OpSpec; onClose: () =
   const [result, setResult] = useState<OpResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const panel = useRef<HTMLElement>(null);
+  // 押したボタン。閉じたらフォーカスをここに戻す
+  const opener = useRef<Element | null>(document.activeElement);
+
+  // 出たらそこへスクロールしてフォーカスを移す。結果に切り替わるときも (確定のボタンが消えるので) 同じ。
+  useEffect(() => {
+    const el = panel.current;
+    if (!el) return;
+    el.scrollIntoView?.({ block: "nearest" });
+    el.focus({ preventScroll: true });
+  }, [result]);
+
+  function close() {
+    onClose();
+    const o = opener.current;
+    if (o instanceof HTMLElement && o.isConnected) o.focus();
+  }
+
   async function run() {
     setBusy(true);
     setError(null);
     try {
-      setResult(await runOp(spec.op, { ship: spec.ship, params: spec.params, confirmed: true }));
+      const r = await runOp(spec.op, { ship: spec.ship, params: spec.params, confirmed: true });
+      setResult(r);
+      if (r.exit_code === 0 && !r.timed_out) requestRefresh();
       onDone?.();
     } catch (e) {
       setError(e instanceof EditApiError || e instanceof Error ? e.message : String(e));
@@ -32,7 +53,7 @@ export function OpPanel({ spec, onClose, onDone }: { spec: OpSpec; onClose: () =
   }
 
   return (
-    <section className={styles.panel} role="region" aria-label={spec.title}>
+    <section ref={panel} tabIndex={-1} className={styles.panel} role="region" aria-label={spec.title}>
       <h3>{spec.title}</h3>
       {!result && (
         <>
@@ -54,7 +75,7 @@ export function OpPanel({ spec, onClose, onDone }: { spec: OpSpec; onClose: () =
       )}
       <div className={styles.actions}>
         {!result && <button onClick={run} disabled={busy}>{spec.confirmLabel}</button>}
-        <button onClick={onClose} disabled={busy}>{result ? "閉じる" : "やめる"}</button>
+        <button onClick={close} disabled={busy}>{result ? "閉じる" : "やめる"}</button>
       </div>
     </section>
   );

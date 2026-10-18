@@ -217,6 +217,20 @@ describe("艦ページの操作", () => {
     expect(JSON.parse(ops(fetchMock)[1][1].body).params).toEqual({ span: "1h" });
   });
 
+  it("up と extend の入力はそれぞれ名前のあるまとまりで囲み、入力に名前がある", async () => {
+    setToken(true);
+    page();
+    await screen.findByRole("group", { name: "艦の操作" });
+    const up = screen.getByRole("group", { name: "艦を起こす" });
+    expect(within(up).getByRole("textbox", { name: "稼働時間" })).toBeTruthy();
+    expect(within(up).getByRole("textbox", { name: "一緒に起こす席" })).toBeTruthy();
+    expect(within(up).getByRole("button", { name: "up" })).toBeTruthy();
+    const ext = screen.getByRole("group", { name: "稼働時間を延ばす" });
+    expect(within(ext).getByRole("textbox", { name: "延ばす時間" })).toBeTruthy();
+    expect(within(ext).getByRole("button", { name: "extend" })).toBeTruthy();
+    expect(screen.getByRole("textbox", { name: "本文 (席に送る)" })).toBeTruthy();
+  });
+
   it("send は席と本文をそのまま params で送り、出力は text で描く", async () => {
     setToken(true);
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({

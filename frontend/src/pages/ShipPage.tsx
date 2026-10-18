@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useRefreshRequest } from "../api/refresh";
 import { Link, useParams } from "react-router-dom";
 import { shipFilePath } from "../api/files";
 import { editToken, getOverview, getShipConfig, type Overview, type ShipConfig } from "../api/client";
@@ -61,7 +62,7 @@ function ShipOps({ ship, running }: { ship: string; running: boolean | null }) {
           ) : (
             <input value={seat} onChange={(e) => setSeat(e.target.value)} placeholder="例 pm" />
           )}</label>
-          <label className={styles.sendBody}>本文 <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={3} cols={48} /></label>
+          <label className={styles.sendBody}>本文 <textarea aria-label="本文 (席に送る)" value={message} onChange={(e) => setMessage(e.target.value)} rows={3} cols={48} /></label>
           <button onClick={() => ask({
             op: "send", params: { seat, message }, title: `席 ${seat || "(未入力)"} に送る`, confirmLabel: "送る",
             detail: `owner として席にメッセージを送る (yamato send --from owner)。止まっている席は起きる。本文: ${message}`,
@@ -77,21 +78,27 @@ function ShipOps({ ship, running }: { ship: string; running: boolean | null }) {
         </p>
         <div className={styles.usual} role="group" aria-label="普段の操作">
           <h4>普段の操作</h4>
-          <div className={styles.row}>
-            <label>稼働時間 <input className={styles.wide} value={forSpan} onChange={(e) => setForSpan(e.target.value)} placeholder="例 3h (省くと既定)" /></label>
-            <label>一緒に起こす席 <input className={styles.wide} value={seats} onChange={(e) => setSeats(e.target.value)} placeholder="例 impl,review" /></label>
+          <fieldset className={styles.opGroup}>
+            <legend>艦を起こす</legend>
+            <div className={styles.row}>
+            <label>稼働時間 <input aria-label="稼働時間" className={styles.wide} value={forSpan} onChange={(e) => setForSpan(e.target.value)} placeholder="例 3h (省くと既定)" /></label>
+            <label>一緒に起こす席 <input aria-label="一緒に起こす席" className={styles.wide} value={seats} onChange={(e) => setSeats(e.target.value)} placeholder="例 impl,review" /></label>
             <button className={quiet(running === true)} onClick={() => ask({
               op: "up", params: { for: forSpan, seats }, title: `艦 ${ship} を起動する`, confirmLabel: "起動する",
               detail: "captain の席を起こし、稼働時間の上限を設定する (yamato up)。",
             })}>up</button>
-          </div>
-          <div className={styles.row}>
-            <label>延ばす時間 <input className={styles.wide} value={span} onChange={(e) => setSpan(e.target.value)} placeholder="例 1h" /></label>
+            </div>
+          </fieldset>
+          <fieldset className={styles.opGroup}>
+            <legend>稼働時間を延ばす</legend>
+            <div className={styles.row}>
+            <label>延ばす時間 <input aria-label="延ばす時間" className={styles.wide} value={span} onChange={(e) => setSpan(e.target.value)} placeholder="例 1h" /></label>
             <button className={quiet(running === false)} onClick={() => ask({
               op: "extend", params: { span }, title: `艦 ${ship} の deadline を延ばす`, confirmLabel: "延ばす",
               detail: "稼働時間の上限を延ばす (yamato extend)。起動していない艦は断られる。",
             })}>extend</button>
-          </div>
+            </div>
+          </fieldset>
           <div className={styles.row}>
             <button className={quiet(running === false)} onClick={() => ask({
               op: "down", params: {}, title: `艦 ${ship} を終業させる`, confirmLabel: "終業を指示する",
@@ -182,6 +189,9 @@ function ShipStatus({ ship, onRunning, children }: { ship: string; onRunning: (r
   const [data, setData] = useState<Overview | null>(null);
   // 読み込みが済む (成否は問わない) まで何も出さない。済んでから出せば、操作の入力が途中で作り直されない
   const [settled, setSettled] = useState(false);
+  const [tick, setTick] = useState(0);
+  // 操作が成功したら読み直す
+  useRefreshRequest(useCallback(() => setTick((n) => n + 1), []));
   useEffect(() => {
     let live = true;
     getOverview().then(
@@ -201,7 +211,7 @@ function ShipStatus({ ship, onRunning, children }: { ship: string; onRunning: (r
     return () => {
       live = false;
     };
-  }, [ship, onRunning]);
+  }, [ship, onRunning, tick]);
   const s = data && Array.isArray(data.ships) ? data.ships.find((x) => x.name === ship) : undefined;
   if (!settled) return null;
   // 状態が読めなくても操作は出す (操作は状態に依らない)

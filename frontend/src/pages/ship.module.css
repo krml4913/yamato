@@ -9,6 +9,8 @@
 .quiet { opacity: 0.55; }
 
 .usual { margin: 0.5rem 0 1rem; }
+.opGroup { border: 1px solid var(--color-line-strong); border-radius: 6px; margin: 0.5rem 0; padding: 0 0.75rem; min-width: 0; }
+.opGroup legend { padding: 0 0.4rem; font-size: 14px; font-weight: 600; }
 .usual h3 { font-size: 14px; margin: 0 0 4px; }
 
 .dangerZone {

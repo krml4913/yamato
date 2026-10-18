@@ -123,4 +123,13 @@ describe("判断の本文を読む", () => {
     fireEvent.click(screen.getByRole("button", { name: "艦 dev の判断 D-002 の本文" }));
     expect((await screen.findByRole("alert")).textContent).toBe("その項目は無い");
   });
+
+  it("決定と理由の入力に判断の名前が付く", async () => {
+    setToken(true);
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.resolve(itemResp())));
+    render(<Waits waits={waits} />);
+    await openBody("dev", "D-002");
+    expect(screen.getByRole("textbox", { name: "判断 D-002 の決定" })).toBeTruthy();
+    expect(screen.getByRole("textbox", { name: "判断 D-002 の理由" })).toBeTruthy();
+  });
 });
