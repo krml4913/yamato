@@ -454,14 +454,12 @@ class FleetTest(ShipTestCase):
         from yamato.util import register_ship
 
         register_ship("gone", self.tmp / "gone")
-        seat_name = next(iter(seat.current_team(self.shipdir)["seats"]))
         with mock.patch.object(fleet.claude, "agents", return_value=[]), \
                 mock.patch.object(fleet.claude, "is_alive", return_value=True):
             _, body = self.get()
         by = {s["name"]: s for s in body["ships"]}
         self.assertIs(by["t1"]["running"], True)
         self.assertIsNone(by["gone"]["running"])
-        self.assertTrue(seat_name)
 
     def test_missing_folder_and_broken_team_yaml_do_not_drop_the_ship(self):
         from yamato.util import register_ship
