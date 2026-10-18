@@ -282,6 +282,9 @@ class ServerTest(unittest.TestCase):
             self.assertEqual(self.get(srv, "/"), (200, "text/html; charset=utf-8", b"<p>app</p>"))
             self.assertEqual(self.get(srv, "/ship/alpha"), (200, "text/html; charset=utf-8", b"<p>app</p>"))
             self.assertEqual(self.get(srv, "/ship/v1.2")[0], 200)   # 知らない拡張子は画面の path
+            for p in ("/ship/dev/files/charter.md", "/ship/dev/files/roles%2Fpm.md", "/ship/dev/config.json"):
+                self.assertEqual(self.get(srv, p), (200, "text/html; charset=utf-8", b"<p>app</p>"), p)
+            self.assertEqual(self.get(srv, "/other/x.md")[0], 404)   # /ship/ の外の拡張子付きは今のまま
             self.assertEqual(self.get(srv, "/assets/a.js"), (200, "text/javascript; charset=utf-8", b"1"))
             self.assertEqual(self.get(srv, "/assets/a.css")[1], "text/css; charset=utf-8")
             for p in ("/assets/missing.js", "/%2e%2e/secret.txt", "/assets/../../secret.txt"):

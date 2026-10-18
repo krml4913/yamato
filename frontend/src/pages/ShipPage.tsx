@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { shipFilePath } from "../api/files";
 import { editToken, getShipConfig, type ShipConfig } from "../api/client";
 import { OpPanel, type OpSpec } from "../ops/OpPanel";
 import styles from "./ship.module.css";
@@ -96,6 +97,30 @@ function ShipOps({ ship }: { ship: string }) {
   );
 }
 
+// ShipConfig.files に出る md (roles・charter・knowledge) の画面へのリンク。取れなければ何も出さない。
+function ShipFiles({ ship }: { ship: string }) {
+  const [files, setFiles] = useState<string[]>([]);
+  useEffect(() => {
+    let live = true;
+    getShipConfig(ship).then(
+      (c) => live && setFiles((c.files ?? []).map((f) => f.file)),
+      () => live && setFiles([]),
+    );
+    return () => {
+      live = false;
+    };
+  }, [ship]);
+  if (files.length === 0) return null;
+  return (
+    <>
+      <h2>md</h2>
+      <ul aria-label="md の一覧">
+        {files.map((f) => <li key={f}><Link to={shipFilePath(ship, f)}>{f}</Link></li>)}
+      </ul>
+    </>
+  );
+}
+
 export function ShipPage() {
   const { name } = useParams();
   const ship = name ?? "";
@@ -103,6 +128,7 @@ export function ShipPage() {
     <>
       <h1>艦: {name}</h1>
       <p><Link to={`/ship/${encodeURIComponent(ship)}/config`}>設定</Link></p>
+      <ShipFiles key={`files-${ship}`} ship={ship} />
       {editToken() !== null && <ShipOps key={ship} ship={ship} />}
     </>
   );

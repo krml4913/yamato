@@ -30,6 +30,31 @@ describe("艦ページの操作", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 
+  it("config の files に出る md へのリンクを並べる", async () => {
+    setToken(false);
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({
+      fields: [], raw: "", pending: { changed: false, keys: [] },
+      files: [
+        { file: "roles/pm.md", kind: "role", bytes: 1 },
+        { file: "charter.md", kind: "charter", bytes: 1 },
+        { file: "knowledge.md", kind: "knowledge", bytes: 1 },
+      ],
+    }), { status: 200 }))));
+    page();
+    const link = await screen.findByRole("link", { name: "roles/pm.md" });
+    expect(link.getAttribute("href")).toBe("/ship/dev/files/roles%2Fpm.md");
+    expect(screen.getByRole("link", { name: "charter.md" }).getAttribute("href")).toBe("/ship/dev/files/charter.md");
+    expect(screen.getByRole("link", { name: "knowledge.md" }).getAttribute("href")).toBe("/ship/dev/files/knowledge.md");
+  });
+
+  it("files が取れなければ一覧を出さない", async () => {
+    setToken(false);
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.resolve(new Response("{}", { status: 500 }))));
+    page();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByLabelText("md の一覧")).toBeNull();
+  });
+
   it("5 つの操作を出す", () => {
     setToken(true);
     page();
