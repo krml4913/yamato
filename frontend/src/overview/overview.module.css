@@ -80,4 +80,4 @@
 /* 要対応の見出しの横の「?」と、その凡例 */
 .legend { position: relative; display: inline-block; font-weight: normal; }
 .legendBtn { font-size: 13px; line-height: 1; min-width: 1.4rem; padding: 1px 4px; border-radius: 50%; border: 1px solid var(--color-line); background: none; color: inherit; cursor: help; }
-.legendBody { position: fixed; z-index: 5; width: 18rem; max-width: 80vw; padding: 6px 10px; white-space: normal; background: var(--color-card); color: inherit; border: 1px solid var(--color-line); border-radius: 4px; font-size: 13px; }
+.legendBody { box-sizing: border-box; position: fixed; z-index: 5; width: 18rem; max-width: 80vw; padding: 6px 10px; white-space: normal; background: var(--color-card); color: inherit; border: 1px solid var(--color-line); border-radius: 4px; font-size: 13px; }
