@@ -104,9 +104,9 @@ function ShipOps({ ship, running }: { ship: string; running: boolean | null }) {
           <div className={styles.dangerItem}>
             <button className={styles.danger} onClick={() => ask({
               op: "down-force", params: {}, title: `艦 ${ship} を強制停止する (down --force)`, confirmLabel: "強制停止する",
-              detail: "終業 (down) の強制版。猶予を待たず、動いている席を今すぐ止める。席は引き継ぎを書けず、作業の途中で切れる。止めた理由は down-force として記録に残り、席が止まらなかったときは日報の安全網を通す。",
+              detail: "終業 (down) の強制版。猶予を待たず、動いている席を今すぐ止める。席は引き継ぎを書けず、作業の途中で切れる。止めた理由は down-force として記録に残る。",
             })}>down --force</button>
-            <span className={styles.hint}>down を待たずに終わらせる。艦が起動していなくても打てる (その旨を出して、残っている席だけ止める)。</span>
+            <span className={styles.hint}>down の猶予を待たずに終わらせる。</span>
           </div>
           <div className={styles.dangerItem}>
             <button className={styles.danger} onClick={() => ask({

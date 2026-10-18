@@ -113,6 +113,20 @@ describe("艦ページの操作", () => {
     expect(hints[0]).not.toBe(hints[1]);
   });
 
+  it("艦の状態が読めなくても操作を出し、艦名を二重にしない", async () => {
+    setToken(true);
+    vi.stubGlobal("fetch", vi.fn().mockImplementation((u: string) => Promise.resolve(new Response(JSON.stringify(
+      String(u).includes("/overview")
+        ? { generated_at: 0, waits: [], ships: [{ name: "dev", error: "壊れている", state: null }] }
+        : { fields: [] },
+    ), { status: 200 }))));
+    page();
+    expect(await screen.findByText(/読めない: 壊れている/)).toBeTruthy();
+    expect(screen.getByRole("group", { name: "艦の操作" })).toBeTruthy();
+    expect(screen.getByRole("group", { name: "メッセージを送る" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { level: 2, name: "dev" })).toBeNull();
+  });
+
   it("止まっている艦では down を、動いている艦では up を目立たせない", async () => {
     setToken(true);
     const fetchFor = (alive: boolean) => vi.fn().mockImplementation((u: string) => Promise.resolve(new Response(JSON.stringify(
@@ -142,7 +156,7 @@ describe("艦ページの操作", () => {
     vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.resolve(new Response("{}", { status: 500 }))));
     page();
     await new Promise((r) => setTimeout(r, 0));
-    expect(screen.queryByLabelText("md の一覧")).toBeNull();
+    expect(screen.queryByLabelText("役割と方針のファイル")).toBeNull();
   });
 
   it("5 つの操作を出す", async () => {

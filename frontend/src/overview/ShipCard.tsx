@@ -49,8 +49,9 @@ export function ShipCard({ ship, now, waits, showName = true, children }: {
   if (!g) {
     return (
       <section className={styles.card}>
-        <div className={styles.head}><h2><ShipLink name={ship.name} /></h2></div>
+        {showName && <div className={styles.head}><h2><ShipLink name={ship.name} /></h2></div>}
         <p className={status.red}>読めない: {ship.error ?? "?"}</p>
+        {children}
       </section>
     );
   }
