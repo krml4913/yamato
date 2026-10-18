@@ -70,8 +70,11 @@
 .oldAnomalies > summary { cursor: pointer; opacity: 0.75; }
 .oldAnomalies li { opacity: 0.7; }
 
-/* 判断の本文: 長いので枠の中で読む */
-.waitBody { margin: 0.5rem 0; padding: 0 0.75rem; border-left: 3px solid var(--color-chip); max-height: 24rem; overflow: auto; }
+/* 判断の本文: 枠の中で切らず全部見せる (続きがあると気づかず読み落とすため)。
+   本文の見出しは外の「owner の判断待ち」(16px) より一段小さくする */
+.waitBody { margin: 0.5rem 0; padding: 0 0.75rem; border-left: 3px solid var(--color-chip); }
+.waitBody h1, .waitBody h2 { font-size: 15px; margin: 0.75rem 0 0.25rem; }
+.waitBody h3, .waitBody h4, .waitBody h5, .waitBody h6 { font-size: 14px; margin: 0.5rem 0 0.25rem; }
 
 /* 要対応の見出しの横の「?」と、その凡例 */
 .legend { position: relative; display: inline-block; font-weight: normal; }
