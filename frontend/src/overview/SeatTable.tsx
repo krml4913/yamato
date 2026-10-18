@@ -31,10 +31,6 @@ export function SeatTable({ ship, seats, now }: { ship: string; seats: Seat[]; n
   const canOp = editToken() !== null;
   return (
     <>
-      <p className={status.dim}>
-        要対応の列: <span className={status.red}>赤</span> = すぐ手が要る (詰まり・API エラー) /{" "}
-        <span className={status.warn}>黄</span> = 様子見 (動いていない・担当が無い)。内部の言葉は文に重ねたとき (hover) に出る
-      </p>
       <table className={table.table}>
         <thead>
           <tr>
@@ -81,7 +77,7 @@ function SeatRow({ s, now, onOp, onStop }: { s: Seat; now: number; onOp: (() => 
           </span></>
         )}
       </td>
-      <td className={status.dim}>{s.log.slice(0, 160)}</td>
+      <td className={status.dim}>{s.log ? s.log.slice(0, 160) : "-"}</td>
       {onOp && (
         <td>
           {s.alive && onStop && (

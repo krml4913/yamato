@@ -32,3 +32,9 @@ export function fmtDateTime(epoch: number): string {
   const d = new Date(epoch * 1000);
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
+
+// 稼働時間の表示 (例: "deadline 10-17 17:23 (残り 1h54m)") から「残り …」だけ取り出す。無ければ元の文字列。
+export function remaining(deadline: string): string {
+  const m = /\((残り [^)]+)\)/.exec(deadline);
+  return m ? m[1] : deadline;
+}

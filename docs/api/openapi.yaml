@@ -384,7 +384,7 @@ components:
               level: {type: string, enum: [red, warn]}
               text: {type: string}
               detail: {type: string}
-        log: {type: string, description: "作業ログの最後の 1 行。無ければ空文字。"}
+        log: {type: string, description: "使用量の行 (「使用量 」で始まる本文) を飛ばした最後の作業の行。無ければ空文字。"}
         tokens: {type: integer, description: "今日のトークン。"}
         budget: {type: [number, "null"], description: "headless の席だけ。役割の max_budget_usd。"}
         last_cost: {type: [number, "null"], description: "headless の席の前回の total_cost_usd。"}

@@ -40,13 +40,28 @@ CONTEXT_NEAR = 0.8          # 文脈量が rotate の閾値のこの割合を超
 
 # --- 読み取り (艦ごと。書かない) --------------------------------------------------
 
+# usage.summary / headless._summary が作業ログに足す行の頭。作業の様子ではないので一覧の「最後の 1 行」からは飛ばす。
+USAGE_LOG_MARK = "使用量 "
+
+
+def _is_usage_line(line: str) -> bool:
+    """作業ログの 1 行 (``- HH:MM:SS 本文``) が使用量の行か。"""
+    body = line.lstrip("-").strip()
+    _, _, text = body.partition(" ")
+    return text.startswith(USAGE_LOG_MARK)
+
+
 def _last_log_line(shipdir: Path, seat_name: str) -> str:
+    """今日の作業ログの最後の作業の行。使用量の行は飛ばす。無ければ空文字。"""
     p = Path(shipdir) / "seats" / seat_name / "log" / f"{today()}.md"
     try:
         lines = [x.strip() for x in p.read_text(encoding="utf-8").splitlines() if x.strip()]
     except (OSError, UnicodeDecodeError):
         return ""
-    return lines[-1].lstrip("-").strip() if lines else ""
+    for line in reversed(lines):
+        if not _is_usage_line(line):
+            return line.lstrip("-").strip()
+    return ""
 
 
 def _repo_url(team: dict) -> str | None:

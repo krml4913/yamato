@@ -15,8 +15,8 @@ function Ctx({ ctx }: { ctx: Seat["context"] }) {
   );
 }
 
-// 艦の枠の 2 段目: 前回の日報・孤児・memory の棚卸しの目安・文脈量。
-export function Extras({ g }: { g: ShipState }) {
+// 前回の日報
+export function Report({ g }: { g: ShipState }) {
   const r = g.report;
   return (
     <>
@@ -30,6 +30,14 @@ export function Extras({ g }: { g: ShipState }) {
       ) : (
         <p className={status.dim}>まだ無い</p>
       )}
+    </>
+  );
+}
+
+// 孤児・memory の棚卸しの目安・文脈量。いちばん軽い節
+export function Misc({ g }: { g: ShipState }) {
+  return (
+    <>
       <h3>孤児 (担当が落ちて active のまま)</h3>
       {g.orphans.length ? (
         <ul>
@@ -38,7 +46,7 @@ export function Extras({ g }: { g: ShipState }) {
           ))}
         </ul>
       ) : (
-        <p className={status.ok}>無い</p>
+        <p className={status.dim}>無い</p>
       )}
       <h3>memory の棚卸し</h3>
       <ul>
