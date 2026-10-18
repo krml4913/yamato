@@ -5,14 +5,13 @@ import type { Wait } from "./types";
 import status from "../status.module.css";
 import styles from "./overview.module.css";
 
-// 一番上の判断待ちを閉じる入口。--edit で起動したとき (index.html にトークンがあるとき) だけ出す
-function CloseTop({ wait }: { wait: Wait }) {
+// 判断待ち 1 件を閉じる入口。--edit で起動したとき (index.html にトークンがあるとき) だけ出す
+function CloseOne({ wait }: { wait: Wait }) {
   const [choice, setChoice] = useState("");
   const [reason, setReason] = useState("");
   const [pending, setPending] = useState<OpSpec | null>(null);
   return (
-    <div role="group" aria-label="一番上の判断を閉じる">
-      <h3>一番上の判断を閉じる: {wait.ship} {wait.id}</h3>
+    <div role="group" aria-label={`判断 ${wait.id} を閉じる`}>
       <div className={styles.closeRow}>
         <label>決定 <input value={choice} onChange={(e) => setChoice(e.target.value)} placeholder="例 A" /></label>
         <label>理由 <input value={reason} onChange={(e) => setReason(e.target.value)} /></label>
@@ -28,24 +27,23 @@ function CloseTop({ wait }: { wait: Wait }) {
 }
 
 export function Waits({ waits }: { waits: Wait[] }) {
+  const editing = editToken() !== null;
   return (
     <section className={`${styles.card} ${waits.length ? styles.top : styles.quiet}`}>
       <h2>owner の判断待ち ({waits.length})</h2>
       {waits.length === 0 ? (
         <p className={status.ok}>owner の判断待ちは無い</p>
       ) : (
-        <>
-          <ul>
+        <ul>
             {waits.map((w) => (
               <li key={`${w.ship}/${w.id}`}>
                 {w.urgent && <span className={`${styles.tag} ${styles.urgent}`}>急ぎ</span>}
                 <b>{w.ship}</b> 判断 {w.id}: {w.title} <span className={status.dim}>({w.age || "?"} 待ち)</span>
                 {w.recommendation && (<><br /><span className={status.dim}>推し: {w.recommendation}</span></>)}
+                {editing && <CloseOne wait={w} />}
               </li>
             ))}
-          </ul>
-          {editToken() !== null && <CloseTop key={`${waits[0].ship}/${waits[0].id}`} wait={waits[0]} />}
-        </>
+        </ul>
       )}
     </section>
   );

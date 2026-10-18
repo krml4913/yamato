@@ -1,7 +1,8 @@
+import { Link } from "react-router-dom";
 import { Misc, Report } from "./Extras";
 import { fmtTime, fmtTokens, remaining } from "./format";
 import { SeatTable } from "./SeatTable";
-import type { Ship, Wait } from "./types";
+import type { Ship, ShipState, Wait } from "./types";
 import status from "../status.module.css";
 import styles from "./overview.module.css";
 
@@ -9,6 +10,10 @@ type BadgeKind = "ok" | "warn" | "red" | "dim";
 const KIND_CLASS: Record<BadgeKind, string> = {
   ok: styles.badgeOk, warn: styles.badgeWarn, red: styles.badgeRed, dim: styles.badgeDim,
 };
+
+export function ShipLink({ name }: { name: string }) {
+  return <Link className={styles.shipLink} to={`/ship/${encodeURIComponent(name)}`}>{name}</Link>;
+}
 
 function Badge({ kind, children }: { kind?: BadgeKind; children: React.ReactNode }) {
   return <span className={`${styles.badge} ${kind ? KIND_CLASS[kind] : ""}`}>{children}</span>;
@@ -40,7 +45,7 @@ export function ShipCard({ ship, now, waits }: { ship: Ship; now: number; waits:
   if (!g) {
     return (
       <section className={styles.card}>
-        <div className={styles.head}><h2>{ship.name}</h2></div>
+        <div className={styles.head}><h2><ShipLink name={ship.name} /></h2></div>
         <p className={status.red}>読めない: {ship.error ?? "?"}</p>
       </section>
     );
@@ -49,7 +54,7 @@ export function ShipCard({ ship, now, waits }: { ship: Ship; now: number; waits:
   return (
     <section className={styles.card}>
       <div className={styles.head}>
-        <h2>{ship.name}</h2>
+        <h2><ShipLink name={ship.name} /></h2>
         <Badges ship={ship} waits={waits} />
       </div>
       <p className={`${status.dim} ${styles.sub}`}>
@@ -90,18 +95,42 @@ export function ShipCard({ ship, now, waits }: { ship: Ship; now: number; waits:
           </ul>
         </div>
       )}
-      {g.anomalies.length > 0 && (
-        <div className={styles.secPr}>
-          <h3>直近の異常</h3>
-          <ul>
-            {g.anomalies.map((a, i) => (
-              <li key={i}><span className={status.red}>{a.kind}</span> {fmtTime(a.ts)} {a.summary}</li>
-            ))}
-          </ul>
-        </div>
-      )}
+      <Anomalies list={g.anomalies} now={now} />
       <div className={styles.secReport}><Report g={g} /></div>
       <div className={styles.secMisc}><Misc g={g} /></div>
     </section>
+  );
+}
+
+// 異常は直近 24 時間を上に赤で出し、それより古いものは畳む (済んだものと今のものを混ぜない)
+const RECENT_SEC = 24 * 3600;
+
+function Anomalies({ list, now }: { list: ShipState["anomalies"]; now: number }) {
+  if (list.length === 0) return null;
+  const recent = list.filter((a) => a.ts >= now - RECENT_SEC);
+  const old = list.filter((a) => a.ts < now - RECENT_SEC);
+  return (
+    <div className={styles.secPr}>
+      <h3>直近の異常</h3>
+      {recent.length > 0 ? (
+        <ul>
+          {recent.map((a, i) => (
+            <li key={i}><span className={status.red}>{a.kind}</span> {fmtTime(a.ts)} {a.summary}</li>
+          ))}
+        </ul>
+      ) : (
+        <p className={status.dim}>24 時間以内の異常は無い</p>
+      )}
+      {old.length > 0 && (
+        <details className={styles.oldAnomalies}>
+          <summary>24 時間より前の異常 ({old.length} 件)</summary>
+          <ul>
+            {old.map((a, i) => (
+              <li key={i}>{a.kind} {fmtTime(a.ts)} {a.summary}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
   );
 }

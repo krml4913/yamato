@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { Waits } from "./Waits";
 import type { Wait } from "./types";
 
@@ -31,17 +31,24 @@ describe("判断待ちを閉じる", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 
-  it("一番上の判断だけを、決定と理由を添えて確認のあとに閉じる", async () => {
+  it("判断ごとに閉じるフォームを出す", () => {
+    setToken(true);
+    render(<Waits waits={waits} />);
+    expect(screen.getAllByRole("button", { name: "判断を閉じる" })).toHaveLength(2);
+    expect(screen.getByRole("group", { name: "判断 D-005 を閉じる" })).toBeInTheDocument();
+  });
+
+  it("選んだ判断を、決定と理由を添えて確認のあとに閉じる", async () => {
     setToken(true);
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       argv: ["yamato", "decide"], exit_code: 0, timed_out: false, truncated: false, output: "閉じた: D-002",
     }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     render(<Waits waits={waits} />);
-    expect(screen.getAllByRole("button")).toHaveLength(1);
-    fireEvent.change(screen.getByLabelText(/決定/), { target: { value: "A" } });
-    fireEvent.change(screen.getByLabelText(/理由/), { target: { value: "-x 安いから" } });
-    fireEvent.click(screen.getByRole("button", { name: "判断を閉じる" }));
+        const form = within(screen.getByRole("group", { name: "判断 D-002 を閉じる" }));
+    fireEvent.change(form.getByLabelText(/決定/), { target: { value: "A" } });
+    fireEvent.change(form.getByLabelText(/理由/), { target: { value: "-x 安いから" } });
+    fireEvent.click(form.getByRole("button", { name: "判断を閉じる" }));
     expect(fetchMock).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "閉じる" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
