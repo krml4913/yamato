@@ -112,3 +112,23 @@ describe("SeatTable の読みやすさ", () => {
     expect(cell.getAttribute("title")).toContain(id);
   });
 });
+
+describe("SeatTable の横スクロール", () => {
+  it("表は横に動かせる入れ物に入っている (狭い幅でも全部の列に届く)", () => {
+    const { container } = render(<SeatTable ship="dev" seats={seats} now={0} />);
+    const table = container.querySelector("table");
+    expect(table?.parentElement?.className).toMatch(/scroll/);
+  });
+});
+
+describe("要対応の凡例", () => {
+  it("開くと入れ物の切れる absolute でなく画面に対して置き、スクロールで閉じる", () => {
+    render(<SeatTable ship="dev" seats={seats.slice(0, 1)} now={0} />);
+    fireEvent.click(screen.getByRole("button", { name: "要対応の見方" }));
+    const note = screen.getByRole("note");
+    expect(note.style.top).not.toBe("");
+    expect(note.style.left).not.toBe("");
+    fireEvent.scroll(window);
+    expect(screen.queryByRole("note")).toBeNull();
+  });
+});

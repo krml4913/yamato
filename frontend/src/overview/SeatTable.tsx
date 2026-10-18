@@ -31,6 +31,7 @@ export function SeatTable({ ship, seats, now }: { ship: string; seats: Seat[]; n
   const canOp = editToken() !== null;
   return (
     <>
+      <div className={styles.scroll}>
       <table className={`${table.table} ${styles.seats}`}>
         <thead>
           <tr>
@@ -46,6 +47,7 @@ export function SeatTable({ ship, seats, now }: { ship: string; seats: Seat[]; n
           ))}
         </tbody>
       </table>
+      </div>
       {pending && <OpPanel spec={pending} onClose={() => setPending(null)} />}
     </>
   );
