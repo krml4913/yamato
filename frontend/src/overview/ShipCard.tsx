@@ -63,9 +63,12 @@ export function ShipCard({ ship, now, waits, showName = true, children }: {
         <Badges ship={ship} waits={waits} />
       </div>
       <p className={`${status.dim} ${styles.sub}`}>
-        {deadlineAt(g.deadline)}
-        {g.hub_last ? ` / captain ${g.hub} の最終 ${fmtTime(g.hub_last)}` : ""}
-        {` / 今日 ${fmtTokens(g.tokens)} tok`}
+        {[
+          // 「未起動 (deadline なし)」のように残りが無い表示は、バッジが全文を出している。地の文で繰り返さない
+          remaining(g.deadline) === g.deadline ? null : deadlineAt(g.deadline),
+          g.hub_last ? `captain ${g.hub} の最終 ${fmtTime(g.hub_last)}` : null,
+          `今日 ${fmtTokens(g.tokens)} tok`,
+        ].filter((x) => x !== null).join(" / ")}
       </p>
       {children}
       <div className={styles.secTable}>
