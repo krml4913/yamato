@@ -1,5 +1,4 @@
-"""W1: the entry point and character encodings on Windows + Git Bash (T-029,
-work/windows-research.md §2.1 / §2.2).
+"""W1: the entry point and character encodings on Windows + Git Bash (work/windows-research.md §2.1 / §2.2).
 
 Windows is never available on this machine, so each OS branch is exercised by patching
 ``sys.platform`` / ``os.name`` / ``os.altsep`` around the one call under test (the way
@@ -212,7 +211,7 @@ class ClaudeBinTest(unittest.TestCase):
 
 
 class SettingSourcesArgvTest(unittest.TestCase):
-    """T-061: --setting-sources is project,local unless team.yaml opts user in."""
+    """--setting-sources is project,local unless team.yaml opts user in."""
     KW = dict(session_id="s", name="n", role="r", agents_json="{}", model="m", settings="/s.json",
               add_dir="/d", prompt="go")
 

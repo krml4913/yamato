@@ -28,10 +28,10 @@ LIMITS = {
     "inbox_chars": 400,        # per message
     "total_chars": 9500,       # per hook: Claude Code takes 10,000 chars from one (verify-p0-c Q1)
     "last_report": (30, 1500), # the previous daily report's 3 sections (design-p1 §2.3)
-    "board_items": 20,         # the `board` part's overview (T-030); over this, "…ほか N 件"
-    "fleet_items": 20,         # the `fleet` part (T-022); over this, "全文は `yamato ships`"
+    "board_items": 20,         # the `board` part's overview; over this, "…ほか N 件"
+    "fleet_items": 20,         # the `fleet` part; over this, "全文は `yamato ships`"
 }
-FILE_LIMIT = (60, 3000)        # a `file:<名前>` part without its own `inject.limits.files.<名前>` / `.default` (T-075)
+FILE_LIMIT = (60, 3000)        # a `file:<名前>` part without its own `inject.limits.files.<名前>` / `.default`
 
 
 def cap_text(text: str, max_lines: int, max_chars: int, source: str = "") -> str:
@@ -108,7 +108,7 @@ def _read_text(path: Path) -> str:
 
 
 def _file_part(name: str, team: dict, lim: dict) -> str:
-    """A `file:<名前>` part (T-075, D-089): a file named under `inject.files`. Missing, empty or unreadable
+    """A `file:<名前>` part: a file named under `inject.files`. Missing, empty or unreadable
     is one line, not an error; over the limit it is cut and points at the file."""
     inject = team.get("inject") or {}
     spec = (inject.get("files") or {}).get(name)
@@ -125,7 +125,7 @@ def _file_part(name: str, team: dict, lim: dict) -> str:
 
 
 def _board(shipdir: Path, team: dict, limit: int, y: str) -> str:
-    """The `board` part (T-030, design-drift #4/#14): a whole-ship overview (opt-in), not
+    """The `board` part (design-drift #4/#14): a whole-ship overview (opt-in), not
     just what the captain's own `mine` shows. Decisions are out (`decide list` covers those)."""
     items = board_mod.Board(shipdir, team).items()
     lines = board_view.inject_lines(items, limit, f"{y} board kanban {ship_arg(shipdir)}")
@@ -147,9 +147,9 @@ def _orphans(shipdir: Path, team: dict, max_items: int, y: str) -> str:
 
 
 def _fleet(limit: int, y: str) -> str:
-    """The `fleet` part (T-022, admiral's own): one line per ship, the same as `yamato
+    """The `fleet` part (admiral's own): one line per ship, the same as `yamato
     ships`, capped at ``limit``; over that, the rest points at the uncapped command
-    instead of being cut mid-line (design-drift D, D-013: admiral 用の全艦の要約).
+    instead of being cut mid-line (design-drift D: admiral 用の全艦の要約).
 
     ``claude.agents()`` can fail or time out (up to 60s, ``YamatoError``): an extra part
     must never cost the hook its real job (``_touch`` と同じ考え), so only this section
@@ -274,7 +274,7 @@ def build_knowledge(shipdir: Path, team: dict, seat: str, limits: dict | None = 
     """The knowledge hook (hook B): the role's memory and knowledge.md, "" when the seat's
     ``inject`` has neither."""
     lim = _limits(team, limits)
-    # in the order the inject list names them: what is cut by `total_chars` is the end (T-075)
+    # in the order the inject list names them: what is cut by `total_chars` is the end
     order = [p for p in dict.fromkeys(inject_parts(team, seat))
              if p in ("memory", "knowledge") or p.startswith(FILE_PREFIX)]
     if not order:

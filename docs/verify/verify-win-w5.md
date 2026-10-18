@@ -1,7 +1,7 @@
 # yamato Windows W5: 実機の確認 — 手順書
 
 - 対象: owner の Windows 機 (ネイティブの Claude Code + Git for Windows の Git Bash + Windows ネイティブの Python)。**艦の中では走らせない** (本物の claude を使う)
-- 前提: W1〜W4 (T-029 / T-041 / T-042 / T-044) が main に入っていること。W0 の手順書は `verify-win-plan.md`、道具は `tools/verify_win/` (vw.py)
+- 前提: W1〜W4 が main に入っていること。W0 の手順書は `verify-win-plan.md`、道具は `tools/verify_win/` (vw.py)
 - 結果は下の「結果」の表に埋め、見たままの出力を貼る。途中で止まったものは「未確認」でいい
 - 使うのは使い捨ての艦 1 つだけ (`~/yamato-verify-w5/`)。既存の艦には触らない
 - 打つのは Git Bash。1 項目ずつ「打つもの → 見るもの → 判定」
@@ -60,7 +60,7 @@ $Y ship create w5 --workspace ~/yamato-verify-w5/ws --path ~/yamato-verify-w5/sh
 2. 動いている間に `$Y down <ship> --force`
 3. 動いている間に別の Git Bash から `tasklist | grep -i claude` を見ておき、`down --force` の後にもう一度見る
 
-- 見るもの: **`headless.terminate` は Windows で `CTRL_BREAK_EVENT` だけを送る。別のコンソールから届かない見込み** (T-042 reviewer)。次のどれになったかを控える
+- 見るもの: **`headless.terminate` は Windows で `CTRL_BREAK_EVENT` だけを送る。別のコンソールから届かない見込み** (W2 のレビューの指摘)。次のどれになったかを控える
   - (a) CTRL_BREAK が届いて `claude -p` の子ごと止まる
   - (b) 届かず、grace のあと `taskkill /T /F` に落ちて止まる (`procs.terminate` の経路)
   - (c) どちらでも止まらない (**要対応**。pid・`tasklist` の出力を貼る)
@@ -79,7 +79,7 @@ tasklist | grep -i python
 ```
 
 - 見るもの: 孫の python も消える (親だけ残る/孫だけ残る、を控える)。CTRL_BREAK が別コンソールから届くかは 2c で見る
-- 補足 (任意): `python -c "from yamato import procs; ..."` で `procs.hard_kill` / `procs.soft_stop` を、新しいコンソール (`creationflags=CREATE_NEW_PROCESS_GROUP`) で起こした子に打つ。`soft_stop` の group 既定は False (T-054) なので、CTRL_BREAK を見るなら `procs.soft_stop(pid, group=True)` と書く
+- 補足 (任意): `python -c "from yamato import procs; ..."` で `procs.hard_kill` / `procs.soft_stop` を、新しいコンソール (`creationflags=CREATE_NEW_PROCESS_GROUP`) で起こした子に打つ。`soft_stop` の group 既定は False なので、CTRL_BREAK を見るなら `procs.soft_stop(pid, group=True)` と書く
 
 ## 4. W4: deny (艦の team.yaml への Edit が止まる)
 
@@ -87,7 +87,7 @@ tasklist | grep -i python
 - 見るもの: 拒否される (W0 [9] は `File is in a directory that is denied by your permission settings.`)。`team.yaml` が変わっていない (`git diff` / `tail`)
 - 追加: 席に PowerShell で同じ編集を頼んだときどうなるか (W0 では PowerShell の `Add-Content` は「allowed working directories 外」で止まった。今回も止まるか、通ってしまうか)。**通ったら要報告**
 
-## 5. 引用つきの ship に allow が当たるか (T-041 reviewer)
+## 5. 引用つきの ship に allow が当たるか (W2 のレビューの指摘)
 
 - ship のパスに空白が入る場所 (`~/yamato-verify-w5/ship dir/` のように作る。Windows のユーザー名に空白がある場合はその配下でもよい) で艦を作る
 - pm に `$Y board list` 相当 (`board mine <ship> pm` など、settings の allow に載っているコマンド) を打たせる。ship の引数は `'C:/Users/John Doe/...'` のように引用つきで渡る
@@ -100,17 +100,17 @@ tasklist | grep -i python
 
 ## 結果
 
-実行: owner の Windows 機 (Windows 10 Pro 19045、Git Bash、Python 3.13、claude 2.1.286)。素の Claude Code (windows-yamato、Remote Control) に手順を打たせ、3・8・12 は owner が見た。出典は Issue #68 の次のコメント (5931240737 が手順、結果は 5931657318 / 5931709050 / 5932113328 / 5932200511 / 5932309583 / 5932346246 / 5932608360)。最終は T-053 (8b3217f)・T-054 (f0080e6) の上。
+実行: owner の Windows 機 (Windows 10 Pro 19045、Git Bash、Python 3.13、claude 2.1.286)。素の Claude Code (windows-yamato、Remote Control) に手順を打たせ、3・8・12 は owner が見た。出典は Issue #68 の次のコメント (5931240737 が手順、結果は 5931657318 / 5931709050 / 5932113328 / 5932200511 / 5932309583 / 5932346246 / 5932608360)。最終は 8b3217f・f0080e6 の上。
 
 | # | 確認 | 判定 | 一言 |
 |---|---|---|---|
-| 0 | unittest 全通し / 所要時間 / skip の一覧 | 🟡 | f0080e6 で 750 件、FAIL 2・skip 6、82 秒 (macOS は 10〜15 秒)。FAIL 2 件は T-055 で別に直す。skip 6 件は POSIX 専用 3 件 + Windows では作れない名前 3 件。シェルが落ちる件は直った |
+| 0 | unittest 全通し / 所要時間 / skip の一覧 | 🟡 | f0080e6 で 750 件、FAIL 2・skip 6、82 秒 (macOS は 10〜15 秒)。FAIL 2 件は別に直す。skip 6 件は POSIX 専用 3 件 + Windows では作れない名前 3 件。シェルが落ちる件は直った |
 | 2a | seat-stop → 席が止まる | ✅ | stopped になり `claude agents` から消え、`shift_end (seat-stop)` が出る |
 | 2b | 締切の強制停止 (watchdog) | ✅ | 猶予 1 分を過ぎて `force_stop (grace-exceeded)`。手順は変えた (席を作業中にしておく) |
 | 2c | headless `down --force` | ✅ (a) | `down --force` は 1.2 秒で戻り、CTRL_BREAK で claude -p が exit 0 で止まった。ラッパー・watchdog の python も消え、taskkill には落ちていない |
 | 2d | `yamato talk` | ✅ | attach の画面が出て、入力欄が空のとき ← で抜けられる。席は生きたまま |
 | 3 | `taskkill /T` が孫まで止めるか | ✅ | 孫の python まで止まった |
-| 4 | team.yaml への Edit の deny | ✅ | Edit は拒否、team.yaml は変わらず。PowerShell ツールは無い (D-051 A) |
+| 4 | team.yaml への Edit の deny | ✅ | Edit は拒否、team.yaml は変わらず。PowerShell ツールは無い (owner の決定 2026-10-01 の A) |
 | 5 | 引用つき ship に allow が当たるか | ✅ | 止まっていた pm が send で起き、許可の確認で止まらず返事が来た (ユーザー名に空白がある ship) |
 | 6 | Remote Control の見え方 | ✅ | w5.pm が一覧に見え、入って話せた。seat-stop のあとは一覧から消えた |
 
@@ -118,14 +118,14 @@ tasklist | grep -i python
 
 | 時点 | 結果 |
 |---|---|
-| 最初 (T-043 の merge 直後) | 733 件、failures=9 errors=534 skipped=3、12.7 秒 |
-| 1550b40 (T-049) | FAIL 34・ERROR 139〜140。途中でシェルごと落ちる |
-| 98366ab (T-050) | 746 件 FAIL 14・ERROR 7、シェルは落ちない。test_headless の CTRL_BREAK まわりが残る |
-| b9e09ad (T-052) | `test_force_stop_all_stops_an_orphaned_p` でシェルごと落ちる |
-| 8b3217f (T-053) | 749 件、FAIL 2・skip 6、82 秒 (3 回同じ。PYTHONUTF8=1 でも同じ) |
-| f0080e6 (T-054) | 750 件、同じ FAIL 2 |
+| 最初 (Windows 対応の最初の merge 直後) | 733 件、failures=9 errors=534 skipped=3、12.7 秒 |
+| 1550b40 | FAIL 34・ERROR 139〜140。途中でシェルごと落ちる |
+| 98366ab | 746 件 FAIL 14・ERROR 7、シェルは落ちない。test_headless の CTRL_BREAK まわりが残る |
+| b9e09ad | `test_force_stop_all_stops_an_orphaned_p` でシェルごと落ちる |
+| 8b3217f | 749 件、FAIL 2・skip 6、82 秒 (3 回同じ。PYTHONUTF8=1 でも同じ) |
+| f0080e6 | 750 件、同じ FAIL 2 |
 
-残る FAIL 2 件 (T-055 で別に直す):
+残る FAIL 2 件 (別に直す):
 - `test_headless.HeadlessTest.test_time_limit_sigterms_and_counts_usage_from_the_transcript`: `u["messages"]` が 0 (期待 1)。止める処理は効いていて、transcript から使用量を数える部分だけが 0。fake の transcript の場所か書き切りのずれと見られる (推測)。本物の claude の 2c では `4 messages` と数えられた
 - `test_memory.ResearchTemplateTest.test_editor_applies_and_the_curator_is_there`: 期待値が `str(Path)` (`\` 区切り) のまま。プロンプトは引用つきの `C:/...` (`runtime.ship_arg`)
 
@@ -136,13 +136,13 @@ tasklist | grep -i python
 - 控えのファイルは `/tmp` でなく `$V` (Windows の python から `/tmp` が見えない)
 - 2b: 仕事の無い pm は自分で seat-stop するので、席を作業中にしておく。Bash の単発 `sleep` は止められる
 - 2c: research の席は dontAsk で `sleep` のループが拒否される。WebSearch を使う作業にする
-- 3 補足: `soft_stop` の group 既定は T-054 で False。CTRL_BREAK を見るなら `group=True`
+- 3 補足: `soft_stop` の group 既定は False に変えた。CTRL_BREAK を見るなら `group=True`
 
 ### 見つかった点 (コードは直していない。別の task の材料)
 - 2c: `down --force` でも `endReason`・log・events は `grace-exceeded` (「時間切れ」) と書く (`forceStop: down-force` は roster にある)。ログの文言は Windows でも「→ SIGTERM」のまま
 - 2b: deadline watcher の「終業を指示」が 7 秒あけて 2 回出る (22:17:43 / 22:17:50)
 - 2d: 抜け方 (入力欄が空のとき ←。`/exit` は席を止める) を talk の前に一言出すと親切
-- 準備: workspace の trust は `~/.claude.json` に `C:/` 区切りで書かれる。T-051 で `is_trusted` が引けるようにした。research の艦は owner の許可で `~/.claude.json` に直接 trust を書いた (控えは `~/yamato-verify-w5/claude.json.bak`)
+- 準備: workspace の trust は `~/.claude.json` に `C:/` 区切りで書かれる。あとで `is_trusted` が引けるようにした。research の艦は owner の許可で `~/.claude.json` に直接 trust を書いた (控えは `~/yamato-verify-w5/claude.json.bak`)
 - 艦の既存の席 (`main-leader` など) と `claude.exe` が `tasklist` に混ざる。2c では自分の pid を控えて除く
 
 見たままの出力は Issue #68 の上のコメントにある (この文書には写さない)。`~/yamato-verify-w5/` は残してある (消すかは owner)。

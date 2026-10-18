@@ -1,4 +1,4 @@
-"""board tree / board kanban / 注入の部品 board の描画 (design-drift #4 #14, T-030, D-018)."""
+"""board tree / board kanban / 注入の部品 board の描画 (design-drift #4 #14)."""
 import io
 import unittest
 from contextlib import redirect_stderr, redirect_stdout

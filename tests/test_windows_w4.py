@@ -1,4 +1,4 @@
-"""W4: path forms in prompts and permission rules on Windows (T-041, work/windows-research.md §2.4,
+"""W4: path forms in prompts and permission rules on Windows (work/windows-research.md §2.4,
 W0 [9] / Issue #68). Windows is never available here: ``runtime.is_windows`` is replaced and the
 ship path is a Windows-looking string, and the tests assert the text handed to Claude Code."""
 import contextlib
@@ -122,7 +122,7 @@ class TemplatesOnWindowsTest(ShipTestCase):
 
 
 class InjectionOnWindowsTest(ShipTestCase):
-    """seat-facing injected text uses the same ship word as the prompt / allow rules (T-044)."""
+    """seat-facing injected text uses the same ship word as the prompt / allow rules."""
 
     def test_session_start_and_first_prompt_use_ship_arg(self):
         from yamato import inject, seat
@@ -176,7 +176,7 @@ class CuratorOnWindowsTest(ShipTestCase):
 
 
 class PowerShellToolTest(ShipTestCase):
-    """D-051 A: the seat's settings `env` turns the PowerShell tool off on Windows only."""
+    """the seat's settings `env` turns the PowerShell tool off on Windows only."""
 
     def test_env_is_set_on_windows_and_kept_with_env_unset(self):
         team = load_team(self.shipdir)

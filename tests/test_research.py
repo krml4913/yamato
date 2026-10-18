@@ -45,7 +45,7 @@ def rule_matches(rule: str, tool: str, arg: str | None = None, cwd: Path | None 
             return arg.startswith(pat[:-2])
         return bool(_glob(pat, path=False).match(arg))
     # file rules: //abs, ~/home, /cwd-relative, else anywhere below cwd
-    # (Windows: the rule and the path are both in the ``/c/Users/x`` form, runtime.rule_path -- T-050)
+    # (Windows: the rule and the path are both in the ``/c/Users/x`` form, runtime.rule_path)
     cwd_s, home_s, arg = runtime.rule_path(cwd), runtime.rule_path(Path.home()), runtime.rule_path(arg)
     if pat.startswith("//"):
         pat = pat[1:]

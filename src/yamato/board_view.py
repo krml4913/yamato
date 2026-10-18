@@ -1,4 +1,4 @@
-"""艦全体の進み具合を見る 3 つの見え方 (design-drift #4 #14, T-030, D-018)。
+"""艦全体の進み具合を見る 3 つの見え方 (design-drift #4 #14)。
 
 ``board tree`` (parent の階層) と ``board kanban`` (列ごと) は人間向け、注入の
 部品 ``board`` は captain の SessionStart 向け。3 つとも同じ描画をここに置き、

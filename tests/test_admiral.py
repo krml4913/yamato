@@ -19,7 +19,7 @@ from yamato.util import YamatoError, load_registry, yamato_home
 @contextlib.contextmanager
 def posix_foreground():
     """``run_foreground`` の中だけ POSIX の枝 (execvp を呼ぶ) にする。Windows 機では差し替えた
-    execvp が無視され、本物の ``claude attach`` を走らせてしまう (T-050)。"""
+    execvp が無視され、本物の ``claude attach`` を走らせてしまう。"""
     real = procs.run_foreground
 
     def fg(argv, **kw):
@@ -203,7 +203,7 @@ class AdmiralTest(ShipTestCase):
         self.cli("up", str(self.shipdir))
         self.assertEqual(self.bg_names(), ["t1.pm"])
 
-    # --- up の再呼び出しが deadline を巻き戻さないこと (D-015) ---
+    # --- up の再呼び出しが deadline を巻き戻さないこと ---
 
     def test_up_without_for_does_not_shrink_a_running_deadline(self):
         # 艦がすでに稼働中で、extend で team.yaml の time_limit (3h) よりずっと先まで
@@ -281,7 +281,7 @@ class AdmiralTest(ShipTestCase):
         self.assertFalse(t.is_alive())
 
     def test_watchdog_forces_a_stuck_stopping_seat(self):
-        """T-012: the watchdog's own loop notices a seat stuck `stopping` too, not just
+        """the watchdog's own loop notices a seat stuck `stopping` too, not just
         `status` -- it does not need a human to run `status` for the fix to kick in."""
         self.run_cmd(seat.up, self.shipdir, "20m")
         rec = roster.seat(self.shipdir, "pm")
@@ -370,7 +370,7 @@ class AdmiralTest(ShipTestCase):
         self.assertNotIn("!!!", self.run_cmd(seat.status, self.shipdir))
 
     def test_status_flags_a_live_per_task_seat_without_an_active_item(self):
-        # design-drift #11 / D-019
+        # design-drift #11
         self.cli("up", str(self.shipdir), "--for", "1h")
         self.cli("send", str(self.shipdir), "impl", "T-001")   # impl comes up and stays alive
         rc, out = self.cli("status", str(self.shipdir))
@@ -385,7 +385,7 @@ class AdmiralTest(ShipTestCase):
         self.assertNotIn("!!!", out)
 
     def test_a_per_task_seat_reviewing_an_active_item_is_not_flagged(self):
-        # T-093: reviewer 欄の席も「担当あり」
+        # reviewer 欄の席も「担当あり」
         self.cli("up", str(self.shipdir), "--for", "1h")
         self.cli("send", str(self.shipdir), "impl", "T-001")
         board.Board(self.shipdir, self.team()).add("T-001", {"assignee": "pm", "reviewer": "impl", "state": "active"}, by="pm")
@@ -447,7 +447,7 @@ class AdmiralTest(ShipTestCase):
         self.assertIn("停止中", l2)
         self.assertIn("日報 -", l2)
 
-    # --- T-020: a ship folder created without registering it (the admiral's _admiral/) ---
+    # --- a ship folder created without registering it (the admiral's _admiral/) ---
 
     def test_ships_excludes_a_folder_created_without_registering(self):
         admdir, _ = ship.create("admiral", str(self.workspace), str(yamato_home() / "_admiral"),
@@ -555,8 +555,8 @@ class AdmiralTest(ShipTestCase):
         self.assertIn(f"cd {repo.resolve()} && claude", claude.untrusted_message(wt))
 
 
-# --- T-021: `yamato admiral` (attach/wake/stop, D-011) ------------------------------------
-# templates/admiral/ (T-023) is now the real thing (its own shape is tests/test_admiral_template.py's
+# --- `yamato admiral` (attach/wake/stop) ------------------------------------
+# templates/admiral/ is now the real thing (its own shape is tests/test_admiral_template.py's
 # job); these tests use it as-is and only exercise the `yamato admiral` command built on top of it.
 
 
@@ -650,8 +650,8 @@ class AdmiralUpCommandTest(ShipTestCase):
         self.assertEqual(calls, [[*claude.claude_cmd(), "attach", roster.seat(admdir, "admiral")["shortId"]]])
 
     def test_admiral_wakes_a_stopped_seat_even_with_no_deadline_ever(self):
-        # D-013: there is no `up` for the admiral, so talk()'s usual "艦は稼働時間の外" gate
-        # (only in bounds while a deadline says RUNNING) must not apply to it (T-021)
+        # there is no `up` for the admiral, so talk()'s usual "艦は稼働時間の外" gate
+        # (only in bounds while a deadline says RUNNING) must not apply to it
         self.run_cmd(admiral.admiral_talk, execvp=lambda f, a: None)
         admdir = self.admdir()
         self.assertIsNone(deadline.read(admdir))
@@ -727,7 +727,7 @@ class AdmiralUpCommandTest(ShipTestCase):
         self.assertFalse(self.alive_seat(admdir, "admiral"))
         self.assertIn("force_stop", (admdir / "events.jsonl").read_text(encoding="utf-8"))
 
-    # --- rotate: 艦の席と同じ roles.<role>.rotate が効く (T-021 の完了条件 4) ---
+    # --- rotate: 艦の席と同じ roles.<role>.rotate が効く ---
 
     def test_rotate_marks_a_stopped_admiral_for_a_fresh_shift(self):
         self.run_cmd(admiral.admiral_talk, execvp=lambda f, a: None)
@@ -737,7 +737,7 @@ class AdmiralUpCommandTest(ShipTestCase):
         self.assertEqual(rc, 0)
         self.assertTrue(roster.seat(admdir, "admiral").get("rotateRequested"))
 
-    # --- seat-stop: 艦の席と同じに使える (T-021 の完了条件 3) ---
+    # --- seat-stop: 艦の席と同じに使える ---
 
     def test_seat_stop_works_on_the_admiral_like_any_seat(self):
         self.run_cmd(admiral.admiral_talk, execvp=lambda f, a: None)

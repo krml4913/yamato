@@ -1,4 +1,4 @@
-"""T-070 / D-081: `yamato ship upgrade` (backup + materials + the upgrade-only claude) and the template record."""
+"""`yamato ship upgrade` (backup + materials + the upgrade-only claude) and the template record."""
 import json
 import os
 import subprocess

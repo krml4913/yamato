@@ -185,7 +185,7 @@ def build_settings(shipdir: Path, team: dict, seat: str) -> dict:
         # (e2e-p1 D). The settings' `env` reaches the seat's tools: blank the names there
         mech["env"] = {k: "" for k in team["env_unset"]}
     if is_windows():
-        # D-051 A: a Windows seat would reach for the PowerShell tool, which the `Bash(...)` rules
+        # a Windows seat would reach for the PowerShell tool, which the `Bash(...)` rules
         # do not cover. Only Windows has the tool by default, so macOS settings stay as they were.
         # The settings' `env` is what a bg seat's tools see (the daemon's environment is not ours).
         # Only a default: a ship that wants the tool (a .NET project) sets the name in

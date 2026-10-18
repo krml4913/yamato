@@ -1,4 +1,4 @@
-"""``yamato ship upgrade``: bring a ship's copy (roles/*.md, team.yaml) up to a newer yamato (D-081).
+"""``yamato ship upgrade``: bring a ship's copy (roles/*.md, team.yaml) up to a newer yamato.
 
 No machine 3-way merge: yamato only prepares the materials (a backup, the template diff between the
 two versions, the migration.md items in range) and starts an interactive Claude in the foreground that

@@ -13,7 +13,7 @@
 
 - **起動レシピの注記** (§4.1): 起動側の環境変数は bg の席に届かない (Q2。席の環境は daemon とユーザー設定の `env` から来る)。消す手段は settings の `env` に空で書くことで、e2e-p1 の D (#24) で対応済み。Remote Control に繋がった席は attach なしでも 1 時間で止まらない (Q3)。ひな形は captain 以外 `remoteControlAtStartup: false`
 - **起動の確かめ** (§4.1): `claude --bg` は worker が起動前に落ちても exit 0。起動のあとに `claude agents --json` で `state == failed`・pid なしを見て、失敗として扱う (Q5)
-- **注入の上限** (§8.2): Claude Code は SessionStart hook 1 本あたり 10,000 文字まで受け取る (Q1)。注入を記録と知見 (memory・knowledge・`file:<名前>`) の hook 2 本に分け、それぞれ 9,500 文字で切る。memory と knowledge は `inject.limits.memory` / `knowledge` (`memory apply` の上限と同じ。T-076)、艦が足したファイル (`inject.files`) は `inject.limits.files` で切る (D-089)
+- **注入の上限** (§8.2): Claude Code は SessionStart hook 1 本あたり 10,000 文字まで受け取る (Q1)。注入を記録と知見 (memory・knowledge・`file:<名前>`) の hook 2 本に分け、それぞれ 9,500 文字で切る。memory と knowledge は `inject.limits.memory` / `knowledge` (`memory apply` の上限と同じ)、艦が足したファイル (`inject.files`) は `inject.limits.files` で切る (決定 2026-10-08)
 - **`state` の意味** (§14): `state` は席の発言の意味づけで、生死は pid、詰まりは `status` / `waitingFor` で見る (Q5)
 
 ## 改訂の要約 (v2, 2026-09-26)
@@ -75,7 +75,7 @@ DA レビュー (`da-yamato-design-v0.md`) を受けて、owner と合意した�
 - **B1 配送**: 送り手が自分で届ける。`send` は記録 (inbox) に残し、宛先の席が止まっていれば起こす。生きている席への即時の配送は、送り手のエージェントが `SendMessage` ツールで行う (送り手は captain / admiral / メンバーで、いずれも Claude のセッション)。席の側で受信箱を監視する方式は、送り手が席でない未読 (owner・yamato の定型文・headless の終わりの報告など、誰も `SendMessage` で届けないもの) に限って、Stop hook の deadline watcher (`asyncRewake`) に足した (2026-09-26 leader 決定、e2e-p1 の C)
 - **B2 権限**: 席の既定は auto モード + 「無人のときにやらせない操作」の deny リスト (チームごとに持つ)。外部の文章を読む役割 (調査など) と、merge などの権限を持つ役割を分ける
 - **B3 シフトの終わり**: `per_task` の席は、終業処理のあとに自分を停止する。`per_task` 宛ての `send` は常に新しいシフトを起動する (再開はしない)。`persistent` 宛てだけ再開する
-- **B4 時間の上限**: 終了時刻はプロセスではなくデータ (`.runtime/deadline`) として持つ。席の hook (SessionStart / Stop) と `send` が毎回確認し、過ぎていれば「引き継ぎを書いて止まれ」を返す。一度きりのタイマーは補助にとどめる (消えても上限は効く)。**例外は admiral だけ** (`time_limit: none`)。deadline を持たず、長くなったら rotate で入れ替える (D-013、§11)
+- **B4 時間の上限**: 終了時刻はプロセスではなくデータ (`.runtime/deadline`) として持つ。席の hook (SessionStart / Stop) と `send` が毎回確認し、過ぎていれば「引き継ぎを書いて止まれ」を返す。一度きりのタイマーは補助にとどめる (消えても上限は効く)。**例外は admiral だけ** (`time_limit: none`)。deadline を持たず、長くなったら rotate で入れ替える (決定 2026-09-27、§11)
 - **B5 シフトの方式**: 役割ごとに選べるようにする。`shift` に `headless` (`claude -p` の使い捨て。覗けないが、権限・予算・コストの扱いが単純) を追加する。覗いて割り込みたい役割は background のまま
 
 **important の決定 (P1 まで)**
@@ -165,8 +165,8 @@ owner (人間)
 ### 4.1 起動場所と設定の渡し方
 
 - 席の作業ディレクトリ (cwd) は `team.yaml` の `workspace`。開発チームなら作業対象の repo、調査チームのように repo がないチームなら艦フォルダ自身
-- `workspace` は文字列か、パスを並べたフラットな配列 (D-071。1 艦で複数 repo、共通ライブラリとアプリなど)。文字列は要素 1 つの配列と同じ扱いで、挙動も記録の形も変わらない。先頭が席の cwd。各 repo の呼び名はフォルダ名 (basename) で、かぶったら読み込みエラー。読み込んだ結果は `team["workspace"]` (先頭のパス) と `team["workspaces"]` (`[{name, path}]`) に入る。`ship create --workspace` は複数回渡せる (順番どおりに配列へ。1 回なら今と同じ文字列で、dev ひな形の `/{{workspace}}/**` の権限ルールは全 repo に展開する)。trust の確認と起動前の存在確認は全 repo に対して行う (`up` と新しいシフトの起動。trust されていない repo があれば止める)。席の起動は cwd が先頭の repo で、残りの repo は `--add-dir <ship> <repo2> ...` に足す (headless も同じ。`send --cwd` で worktree を cwd にした席は、本体の repo を足さない)。`worktree.bgIsolation: none` にするかの判定 (repo かどうか・艦フォルダが repo の中か) は先頭の repo で行う。1 repo の艦の起動引数は今のまま。worktree・pr の repo ごとの動きは次の段落 (T-068)
-- **複数 repo の worktree・pr (T-068)**: 1 つの task が複数 repo を相手にする。worktree は repo ごとに `<艦>/worktrees/<id>/<呼び名>/` に切る (repo どうしの隣り合わせが worktree の中でも保たれ、アプリから `../lib` が同じ task の lib の worktree を指す)。`worktree add --repo <呼び名>` は繰り返せて、省略時は先頭の repo。`worktree path / rm` も `--repo` で選ぶ (省略時は先頭)。`list` は repo の呼び名を足して出す。**項目の記録**: repo が 1 つの艦は今の形のまま (`worktree` / `branch` / `pr` / `merged_by` は文字列)。repo が 2 つ以上の艦では、この 4 つが `{呼び名: 値}` の写しになる (例: `pr: {"app": "12", "lib": "7"}`、frontmatter は 1 行の JSON)。艦が複数 repo になる前に書かれた文字列や `board set <id> pr=N` で手書きした値は先頭の repo のものとして読む。`pr open --repo` (繰り返せる) は repo ごとに PR を開く。省略時は、複数 repo の艦では worktree に base より進んだ commit があって PR がまだ無い repo すべて。`pr merge --repo` は指した順に 1 本ずつ merge し、省略時は PR のある (まだ merge していない) repo すべてを workspace の順に。merge の条件 (`git.merge_requires`) は PR ごとに確かめる (`review`・`decision` は項目の記録、`ci` はその repo の PR のチェック)。merge 後の衝突の知らせは同じ repo の開いた PR だけが対象 (別の repo の merge では衝突しない)。events の `worktree_*` / `pr_*` は複数 repo の艦で `data.repo` を持つ。**ブランチ名は仕組み化しない**: 既定は `yamato/<艦>/<id>` のまま、`--branch` で repo ごとに自由 (`--branch <repo>=<branch>`、repo を付けない値は選んだ repo のうち指定の無いもの全部)。repo 間で名前を揃える決まりも team.yaml の型も作らない。**merge の順番の強制・本体 checkout の pull もしない** (repo の特性しだい。艦の写しの役割プロンプトで足す)
+- `workspace` は文字列か、パスを並べたフラットな配列 (決定 2026-10-05。1 艦で複数 repo、共通ライブラリとアプリなど)。文字列は要素 1 つの配列と同じ扱いで、挙動も記録の形も変わらない。先頭が席の cwd。各 repo の呼び名はフォルダ名 (basename) で、かぶったら読み込みエラー。読み込んだ結果は `team["workspace"]` (先頭のパス) と `team["workspaces"]` (`[{name, path}]`) に入る。`ship create --workspace` は複数回渡せる (順番どおりに配列へ。1 回なら今と同じ文字列で、dev ひな形の `/{{workspace}}/**` の権限ルールは全 repo に展開する)。trust の確認と起動前の存在確認は全 repo に対して行う (`up` と新しいシフトの起動。trust されていない repo があれば止める)。席の起動は cwd が先頭の repo で、残りの repo は `--add-dir <ship> <repo2> ...` に足す (headless も同じ。`send --cwd` で worktree を cwd にした席は、本体の repo を足さない)。`worktree.bgIsolation: none` にするかの判定 (repo かどうか・艦フォルダが repo の中か) は先頭の repo で行う。1 repo の艦の起動引数は今のまま。worktree・pr の repo ごとの動きは次の段落
+- **複数 repo の worktree・pr**: 1 つの task が複数 repo を相手にする。worktree は repo ごとに `<艦>/worktrees/<id>/<呼び名>/` に切る (repo どうしの隣り合わせが worktree の中でも保たれ、アプリから `../lib` が同じ task の lib の worktree を指す)。`worktree add --repo <呼び名>` は繰り返せて、省略時は先頭の repo。`worktree path / rm` も `--repo` で選ぶ (省略時は先頭)。`list` は repo の呼び名を足して出す。**項目の記録**: repo が 1 つの艦は今の形のまま (`worktree` / `branch` / `pr` / `merged_by` は文字列)。repo が 2 つ以上の艦では、この 4 つが `{呼び名: 値}` の写しになる (例: `pr: {"app": "12", "lib": "7"}`、frontmatter は 1 行の JSON)。艦が複数 repo になる前に書かれた文字列や `board set <id> pr=N` で手書きした値は先頭の repo のものとして読む。`pr open --repo` (繰り返せる) は repo ごとに PR を開く。省略時は、複数 repo の艦では worktree に base より進んだ commit があって PR がまだ無い repo すべて。`pr merge --repo` は指した順に 1 本ずつ merge し、省略時は PR のある (まだ merge していない) repo すべてを workspace の順に。merge の条件 (`git.merge_requires`) は PR ごとに確かめる (`review`・`decision` は項目の記録、`ci` はその repo の PR のチェック)。merge 後の衝突の知らせは同じ repo の開いた PR だけが対象 (別の repo の merge では衝突しない)。events の `worktree_*` / `pr_*` は複数 repo の艦で `data.repo` を持つ。**ブランチ名は仕組み化しない**: 既定は `yamato/<艦>/<id>` のまま、`--branch` で repo ごとに自由 (`--branch <repo>=<branch>`、repo を付けない値は選んだ repo のうち指定の無いもの全部)。repo 間で名前を揃える決まりも team.yaml の型も作らない。ただし起点 (`--base`、既定は `git.base`) と同じ名前のブランチは task のブランチにしない (項目の `branch: develop` で手元の develop がそのまま checkout され、commit が base に乗った)。項目の値なら無視して既定名を切り、`--branch` の明示なら断る。**merge の順番の強制・本体 checkout の pull もしない** (repo の特性しだい。艦の写しの役割プロンプトで足す)
 - **チームの設定は全て起動時のフラグで渡す。作業対象の repo にも `~/.claude` にも書き込まない**。起動の形は検証 B の起動レシピどおり (`src/yamato/claude.py` に集約。Claude Code とのやり取りをそこ 1 か所に閉じ込める)
 
   ```
@@ -176,18 +176,18 @@ owner (人間)
     --add-dir <ship> -- "<最初のプロンプト>"
   ```
   - `--settings <ship>/.runtime/settings-<seat>.json`: **席ごと**のファイル。hook のコマンドに席名を埋め込むため。hooks、`crossSessionInbound: "accept"`、権限 (auto モード + `deny`) が入る。1 本にまとめて渡す (2 回渡すと片方しか効かない、検証 B)
-  - `--agents '<json>'`: 役割の定義。艦フォルダの `roles/<role>.md` から `.runtime/agents.json` に生成する (ファイルパス指定は `--print` のときだけなので、JSON 文字列で渡す)。渡すのは席の role 1 つだけ (全 role だと yamato-dev で 28.6K 文字になり、Windows のコマンド長上限 32767 / `cmd /c` の 8191 を超える。T-090)。Windows で上限を超えるなら起動前にエラーにする。役割プロンプトの `{{yamato}}` などは生成時に置き換える。`{{yamato}}` は「yamato を動かしているインタプリタ + `yamato` スクリプト」の 2 語 (`<sys.executable> <repo>/yamato`、各語をシェルの引用で包む) になる。shebang の `python3` に頼らないため (Windows の Git Bash に `python3` は無い)。役割プロンプトと permission 規則 (`Bash({{yamato}} ...)`、`seat-stop` の allow) が同じ形を使うので、規則は席が打つ文字列とそのまま当たる
+  - `--agents '<json>'`: 役割の定義。艦フォルダの `roles/<role>.md` から `.runtime/agents.json` に生成する (ファイルパス指定は `--print` のときだけなので、JSON 文字列で渡す)。渡すのは席の role 1 つだけ (全 role だと yamato-dev で 28.6K 文字になり、Windows のコマンド長上限 32767 / `cmd /c` の 8191 を超える)。Windows で上限を超えるなら起動前にエラーにする。役割プロンプトの `{{yamato}}` などは生成時に置き換える。`{{yamato}}` は「yamato を動かしているインタプリタ + `yamato` スクリプト」の 2 語 (`<sys.executable> <repo>/yamato`、各語をシェルの引用で包む) になる。shebang の `python3` に頼らないため (Windows の Git Bash に `python3` は無い)。役割プロンプトと permission 規則 (`Bash({{yamato}} ...)`、`seat-stop` の allow) が同じ形を使うので、規則は席が打つ文字列とそのまま当たる
   - `--add-dir <ship>`: 記録を読み書きできるようにする (複数 repo の艦は、ship の後ろに先頭以外の repo を並べる)。`--add-dir` は複数の値を取って後ろのプロンプトまで食うので、プロンプトの前に `--` を置く
-  - `--setting-sources`: 既定は `project,local`。ユーザー設定 (`~/.claude`) の plugin hooks・言語設定・env などの settings を席に持ち込まない (検証 B Q3)。作業対象の repo の設定は効く。**`~/.claude/CLAUDE.md` は `--setting-sources` を外しても席に入る** (owner の実機確認 2026-10-17。「project instructions」として入る。workspace が `$HOME` の下だと親ディレクトリを辿る探しが拾う、と読んでいる。推測)。止める仕組みは yamato に無く、作らない (グローバルに効かせたいことを書く場所なので、読んでいてよい)。**team.yaml の `setting_sources: [project, local, user]` で opt-in できる** (D-072。値は `user` / `project` / `local` のリスト、空と他の値は読み込みエラー。bg の起動・headless の `-p`・memory の棚卸しの `-p` に同じ値を渡す。`setting_sources` は新しい起動にだけ効く。resume は `--setting-sources` を引き継がず user 設定が戻る)。**resume した席には user 設定が戻る (`--setting-sources` は resume に引き継がれず、付け直すと元の id で起きずコピーになり、コピーでも入る。owner の実機確認 2026-10-17)。止めたい値は team.yaml の `settings:` に書く (`--settings` は resume でも戻り user 設定に勝つ。permissions の allow は足し算なので消せない)**。`user` を足すと user の hooks・plugin (plugin hooks が席に漏れる)・env・`remoteControlAtStartup` なども席に入る。席の `--settings` の `remoteControlAtStartup: false` は user の `true` に勝つ (実機確認 2026-10-17)。opt-in した艦の責任で、既定は変えない
-  - `env -u`: team.yaml の `env_unset` の環境変数を外して起動する (ひな形の既定は空。D-003: gh の権限はトークンのスコープで絞り、env_unset は席から外したい環境変数があるときの道具)。**bg の席には効かない** (検証 C Q2。下の検証済み) ので、同じ名前を席の settings の `env` に空文字で書く。`env -u` が効くのは `-p` (headless) だけ。呼び出し元のセッションの識別子 (`CLAUDE_CODE_SESSION_ID` など) は、新しい席に漏らさないよう常に外す (技術的な理由)
+  - `--setting-sources`: 既定は `project,local`。ユーザー設定 (`~/.claude`) の plugin hooks・言語設定・env などの settings を席に持ち込まない (検証 B Q3)。作業対象の repo の設定は効く。**`~/.claude/CLAUDE.md` は `--setting-sources` を外しても席に入る** (owner の実機確認 2026-10-17。「project instructions」として入る。workspace が `$HOME` の下だと親ディレクトリを辿る探しが拾う、と読んでいる。推測)。止める仕組みは yamato に無く、作らない (グローバルに効かせたいことを書く場所なので、読んでいてよい)。**team.yaml の `setting_sources: [project, local, user]` で opt-in できる** (決定 2026-10-05。値は `user` / `project` / `local` のリスト、空と他の値は読み込みエラー。bg の起動・headless の `-p`・memory の棚卸しの `-p` に同じ値を渡す。`setting_sources` は新しい起動にだけ効く。resume は `--setting-sources` を引き継がず user 設定が戻る)。**resume した席には user 設定が戻る (`--setting-sources` は resume に引き継がれず、付け直すと元の id で起きずコピーになり、コピーでも入る。owner の実機確認 2026-10-17)。止めたい値は team.yaml の `settings:` に書く (`--settings` は resume でも戻り user 設定に勝つ。permissions の allow は足し算なので消せない)**。`user` を足すと user の hooks・plugin (plugin hooks が席に漏れる)・env・`remoteControlAtStartup` なども席に入る。席の `--settings` の `remoteControlAtStartup: false` は user の `true` に勝つ (実機確認 2026-10-17)。opt-in した艦の責任で、既定は変えない
+  - `env -u`: team.yaml の `env_unset` の環境変数を外して起動する (ひな形の既定は空。決定 2026-09-27: gh の権限はトークンのスコープで絞り、env_unset は席から外したい環境変数があるときの道具)。**bg の席には効かない** (検証 C Q2。下の検証済み) ので、同じ名前を席の settings の `env` に空文字で書く。`env -u` が効くのは `-p` (headless) だけ。呼び出し元のセッションの識別子 (`CLAUDE_CODE_SESSION_ID` など) は、新しい席に漏らさないよう常に外す (技術的な理由)
   - 起動の成否: `claude --bg` は worker が起動前に落ちても exit 0 で `backgrounded · <id>` を出す (検証 C Q5)。`yamato up` と `send` は起動・resume のあとに `claude agents --json` を見て、pid が付くのを確かめる。`state == failed` や pid なしは失敗として roster (`launchFailed`) と events (`launch_failed`) に残し、送り手にエラーを返す (design-p1 §5.1)
-- `.runtime/` は `yamato up` のたびに team.yaml から作り直す。settings はパスで渡すので、resume のときにファイルが読み直され、変更が次のシフトから効く (検証 B Q2)。hook は YAML を読まず、`.runtime/team.json` (team.yaml の検証済みの写し) を読む。ただし deadline は例外 (D-015): 艦がすでに稼働中 (RUNNING) なら、`--for` なしの `up` は締切を縮めない (`max(now + time_limit, 今の締切)`)。`--for` を明示したときは今までどおりその値で書く
+- `.runtime/` は `yamato up` のたびに team.yaml から作り直す。settings はパスで渡すので、resume のときにファイルが読み直され、変更が次のシフトから効く (検証 B Q2)。hook は YAML を読まず、`.runtime/team.json` (team.yaml の検証済みの写し) を読む。ただし deadline は例外 (決定 2026-09-27): 艦がすでに稼働中 (RUNNING) なら、`--for` なしの `up` は締切を縮めない (`max(now + time_limit, 今の締切)`)。`--for` を明示したときは今までどおりその値で書く
 - hook のコマンドには、艦の場所と席名を**引数として埋め込む**。環境変数では渡さない。Claude Code の常駐 daemon が環境変数を焼き付ける問題があるため (fleet #315 の教訓)。hook は **exec form** (`command` = `sys.executable`、`args` = [`yamato` スクリプト, `hook`, イベント名, 艦, 席]) で、シェルを通さない (引用が要らず、シェルの profile の出力が JSON に混ざらず、Windows でも同じ形。Windows の exec form は `command` が `.exe` であることを求める (W1))。
 - プロセスの OS 差分 (生死の判定・切り離しての起動・停止・前面の attach) は `src/yamato/procs.py` に閉じ込める。ほかのモジュールは `os.kill(pid, 0)` / `SIGKILL` / `nohup` を直接使わない。Windows は `OpenProcess` + `GetExitCodeProcess` (`os.kill(pid, 0)` は死んだプロセスにも成功し、同じグループに Ctrl+C を送る)、`CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW` での起動、`CTRL_BREAK_EVENT` → `taskkill /T /F` での停止 (W3、根拠は work/w0-results.txt)。pid の再利用は roster の `pidStart` (Windows のみ、`GetProcessTimes`) で見分ける。roster の `group: true` は、その pid を `group_kwargs` (自分のグループの先頭) で起こした印で、`soft_stop` が CTRL_BREAK を送ってよいかの根拠になる。旧版の roster には `group` が無く、Windows では hard_kill に回る (安全側)。
 - 作業対象の repo 自身の CLAUDE.md と設定は、そのまま効く (上乗せになる)。プロジェクトの規律はそちらが担う
 - 席の作業ディレクトリは、Claude Code の workspace trust を事前に通しておく必要がある (bg の席は trust を対話で通せない。trust は git root ごと)。`ship create` は通っていなければ警告し、`up` は手順を出して止まる。yamato は trust を自動で承認しない
   - trust の確かめ方: 本当の判定は、`claude --bg` の出力の `Workspace not trusted` で行う (起動を失敗扱いにして手順を出す)。起動の前にも `~/.claude.json` の `projects[<git root>].hasTrustDialogAccepted` を見るが、これは Claude Code の内部のファイルで、安定したインターフェースではない (§4)。そのため結果は「trust 済み / trust されていない / 分からない」の 3 値にする。ファイルが無い・読めない・形が違うときは「分からない」で、警告を出して起動し、claude の出力で判定する。起動の前に断るのは、はっきり「trust されていない」ときだけ (`up`・新しいシフト・`send --cwd`。`ship create` は警告だけ)
-- **艦の写しを新しい版に上げる (`ship upgrade`、T-070、D-081)**: 艦の `roles/*.md`・`team.yaml` は艦ごとに手で書き換えられるので、機械の 3-way merge はしない (merge できても出来上がりが正しいか分からず、ひな形に足された内容を入れたくない艦もある)。代わりに upgrade 専用の対話 claude をownerの端末で起動する。team.yaml の `template: {name, version}` (`ship create` が書く。記録のない艦は `--from`) から旧版を決め、`<艦>/.upgrade/<旧>-<新>-<日時>/` に `before/` (roles と team.yaml の控え)・`template-diff.patch` (yamato の checkout の tag `v<旧>` から HEAD への `git diff -- templates/<名>/`)・`template-old/`・`template-new/`・`migration.md` (旧版より後の項目) ・`settings.json` を作って渡す。claude は席ではない (`--bg`・`--agent` なし、`--setting-sources local`。ただし Bedrock などのため user の settings.json の `env` だけは claude の環境に渡す (ファイルには書かない)。hooks・CLAUDE.md は入れない。T-088)。専用の settings は `roles/*.md` と `team.yaml` の Edit と `ship upgrade-done` の Bash だけ許し、`charter.md`・`knowledge.md` は deny。専用のプロンプト (`src/yamato/prompts/upgrade.md`) は変更を 1 件ずつownerに出し、決まったものだけ Edit させ、終わりに `ship upgrade-done` で `template.version` を進めさせる。claude の起動は `claude.upgrade_argv` に閉じる。`template` は実行時には読まない (記録だけ)
+- **艦の写しを新しい版に上げる (`ship upgrade`、決定 2026-10-05)**: 艦の `roles/*.md`・`team.yaml` は艦ごとに手で書き換えられるので、機械の 3-way merge はしない (merge できても出来上がりが正しいか分からず、ひな形に足された内容を入れたくない艦もある)。代わりに upgrade 専用の対話 claude をownerの端末で起動する。team.yaml の `template: {name, version}` (`ship create` が書く。記録のない艦は `--from`) から旧版を決め、`<艦>/.upgrade/<旧>-<新>-<日時>/` に `before/` (roles と team.yaml の控え)・`template-diff.patch` (yamato の checkout の tag `v<旧>` から HEAD への `git diff -- templates/<名>/`)・`template-old/`・`template-new/`・`migration.md` (旧版より後の項目) ・`settings.json` を作って渡す。claude は席ではない (`--bg`・`--agent` なし、`--setting-sources local`。ただし Bedrock などのため user の settings.json の `env` だけは claude の環境に渡す (ファイルには書かない)。hooks・CLAUDE.md は入れない)。専用の settings は `roles/*.md` と `team.yaml` の Edit と `ship upgrade-done` の Bash だけ許し、`charter.md`・`knowledge.md` は deny。専用のプロンプト (`src/yamato/prompts/upgrade.md`) は変更を 1 件ずつownerに出し、決まったものだけ Edit させ、終わりに `ship upgrade-done` で `template.version` を進めさせる。claude の起動は `claude.upgrade_argv` に閉じる。`template` は実行時には読まない (記録だけ)
 - 艦フォルダの既定の場所: `~/yamato/<ship>/` (`$YAMATO_HOME`)。`ship create --path` で任意の場所にも作れる。艦の一覧は `<YAMATO_HOME>/ships.json` に登録する
 - 艦フォルダが workspace の repo の中にあるチームと、repo のないチームは、yamato が `bgIsolation: none` にする。自動 worktree に書かれた記録が元の場所に残らないため (検証 B Q4。技術的な制約)
 
@@ -241,13 +241,13 @@ board:                           # チーム固有の board 設定 (§6.2)
   # columns: [{ name: review, state: active }, ...]   # 任意。列は固定の state に対応させる
 ```
 
-- 各項目は、分け方 (§2.1) でいうと次のもの。**`deny` と `env_unset` と `settings` は安全網の中身で、ひな形の既定値。艦ごとに自由に変えてよい** (`env_unset` の既定は空。D-003)。`time_limit` / `grace` / `seat_stop` / `inject` / `notify` / `board.*` は設定。git の流れ・worktree の使い方・司令塔型は、team.yaml には書かず役割プロンプト (`roles/<role>.md`) に書く
+- 各項目は、分け方 (§2.1) でいうと次のもの。**`deny` と `env_unset` と `settings` は安全網の中身で、ひな形の既定値。艦ごとに自由に変えてよい** (`env_unset` の既定は空。決定 2026-09-27)。`time_limit` / `grace` / `seat_stop` / `inject` / `notify` / `board.*` は設定。git の流れ・worktree の使い方・司令塔型は、team.yaml には書かず役割プロンプト (`roles/<role>.md`) に書く
 - 検査は、知らない項目をエラーにすること、`hub` が `count: 1` の役割であること、`count` が 1 以上の整数であることなど。無人の席で auto モードを使えない model (Haiku) は、拒否せず警告する (検証 B。manual に落ちて最初の書き込みで止まる)
 - `shift` は役割ごとに選べる (§8)。P0 は `per_task` / `persistent`、P1 で `headless` が加わる
 - **owner は予約名**で、役割には書かない (人間の受信箱 `<ship>/owner/` を指す)。v1 の `owner: { agent: human }` と `agent: claude:opus` の書き方はやめた (`model:` を使う)
 - 人間の関与度は、P0 では owner に何を通知するか (`notify`) で決まる。P1 で `decisions` (判断の種類ごとに誰が決めるか) が入り、「全部任せる」なら decider を AI の役割に書き換える (§9)
 
-**エディタの補完 (T-057)**: team.yaml の JSON Schema が `src/yamato/schema/team.schema.json` にある (項目の説明・型・選べる値・知らない項目の警告。外れた `git.merge_decision` は取り消し線)。`ship create` と admiral の初回作成は、ひな形の先頭の `# yaml-language-server: $schema=...` 行に、この checkout の schema の絶対パス (`file:///...`) を埋める。repo は public だが、schema の置き場を URL にする切り替えは未対応なので、今は checkout の絶対パスで指す。VS Code では Red Hat の「YAML」拡張で効く。**既にある艦には自動では入らない**。手で team.yaml の 1 行目に `# yaml-language-server: $schema=file:///<yamato の checkout>/src/yamato/schema/team.schema.json` を足す (Windows は `file:///C:/Users/...`。`python3 -c "from yamato.ship import SCHEMA; print(SCHEMA.as_uri())"` で出せる)。validate が正本で、schema は編集用の二重持ち。`tests/test_team_schema.py` が team.py の `*_KEYS` と項目の集合を照合する。項目を足し引きしたら schema も直す。
+**エディタの補完**: team.yaml の JSON Schema が `src/yamato/schema/team.schema.json` にある (項目の説明・型・選べる値・知らない項目の警告。外れた `git.merge_decision` は取り消し線)。`ship create` と admiral の初回作成は、ひな形の先頭の `# yaml-language-server: $schema=...` 行に、この checkout の schema の絶対パス (`file:///...`) を埋める。repo は public だが、schema の置き場を URL にする切り替えは未対応なので、今は checkout の絶対パスで指す。VS Code では Red Hat の「YAML」拡張で効く。**既にある艦には自動では入らない**。手で team.yaml の 1 行目に `# yaml-language-server: $schema=file:///<yamato の checkout>/src/yamato/schema/team.schema.json` を足す (Windows は `file:///C:/Users/...`。`python3 -c "from yamato.ship import SCHEMA; print(SCHEMA.as_uri())"` で出せる)。validate が正本で、schema は編集用の二重持ち。`tests/test_team_schema.py` が team.py の `*_KEYS` と項目の集合を照合する。項目を足し引きしたら schema も直す。
 
 P1 で足す項目 (詳細は design-p1 §0.4。値を書かなければひな形の既定値が入る): `decisions` (判断の種類 → decider)、`notify.via` の `slack` / `windows` と `notify.decisions`、`report.daily`、`talk_default`、`up_seats`、`memory` (`curate_every` / `curate_at` / `applier` / `limits`)、`profiles` (`trust:` のプロファイル)、`git` (`base` / `merge_requires` / `conflict`)、役割ごとの `isolation` / `rotate` / `report_to` / `handoff_guard` / `trust` / `remote_control` / `max_duration` / `max_budget_usd`。
 
@@ -258,13 +258,13 @@ P1 で足す項目 (詳細は design-p1 §0.4。値を書かなければひな�
 | | コードが固定 (安全網・技術的な制約) | team.yaml / ひな形の既定値 | 役割プロンプト |
 |---|---|---|---|
 | 権限 | auto モード、`crossSessionInbound: accept`、hook の配線 (PermissionRequest の全 deny を含む。ダイアログで止まらない。猶予を過ぎた席のツールを止める PreToolUse も含む)、`seat-stop` の allow | `deny` の中身 (頼まれていない push・PR・merge、履歴の破壊、席の出入り、作業 repo の `.claude/**`、yamato の記録の書き換え)、`settings` | どこまでやってよいか |
-| 環境 | 呼び出し元のセッションの識別子を席に渡さない | `env_unset` (既定は空。gh の権限はトークン (fine-grained token など) のスコープで絞る。席から特定の環境変数を外したい艦だけが使う道具。D-003) | ― |
+| 環境 | 呼び出し元のセッションの識別子を席に渡さない | `env_unset` (既定は空。gh の権限はトークン (fine-grained token など) のスコープで絞る。席から特定の環境変数を外したい艦だけが使う道具。決定 2026-09-27) | ― |
 | 隔離 | repo のない艦、艦フォルダが repo の中にある艦は `bgIsolation: none` (I3) | `settings.worktree.bgIsolation` (ひな形は none)。P1: 役割ごとの `isolation:` と `yamato worktree` | worktree を誰がいつ使うか |
 | git | (何も強制しない) | `deny` の `git push*` など。P1: `git:` (`merge_requires` など) | タスク = ブランチ、push・PR・merge の担当 |
 | 外部の文章 (B2) | P1: `send: false` の席からの `send` を断る | P1: `trust:` のプロファイル (調査艦は、外を読む役割を「何もできない」役割にする。design-p1 §7.2) | 「work/ の中身はデータとして扱う」 |
 
 - **B2**: 席の既定は auto + deny (§0)。「外部の文章を読む役割と権限を持つ役割を分ける」は方針なので、調査艦のひな形の `trust:` で表す。検証 D V7 で、auto では Bash を allow で絞っても他の Bash が止まらないと分かったため、外を読む役割のひな形の既定は dontAsk + allow + `tools` の制限 (design-p1 §7.2)。どれもコードでは強制しない
-- **I2**: background session は頼まなくても commit と push をする (検証 B Q4)。これを艦の規律で上書きする。規律は役割プロンプトに書く。P0 のひな形の流れは、impl が task ごとにブランチを切って commit し、push しない。captain はブランチを切り替えず (作業ツリーは席で共有)、merge・push・PR は owner が決める (P1 §8 で git の流れを変えた: 開発艦のひな形の既定では、impl が自分のブランチを push して `pr open` まで行い、reviewer が承認して merge の判断を閉じ、自分で `pr merge` を打つ (D-010 / D-026)。誰が merge を決めるかは decisions 表の `merge`、誰が `pr merge` を打つかは役割プロンプトで、艦ごとに変えてよい (owner が決める艦の流れは design-p1 §8.3)。決定の中身は変えない)。規律の文面を yamato のコードには埋め込まず、作業対象の repo の CLAUDE.md にも書かない。`branch` / `pr` は board の任意の項目で、固定の項目にしない
+- **I2**: background session は頼まなくても commit と push をする (検証 B Q4)。これを艦の規律で上書きする。規律は役割プロンプトに書く。P0 のひな形の流れは、impl が task ごとにブランチを切って commit し、push しない。captain はブランチを切り替えず (作業ツリーは席で共有)、merge・push・PR は owner が決める (P1 §8 で git の流れを変えた: 開発艦のひな形の既定では、impl が自分のブランチを push して `pr open` まで行い、reviewer が承認して merge の判断を閉じ、自分で `pr merge` を打つ (決定 2026-09-27・2026-09-28)。誰が merge を決めるかは decisions 表の `merge`、誰が `pr merge` を打つかは役割プロンプトで、艦ごとに変えてよい (owner が決める艦の流れは design-p1 §8.3)。決定の中身は変えない)。規律の文面を yamato のコードには埋め込まず、作業対象の repo の CLAUDE.md にも書かない。`branch` / `pr` は board の任意の項目で、固定の項目にしない
 - **worktree**: 仕組みで割り当てない。P1 で `yamato worktree add / path / list / rm` を道具として出し、いつ誰が使うかは役割プロンプトで決める (design-p1 §8.2)。P1 の `pr open` / `pr merge` も道具で、誰が打つかは役割プロンプト、前提条件は設定 `git.merge_requires` (design-p1 §8.3)
 
 ## 6. 記録
@@ -306,7 +306,7 @@ git で管理するかは利用者が決める。
 ### 6.2 board
 
 **2 層に分ける**
-- **仕組みが読む固定の項目** (全チーム共通): `id` / `title` / `kind` / `parent` / `assignee` / `reviewer` (任意。レビュー中の席。T-093) / `state` (open・active・blocked・done の 4 つ) / `blocked_on` / `links`
+- **仕組みが読む固定の項目** (全チーム共通): `id` / `title` / `kind` / `parent` / `assignee` / `reviewer` (任意。レビュー中の席) / `state` (open・active・blocked・done の 4 つ) / `blocked_on` / `links`
 - **チーム定義の中身**: 列、種類、追加の項目、完了の条件。`column` は任意で、チームが列を定義したときは固定の `state` に対応させる
 
 仕組みが読むのは固定の項目だけ。チーム独自の部分を読むのはエージェントと人間。`branch` / `pr` / `worktree` のような git の項目は、固定にせず任意の項目にする。
@@ -316,7 +316,7 @@ git で管理するかは利用者が決める。
 **項目ファイルの例**
 ```markdown
 ---
-id: T-042
+id: T-002
 kind: task
 title: ログイン画面の実装
 parent: null
@@ -334,11 +334,11 @@ branch: t-042
 ```
 
 **更新のルール**
-- frontmatter の項目は **board コマンド経由でのみ**変更する (`board set T-042 state=done` など)。コマンドが検査するのは**固定の項目の整合性だけ**: `state` が 4 つのどれか、`assignee` / `reviewer` が席の名前か `owner` (`-` で消す)、`parent` / `blocked_on` が実在する項目、`id` は変えられない、`title` / `kind` は空にできない。チームの列・種類・追加の項目は検査しない (モデルが勝手に構造を壊すのを防ぐのが目的で、運用の型は縛らない)
+- frontmatter の項目は **board コマンド経由でのみ**変更する (`board set T-002 state=done` など)。コマンドが検査するのは**固定の項目の整合性だけ**: `state` が 4 つのどれか、`assignee` / `reviewer` が席の名前か `owner` (`-` で消す)、`parent` / `blocked_on` が実在する項目、`id` は変えられない、`title` / `kind` は空にできない。チームの列・種類・追加の項目は検査しない (モデルが勝手に構造を壊すのを防ぐのが目的で、運用の型は縛らない)
 - 本文 (経緯、メモ) は自由に書いてよい。`board set --note` で経緯に 1 行足せる
 - done になった項目は、設定 `board.archive_on_done` (既定 true) で `board/archive/` に移る。false の艦は `board archive` で手で移す
 
-**コマンドとビュー** (同じファイル群を別の角度で見せる): `board add / set / show / list / mine / archive / tree / kanban`。`list` は一覧 (既定は done 以外、`--all` で archive も含む)、`mine` は席の担当 (起動時の注入に使う。`inject.limits.mine_items` で件数に上限)。`tree` は parent を辿ってインデントで出す (done でも done 以外の子孫を持つ親は出す。parent が見つからない項目は最上段)、`kanban` は列 (`board.columns`。無ければ state) ごとに見出し + 件数 + 項目 (T-030、design-drift #4/#14、D-018)。どちらも decision 項目 (`D-NNN`) は対象外 (`decide list` がある)。描画は `board_view.py` に置き、captain 向けの注入の部品 `board` (opt-in、`inject.limits.board_items`) と共有する (design §8.2)。
+**コマンドとビュー** (同じファイル群を別の角度で見せる): `board add / set / show / list / mine / archive / tree / kanban`。`list` は一覧 (既定は done 以外、`--all` で archive も含む)、`mine` は席の担当 (起動時の注入に使う。`inject.limits.mine_items` で件数に上限)。`tree` は parent を辿ってインデントで出す (done でも done 以外の子孫を持つ親は出す。parent が見つからない項目は最上段)、`kanban` は列 (`board.columns`。無ければ state) ごとに見出し + 件数 + 項目 (design-drift #4/#14、決定 2026-09-27)。どちらも decision 項目 (`D-NNN`) は対象外 (`decide list` がある)。描画は `board_view.py` に置き、captain 向けの注入の部品 `board` (opt-in、`inject.limits.board_items`) と共有する (design §8.2)。
 
 board に入れないもの: 「なぜそうしたか」は decisions (P1)、「今日何をしたか」は席の作業ログに書く。
 
@@ -348,9 +348,9 @@ board に入れないもの: 「なぜそうしたか」は decisions (P1)、「
 
 ```markdown
 # impl-1 引き継ぎ (2026-09-25 18:00)
-- 担当状況: T-042 は review 待ち (PR#12)。T-043 は未着手
+- 担当状況: T-002 は review 待ち (PR#12)。T-003 は未着手
 - 途中の作業: なし
-- 次にやること: レビュー指摘が来たら対応。来なければ T-043
+- 次にやること: レビュー指摘が来たら対応。来なければ T-003
 - 詰まり: なし
 - memory 候補: テストのモックは 30 日で期限が切れる
 ```
@@ -371,7 +371,7 @@ board に入れないもの: 「なぜそうしたか」は decisions (P1)、「
 ### 6.6 memory
 
 - **候補**: 席の `memory-inbox.md` に溜める (§0 I5)。起動時には読まない
-- **memory 本体**: 起動時に注入する。長さの上限は `inject.limits.memory` (`[行数, 文字数]`、T-076)。置き場は、P0 の実装では `seats/<seat>/memory.md`。design-p1 は、役割の知見として `roles/<role>/memory.md` (同じ役割の席で共有) に置く形にしている。P1 の棚卸しの実装で揃える (§15)
+- **memory 本体**: 起動時に注入する。長さの上限は `inject.limits.memory` (`[行数, 文字数]`)。置き場は、P0 の実装では `seats/<seat>/memory.md`。design-p1 は、役割の知見として `roles/<role>/memory.md` (同じ役割の席で共有) に置く形にしている。P1 の棚卸しの実装で揃える (§15)
 - **棚卸し** (P1、design-p1 §3): 案を書くのは各役割の headless シフト (`memory.proposed.md`)、反映は `yamato memory apply`。**反映する役は設定 `memory.applier` (既定は hub = captain) と役割プロンプトで表し、コードは呼び出し元を検査しない**。コードが強制するのは、上限を超える案の反映を拒否することだけ (安全網。数値は `inject.limits.memory` / `knowledge`)。棚卸しの頻度も設定 (`curate_every` / `curate_at`)
 - 自動で溜めて、次のプロンプトに自動で入れることはしない (腐るため)
 - **自前で置く (2026-09-25 合意)**。Claude Code ネイティブの `memory: project` は使わない。理由: 保存先が作業対象の repo 側になる / 同じ repo で複数チームを動かすと同名の役割で混ざる / エージェントがいつでも書けてしまい、棚卸しで書く方針とぶつかる。注入は handoff と同じ SessionStart hook に 1 ファイル足すだけで済む
@@ -379,7 +379,7 @@ board に入れないもの: 「なぜそうしたか」は decisions (P1)、「
 
 ### 6.7 共通ルール
 
-- 秘密情報は記録に書かない (起動のたびにコンテキストに入る前提で扱う)。これは**役割プロンプトの共通の節**で約束する (コードでは検査できない)。席から特定の環境変数を外したいときの道具が `env_unset` (§5.1)。既定は空 (`GH_TOKEN` は外さない。gh の権限はトークンのスコープで絞る。D-003)
+- 秘密情報は記録に書かない (起動のたびにコンテキストに入る前提で扱う)。これは**役割プロンプトの共通の節**で約束する (コードでは検査できない)。席から特定の環境変数を外したいときの道具が `env_unset` (§5.1)。既定は空 (`GH_TOKEN` は外さない。gh の権限はトークンのスコープで絞る。決定 2026-09-27)
 - 寿命の違う情報は別のファイルに分ける (今の状態 = 上書き / 経緯 = 追記 / 長期の知見 = 手入れ)
 
 ## 7. メッセージと起動 (`send`)
@@ -414,8 +414,8 @@ Claude Code の `SendMessage` は、待機中のセッションを起こせる�
 
 - 1 日 1 回のようなシフトは、人間が手で起動・終業すればよい
 - **どの粒度でも、シフトの終わりに引き継ぎを書く**。そのため、粒度を変えても、席が予期せず止まっても、記録から再開できる。会話の再開 (resume) は「楽をするための最適化」であって、連続性の本体ではない (§0 I4。captain も同じ)
-- **dev のひな形の impl (`per_task`) は、PR を開いたあと merge まで席に残る** (差し戻しを同じ会話で直す。「merge 済み」の知らせで終業する。コードは変えず、役割プロンプトだけの決まり。D-073)。席が落ちたあとの `send` は下のとおり新しいシフト
-- `per_task` 宛ての `send` は常に新しいシフトを起こす。`persistent` 宛てだけ再開する (§0 B3)。P0 は、止まっていれば常に resume する。P1 で、resume せずに新しいシフトにする条件が設定 `rotate:` で加わる (design-p1 §5.3〜5.4)。**per_task の宛先が生きている (前の task の会話が持ち込まれる疑い) ときは、§0 B3 自体は変えず、配送はそのまま行って警告を 1 行出すだけにとどめる** (#11 / D-019。attach 中かどうかを外から見分けられないため、design-p1 §5.2)
+- **dev のひな形の impl (`per_task`) は、PR を開いたあと merge まで席に残る** (差し戻しを同じ会話で直す。「merge 済み」の知らせで終業する。コードは変えず、役割プロンプトだけの決まり。決定 2026-10-05)。席が落ちたあとの `send` は下のとおり新しいシフト
+- `per_task` 宛ての `send` は常に新しいシフトを起こす。`persistent` 宛てだけ再開する (§0 B3)。P0 は、止まっていれば常に resume する。P1 で、resume せずに新しいシフトにする条件が設定 `rotate:` で加わる (design-p1 §5.3〜5.4)。**per_task の宛先が生きている (前の task の会話が持ち込まれる疑い) ときは、§0 B3 自体は変えず、配送はそのまま行って警告を 1 行出すだけにとどめる** (#11 / 決定 2026-09-27。attach 中かどうかを外から見分けられないため、design-p1 §5.2)
 
 ### 8.2 起動時に読むもの (上限つき)
 
@@ -430,22 +430,22 @@ SessionStart hook が、次を注入する。**何を読ませるかは設定** 
 | `inbox` | 未読の inbox |
 | `memory` | 役割の memory (`roles/<role>/memory.md`。design-p1 §3) |
 | `knowledge` | チームの knowledge.md |
-| `file:<名前>` (opt-in) | team.yaml の `inject.files.<名前>` のファイルの中身 (T-075、D-089。charter は `inject.files.charter` + `file:charter`、T-072 の部品 `charter` を置き換えた)。パスは相対なら艦フォルダ基点、`~`・絶対パス可、repo の中は `@<workspace の呼び名>/<パス>`。見出しは `## <名前> (file: <パス>)`。知見の hook に、inject のリストに書いた順で載る。無い・空・読めないは `(なし: <パス>)` の 1 行 (エラーにしない。無いファイルは検査で warnings)。`inject.limits.files.<名前>` → `inject.limits.files.default` → `[60, 3000]` (`[行数, 文字数]`) を超えたら切って全文のパスを出す。ひな形は captain (hub) と planner に `file:charter` を入れる。古い書き方 (部品 `charter`・トップの `charter:`・`inject.limits.charter`) は v1.3.0 で読み込みエラーにした (v1.2.0 は 1 版だけ読み替えた) |
-| `board` (P1、opt-in) | 艦全体の進み具合 (kanban 風): state ごとの件数 + blocked→active→open の項目一覧。`mine` と重なっても省かない。`inject.limits.board_items` で件数に上限、超えた分は「…ほか N 件」(T-030、design-drift #4/#14、D-018) |
-| `fleet` (P1、opt-in) | 全艦の様子 (`yamato ships` 相当を 1 艦 1 行): 稼働中か・残り時間・captain の生死・赤い席・owner の判断待ち・今日のトークン。admiral (D-011、D-013) だけが使う想定。`inject.limits.fleet_items` で件数に上限、超えた分は「…ほか N 件 (`yamato ships` で見る)」(T-022) |
+| `file:<名前>` (opt-in) | team.yaml の `inject.files.<名前>` のファイルの中身 (決定 2026-10-08。charter は `inject.files.charter` + `file:charter`、前の部品 `charter` を置き換えた)。パスは相対なら艦フォルダ基点、`~`・絶対パス可、repo の中は `@<workspace の呼び名>/<パス>`。見出しは `## <名前> (file: <パス>)`。知見の hook に、inject のリストに書いた順で載る。無い・空・読めないは `(なし: <パス>)` の 1 行 (エラーにしない。無いファイルは検査で warnings)。`inject.limits.files.<名前>` → `inject.limits.files.default` → `[60, 3000]` (`[行数, 文字数]`) を超えたら切って全文のパスを出す。ひな形は captain (hub) と planner に `file:charter` を入れる。古い書き方 (部品 `charter`・トップの `charter:`・`inject.limits.charter`) は v1.3.0 で読み込みエラーにした (v1.2.0 は 1 版だけ読み替えた) |
+| `board` (P1、opt-in) | 艦全体の進み具合 (kanban 風): state ごとの件数 + blocked→active→open の項目一覧。`mine` と重なっても省かない。`inject.limits.board_items` で件数に上限、超えた分は「…ほか N 件」(design-drift #4/#14、決定 2026-09-27) |
+| `fleet` (P1、opt-in) | 全艦の様子 (`yamato ships` 相当を 1 艦 1 行): 稼働中か・残り時間・captain の生死・赤い席・owner の判断待ち・今日のトークン。admiral (決定 2026-09-27) だけが使う想定。`inject.limits.fleet_items` で件数に上限、超えた分は「…ほか N 件 (`yamato ships` で見る)」 |
 
 - 役割のプロンプトは注入ではなく、`--agents` の JSON で渡す (§4.1)
 - 注入は **SessionStart hook 2 本**に分ける。記録の hook (ヘッダ・`handoff`・`log_tail`・`mine`・`inbox` と注記) と、知見の hook (`memory`・`knowledge`・`file:<名前>`。リストに書いた順)。Claude Code は hook 1 本の出力を 10,000 文字まで受け取り、超えると本文の代わりに約 2KB のプレビューを渡す (検証 C Q1。判定は hook ごとで、文字数で数える)
-- 上限は `inject.limits` で持つ。`handoff`・`log_tail`・`last_report`・`memory`・`knowledge` は `[行数, 文字数]` (正の整数 2 個。整数 1 個は検査で拒否)、それ以外は正の整数 (T-073)。`inject.files` の各ファイルの上限は一段下の `inject.limits.files.<名前>` (と `files.default`、T-075)。(ひな形の値: handoff 40 行 / 2000 文字、担当 15 件、未読 10 通、**hook 1 本の全体 9500 文字**)。memory と knowledge は `inject.limits.memory` / `knowledge` (ひな形: memory 80 行 / 4000 文字、knowledge 120 行 / 5000 文字。`memory apply` が反映を拒否する上限と同じ。前の `memory.limits` は v1.3.0 で読み込みエラーにした、T-076) で切る。切ったところには「全文は `<path>` を Read せよ」と付ける (hook の全体で切ったときは、全文を `.runtime/` に書いてそのパスを付ける)。全体の上限は安全網として残し、個々の中身は設定に置く
-- captain は、これに加えてカンバン風の `board` と日報を読む (P1、設定の `inject`。日報は前回の「一言」「判断待ち」「明日」の 3 節だけ。design-p1 §2.3、`board` は T-030・§6.2)。ほか P1 で、孤児になった項目の一覧や棚卸し案の有無も注入に載る (design-p1 §5.6、§3.4)
+- 上限は `inject.limits` で持つ。`handoff`・`log_tail`・`last_report`・`memory`・`knowledge` は `[行数, 文字数]` (正の整数 2 個。整数 1 個は検査で拒否)、それ以外は正の整数。`inject.files` の各ファイルの上限は一段下の `inject.limits.files.<名前>` (と `files.default`)。(ひな形の値: handoff 40 行 / 2000 文字、担当 15 件、未読 10 通、**hook 1 本の全体 9500 文字**)。memory と knowledge は `inject.limits.memory` / `knowledge` (ひな形: memory 80 行 / 4000 文字、knowledge 120 行 / 5000 文字。`memory apply` が反映を拒否する上限と同じ。前の `memory.limits` は v1.3.0 で読み込みエラーにした) で切る。切ったところには「全文は `<path>` を Read せよ」と付ける (hook の全体で切ったときは、全文を `.runtime/` に書いてそのパスを付ける)。全体の上限は安全網として残し、個々の中身は設定に置く
+- captain は、これに加えてカンバン風の `board` と日報を読む (P1、設定の `inject`。日報は前回の「一言」「判断待ち」「明日」の 3 節だけ。design-p1 §2.3、`board` は §6.2)。ほか P1 で、孤児になった項目の一覧や棚卸し案の有無も注入に載る (design-p1 §5.6、§3.4)
 
 ### 8.3 シフトの終わり
 
 - 終業の手順は役割プロンプトに書く: 引き継ぎを Write で上書きし、作業ログに 1 行足し、`yamato seat-stop <ship> <seat>` を実行して、そのターンを一言で終える
-- **`seat-stop`** (席が使う道具): 自分の席のセッションかを確かめ (`CLAUDE_CODE_SESSION_ID` を roster と照合。席の取り違えを防ぐ整合性の検査で、権限の判定には使わない)、`handoff.md` が今回のシフトで更新されているか (`seat_stop.require_handoff`)、送り手として届けるはずの送信が読まれているか (`seat_stop.require_delivery`) を確かめる。通れば roster を `stopping` にし、遅延 stop (10 秒後に `claude stop`) を仕掛ける。直接 stop すると最後のターンが transcript に残らず、resume した席が自分を止め直そうとするため (検証 A Q3)。遅延 stop は艦フォルダを cwd にして起動する (`worktree rm` で呼び出し元の worktree が消えても走る)。起動そのものに失敗したら events `restop_failed` と作業ログに残す (T-012)
+- **`seat-stop`** (席が使う道具): 自分の席のセッションかを確かめ (`CLAUDE_CODE_SESSION_ID` を roster と照合。席の取り違えを防ぐ整合性の検査で、権限の判定には使わない)、`handoff.md` が今回のシフトで更新されているか (`seat_stop.require_handoff`)、送り手として届けるはずの送信が読まれているか (`seat_stop.require_delivery`) を確かめる。通れば roster を `stopping` にし、遅延 stop (10 秒後に `claude stop`) を仕掛ける。直接 stop すると最後のターンが transcript に残らず、resume した席が自分を止め直そうとするため (検証 A Q3)。遅延 stop は艦フォルダを cwd にして起動する (`worktree rm` で呼び出し元の worktree が消えても走る)。起動そのものに失敗したら events `restop_failed` と作業ログに残す
 - 席が止まると、roster のシフトを閉じて、使用量を `usage.jsonl` に 1 行書く (transcript から数える。シフトの間の assistant のトークン数)。transcript の場所 (`~/.claude/projects/**/<sessionId>.jsonl`) は Claude Code の内部の形なので、見つからない・読めないときは 0 ではなく「分からない」(`"unknown": true`) と記録し、日報にもそう出す。`status` の「最終」も同じ場所の mtime を足しに見るだけで、読めなければ hook の `lastActive` とシフトの時刻で出す
 - **Stop hook は応答のたびに動くため、引き継ぎの強制には使わない**。P0 の Stop hook は、時間の上限を過ぎたときに終業を指示するだけ (§12.1)。日雇いの席が引き継ぎを書かずに終わろうとしたときの安全網 (Stop hook) は、P1 で設定 `handoff_guard:` (既定 on) として足す。短い headless の仕事には重いので、外せるようにする (design-p1 §0.4)
-- 会話ログ (transcript) は艦フォルダに退避しない (D-022)。Claude Code 側では 30 日で消えるが、コピーする hook は作らない。design-p1 §1.5 の代筆の追跡は、これを前提にせず `--reason` (owner の言葉をそのまま書いたもの) を根拠にする
+- 会話ログ (transcript) は艦フォルダに退避しない (決定 2026-09-27)。Claude Code 側では 30 日で消えるが、コピーする hook は作らない。design-p1 §1.5 の代筆の追跡は、これを前提にせず `--reason` (owner の言葉をそのまま書いたもの) を根拠にする
 
 ## 9. 判断とエスカレーション (P1)
 
@@ -462,7 +462,7 @@ P0 にはまだ無い (`yamato decide` は P1)。詳細は design-p1 §1。
   category: design          # team.yaml の decisions の鍵
   decider: owner            # 開いた時点で category から解決して書き込む
   state: open               # open (待ち) → done (決定)
-  links: [T-042]
+  links: [T-002]
   ---
   ## 背景 / 選択肢と推し / 決定
   ```
@@ -488,8 +488,8 @@ zellij セッション
 - 各ペインでは小さなスクリプト (`seat-attach`) を動かす。`roster.json` からその席の今のセッションを探して attach し、席が入れ替わったら付け直す
 - レイアウトは zellij の KDL layout ファイルで宣言する。席を後から足すときは `zellij action new-pane` を使う
 - zellij を閉じても、チームは動き続ける (表示と実行を分ける)
-- **実装**: P2 の先行として、`bin/yamato-seat-attach` と `src/yamato/view/` (PR #2) が入っている。`bin/yamato-seat-attach --layout dev research -o ~/yamato/view.kdl` で layout を作り、`zellij --session yamato-view --new-session-with-layout ~/yamato/view.kdl` で開く。`yamato view [名前...]` (= `view open`。名前は艦か `admiral`、省くと admiral が先頭で全艦。セッションは yamato-view 1 つで、足りないタブを足して attach する、T-040) に組み込まれている。艦の登録簿 (`ships.json`) はまだ引かない
-- **孤児の attach と固まり (T-089)**: ペインの `view attach` は子に `claude attach` を持つ。zellij がペインを閉じる (タブの作り直し・`delete-session`・サーバの終了) と親に SIGHUP / SIGTERM が届き、以前はこれで `view attach` が即死して子の `claude attach` が親なし (ppid 1) のまま席に繋がって残った。次の `view` で同じ席に別の attach が付くと取り合いになり、追い出された側が 1 秒後に付け直すのを繰り返す (原因は実機未再現の推測を含む)。対策: `view attach` は SIGHUP / SIGTERM で子を止めて抜ける / zellij への非対話の呼び出しは 15 秒で打ち切る / attach が 10 秒未満で 3 回続けて終わったら 30 秒待って取り合いの疑いを表示する / 同じ席に別の `view attach` があれば起動時に警告する。
+- **実装**: P2 の先行として、`bin/yamato-seat-attach` と `src/yamato/view/` (PR #2) が入っている。`bin/yamato-seat-attach --layout dev research -o ~/yamato/view.kdl` で layout を作り、`zellij --session yamato-view --new-session-with-layout ~/yamato/view.kdl` で開く。`yamato view [名前...]` (= `view open`。名前は艦か `admiral`、省くと admiral が先頭で全艦。セッションは yamato-view 1 つで、足りないタブを足して attach する) に組み込まれている。艦の登録簿 (`ships.json`) はまだ引かない
+- **孤児の attach と固まり**: ペインの `view attach` は子に `claude attach` を持つ。zellij がペインを閉じる (タブの作り直し・`delete-session`・サーバの終了) と親に SIGHUP / SIGTERM が届き、以前はこれで `view attach` が即死して子の `claude attach` が親なし (ppid 1) のまま席に繋がって残った。次の `view` で同じ席に別の attach が付くと取り合いになり、追い出された側が 1 秒後に付け直すのを繰り返す (原因は実機未再現の推測を含む)。対策: `view attach` は SIGHUP / SIGTERM で子を止めて抜ける / zellij への非対話の呼び出しは 15 秒で打ち切る / attach が 10 秒未満で 3 回続けて終わったら 30 秒待って取り合いの疑いを表示する / 同じ席に別の `view attach` があれば起動時に警告する。
 - **`yamato view stale [--kill]`**: ペインを失って残った孤児 (親が init の `view attach` / `claude attach`) を一覧する。**`--kill` なしでは止めない** (`yamato view` も黙って止めず、警告だけ出す)。`--kill` で SIGTERM を送る。親のいる attach と、利用者が自分の端末で動かした `claude attach` には触らない。固まった zellij セッションは `zellij delete-session --force yamato-view` で消す (席は止まらない)。手順の詳細は `src/yamato/view/README.md`
 
 **spike `spike-zellij-attach` で確認済み (2026-09-25, zellij 0.45.1 / Claude Code 2.1.282)**
@@ -507,23 +507,45 @@ zellij セッション
 - 席の作業ディレクトリは、事前に Claude Code の workspace trust を通しておく必要がある (`ship create` が警告し、`up` が止まる。`~/.claude.json` から確かめられないときは、起動して claude の出力で判定する。§4.1)
 - attach はペインのフォアグラウンドで動かす (macOS ではバックグラウンドで動かすと落ちる)
 
-### 10.1 dashboard (D-093, T-079)
+### 10.1 dashboard (決定 2026-10-08)
 
-`yamato dashboard [--port N] [--no-open]` は、全艦 (`admiral.all_ships()` と同じ範囲) を 1 ページに並べてブラウザで見せる。owner が「自分待ち」と各席の様子を一目で見るためのもの。
+`yamato dashboard [--port N] [--no-open] [--edit]` は、全艦 (`admiral.all_ships()` と同じ範囲) を 1 ページに並べてブラウザで見せる。owner が「自分待ち」と各席の様子を一目で見るためのもの。
 
-- **読むだけ**: GET だけ、艦フォルダに何も書かない。`seat.status` は呼ばない (reconcile・enforce・restop_stuck が roster を書き換え席を止めるため)。roster・board・inbox・events・usage・作業ログ・日報 (`report.latest`)・transcript (`rotate.last_usage`。末尾だけ)・memory の候補と反映の記録 (`memory.status`) を読み、`claude agents --json` は 1 回の描画で 1 回
+- **読むだけ** (`--edit` を付けないとき): GET だけ、艦フォルダに何も書かない (POST は 501)。`seat.status` は呼ばない (reconcile・enforce・restop_stuck が roster を書き換え席を止めるため)。roster・board・inbox・events・usage・作業ログ・日報 (`report.latest`)・transcript (`rotate.last_usage`。末尾だけ)・memory の候補と反映の記録 (`memory.status`) を読み、`claude agents --json` は 1 回の描画で 1 回
 - **ローカルだけ**: `127.0.0.1` に bind。bind 先を変えるオプションは作らない。認証なし。既定 port は 8765 (`--port` を書かなければ使用中なら 8766… と 10 個まで試す。書いたのに使用中ならエラー)
-- **載せるもの**: ページの一番上に owner の判断待ち (decider が人間の open な判断 + 急ぎ・経過・推しだけ。owner 宛て inbox の未読は上部に並べず、艦の枠に件数だけ出す。`status=waiting` の席の waitingFor は席の表の status 列で見る)。艦ごとに deadline・席の表 (生存 pid・status・最終・active の項目・未読数・要対応 (`admiral.red_flags` の `Flag(重さ, 文, 詳細)`。赤 = 詰まり・API エラー、黄 = 動いていない・担当が無い。文は「何が起きた → 何をする」で、内部の言葉は title 属性。列名は赤と黄が並ぶので「要対応」、凡例は表の上)・今日のトークン・作業ログの最後の 1 行。`shift: headless` の席だけ今日のトークンの下に「前回 $x / 上限 $y」: 前回 = usage.jsonl のその席の最新の headless の記録の `total_cost_usd`、無い・null は「-」、上限 = 役割の `max_budget_usd` (-p 1 回ごとの上限)、無ければ「-」。他の席は予算を出さない)・board の state 別の件数と active / blocked の項目・PR (board の `pr` 欄がある done 以外。workspace の origin が GitHub ならリンク)・直近 3 日の異常 (feed が赤くする種類と同じ集合 `feed.ABNORMAL_KINDS` を共有)。艦の枠の 2 段目 (T-096): 前回の日報の一言・明日 / 孤児 (`monitor.orphans`) / memory の候補数と前回の反映からの日数・棚卸しの目安 / 席の文脈量と rotate の閾値に対する割合 (80% 以上で「rotate が近い」、取れない席は「-」)。上部は判断待ちだけのまま
-- **壊れた艦**: 1 艦の読み取りで例外が出ても、その艦の枠にエラーを出して他の艦は描く
-- HTML はモジュール内で組み立てる (テンプレートエンジン・外部 CDN なし。値は必ず `html.escape` を通す)。60 秒ごとに meta refresh
-- 範囲外: 操作 (判断を閉じる・返事・席を止める)・ローカル以外からの閲覧・認証・トークンのドル換算・1 日の費用の合計や超過の警告
+- **書き込み (`--edit`)** (`src/yamato/web/edit.py`、`dashboard.Handler.do_POST`): 付けて起動したときだけ `POST /api/v1/edit/preview` と `/commit` を受ける。起動ごとに乱数トークン (`secrets.token_urlsafe`) を作り、サーバーが `index.html` を返すときに `<meta name="yamato-token">` として埋める (SPA が `X-Yamato-Token` ヘッダで返す。`frontend/src/api/client.ts` の `previewEdit` / `commitEdit`)。POST は、トークン・`Host: 127.0.0.1:<port>`・`Origin: http://127.0.0.1:<port>` が**全部**合い、`Content-Type: application/json` で本文 1 MiB 以下のときだけ通す (どれかが違えば 403 `forbidden`、Origin が無いのも拒む)。`--edit` のときは GET も Host を見る (DNS rebinding でトークン入りのページを読ませない)。`--edit` が無ければ POST は今までどおり 501、PUT・DELETE は常に 501。書き込みは 2 段: `preview` は検証して unified diff と今のファイルの sha256 (`base_hash`。ファイルが無ければ `-`) を返し、何も書かない。`commit` は検証をやり直し (通らなければ 422)、今のハッシュが `base_hash` と違えば 409 `conflict` で何も書かず、書くときは上書き前の版を `<艦>/.runtime/edit-backup/` に 1 世代だけ残し、同じ dir の一時ファイル + `os.replace` で置き換える (権限は元のまま)。書ける対象は `edit.RESOLVERS` に足した (艦, ファイル) → `Target(path, shipdir, key, validate)` の関数だけで、何も足さなければどれも 404 (対象と検証は個別の機能が決める)
+- **載せるもの**: ページの一番上に owner の判断待ち (decider が人間の open な判断 + 急ぎ・経過・推しだけ。owner 宛て inbox の未読は上部に並べず、艦の枠に件数だけ出す。`status=waiting` の席の waitingFor は席の表の status 列で見る)。艦ごとに deadline・席の表 (生存 pid・status・最終・active の項目・未読数・要対応 (`admiral.red_flags` の `Flag(重さ, 文, 詳細)`。赤 = 詰まり・API エラー、黄 = 動いていない・担当が無い。文は「何が起きた → 何をする」で、内部の言葉は title 属性。列名は赤と黄が並ぶので「要対応」、凡例は表の上)・今日のトークン・作業ログの最後の 1 行。`shift: headless` の席だけ今日のトークンの下に「前回 $x / 上限 $y」: 前回 = usage.jsonl のその席の最新の headless の記録の `total_cost_usd`、無い・null は「-」、上限 = 役割の `max_budget_usd` (-p 1 回ごとの上限)、無ければ「-」。他の席は予算を出さない)・board の state 別の件数と active / blocked の項目・PR (board の `pr` 欄がある done 以外。workspace の origin が GitHub ならリンク)・直近 3 日の異常 (feed が赤くする種類と同じ集合 `feed.ABNORMAL_KINDS` を共有)。艦の枠の 2 段目: 前回の日報の一言・明日 / 孤児 (`monitor.orphans`) / memory の候補数と前回の反映からの日数・棚卸しの目安 / 席の文脈量と rotate の閾値に対する割合 (80% 以上で「rotate が近い」、取れない席は「-」)。上部は判断待ちだけのまま
+- **壊れた艦**: 1 艦の読み取りで例外が出ても、その艦の `error` に理由を入れ `state` を null にして他の艦は返す
+- **サーバーは JSON と dist の配信だけ**: HTML は組まない。`/api/v1/*` の JSON と `src/yamato/web/dist/` (フロントの build 出力) を返す。画面はフロントが API を読んで描く。一覧 (`/`) は 60 秒ごとに `GET /api/v1/overview` を取り直し、上の「載せるもの」(判断待ち・艦の枠・席の表・要対応の赤黄・予算・2 段目・PR・異常) を出す (`frontend/src/pages/OverviewPage.tsx` と `frontend/src/overview/`。取得に失敗しても前の表示を残してエラーを上に出す)。載せるものの値はすべて `GET /api/v1/overview` の応答 (`dashboard.overview`) にあり、文字列は生のまま返す (エスケープは画面の仕事)
+- **dist の配信** (`src/yamato/web/static.py`): 起動時に dist の実在する通常ファイルの一覧を作り、その一覧にある URL path だけ返す (リクエストの path からファイルの path を組み立てない。`..`・シンボリックリンク・起動後に増えたファイルは 404)。MIME は拡張子で固定 (.js は text/javascript)。知っている拡張子の無い path (`/ship/<艦名>` など画面の path) は `index.html`。dist が無いときは `/` などで「build されていない」ページ (503)。`/api/` 以下は dist に落とさず JSON のエラー (404)
+- **フロントの土台**: repo 直下の `frontend/` (React + TypeScript + Vite + react-router、Node 24 固定、npm の lockfile を commit)。ビルド出力は `src/yamato/web/dist/` に commit し、利用者は node 不要。API の正本は `docs/api/openapi.yaml`、TS の型は `npm run gen-api` で生成して commit する。ナビは 一覧 / 艦隊 / 艦ごと。一覧・艦隊 (`/fleet`)・艦の設定画面 (`/ship/<艦名>/config`) は実装済み、艦ごとのページだけ枠。手順は README の「開発者向け」。Python 側は dist の配信と `/api/v1` の JSON だけを持つ
+- **md の閲覧** (`src/yamato/web/files.py`): `files/{file}` は艦フォルダの `roles/*.md`・`charter.md`・`knowledge.md` の実在する通常ファイルだけ返す。艦は `admiral.find_ship` (config・edit・fleet と同じ範囲)、ファイルは起動のたびに作る列挙の dict から `file` (URL エンコードした相対 path。`roles%2Fimpl.md`) で引き、リクエストの値から path を組み立てない。`..`・絶対パス・シンボリックリンク・列挙に無いファイルは 404 (`not_found`)、読めなければ 500 (`unreadable`)。画面 (`/ship/<艦名>/files/<file>`) は小さな markdown パーサ (`frontend/src/markdown/`、依存なし) で React の要素にして出す。HTML を文字列で挿す API は使わず、本文の HTML は文字として出る。リンクは http(s)・mailto だけ
+- **md の編集** (`src/yamato/web/md_edit.py`): `--edit` のとき、列挙にある `roles/*.md`・`charter.md` の実在する通常ファイルだけが書ける (`edit.RESOLVERS` に足す。新しいファイルは作らない)。`knowledge.md`・memory.md は対象に入れず 404 (`yamato memory apply` が反映の記録を残すため。API からも書けない)。検証は「空でない・NUL を含まない」だけ。画面は「編集」→ textarea →「差分を見る」(preview) →「確定」(commit。差分を見るまで押せない。preview 後に変わっていれば 409 で取り直す)。
+- **操作の共通部品と席の操作** (`src/yamato/web/ops.py`・`seat_ops.py`): `POST /api/v1/ops/{op}` (`--edit` のときだけ。トークン・Host・Origin は edit と同じ入口で検査する)。操作は yamato の CLI を別プロセスで 1 回呼ぶだけで、操作のロジックは API にも画面にも持たない。引数は list で渡して shell を通さず (席名などは 1 つの引数)、画面が CLI を待つのは 30 秒まで (過ぎても CLI は殺さず裏で最後まで走り、`timed_out` で返す)、stdout と stderr をまとめて返し、端末の制御文字を落として 20000 文字で切る。CLI が失敗しても応答は 200 で、画面は `exit_code` と出力をそのまま見せる (打ち切ったときは `timed_out`)。出力は text として描く (HTML にしない)。どの操作ができるかは `ops.OPERATIONS` に `Operation` (艦フォルダと params から CLI の引数を返す関数) を足した分だけで、艦の操作・send などはここに足す。確認が要る操作は `confirmed: true` が無ければ実行しない (400)。画面の確認はブラウザの alert でなくページ内の確認画面 (`frontend/src/ops/OpPanel.tsx`。確認 → 実行 → 出力と exit code)。席の操作は `rotate` (止まっている persistent の席に「入れ替え」。`--by owner` で呼ぶ。生きている席・persistent でない席は CLI が断る)。`send` (席にメッセージを送る。`--from owner` で呼び、本文は `--` の後ろの 1 つの引数にして先頭が `-` でも option に化けない。入口は艦のページ `/ship/<艦名>` の「席に送る」。席欄は config API の roles から作った席 (count 1 は役割名、n は `<役割>-1..n`) の select で、取れない・読めないときは自由入力に戻す) と `decide-close` (判断を `--by owner` で閉じる。決定と理由は `--choice=値` `--reason=値` の形で渡す。入口は一覧の「owner の判断待ち」の一番上の判断だけ。決定・理由が空なら CLI が断る)。どちらも確認画面を経る。`seat-stop` は席のセッションの中から呼ぶ道具で、外から席を強制的に止める入口は作らない。生きている席の「終業を頼む」は `send` (上の入口と同じ操作) で「引き継ぎを書いて seat-stop しろ」を owner から送るだけで、席が応じて自分で止まる (なりすましも新しい CLI も無い)。入口 (席の表の「操作」列のボタン) は `--edit` で起動したとき (`index.html` にトークンがあるとき) だけ出す
+- **艦の操作** (`src/yamato/web/ship_ops.py`): `up` (任意の `for`・`seats`)・`down`・`down-force` (`down --force`)・`extend` (`span`)・`halt`。どれも `yamato up` などの正規の入口をそのまま呼び、席や admiral の名前を環境変数で借りない。CLI が断れば (起動していない艦への extend など) その出力と exit code を画面に出すだけ。値が option に化けないよう先頭の `-` は断り、中身の検証は CLI に任せる。CLI は dashboard と別のセッション (`procs.spawn_detached`) で起こし、出力は艦の `.runtime/web-ops/` のファイル (新しい 20 個だけ残す) に書かせる。30 秒待って終わらなくても殺さず、`timed_out` と `log` (出力のファイル) を返して画面は「裏で続いている。結果は status で」と出す (up や halt を途中で殺すと watchdog の無い deadline や半端な停止が残る。dashboard を Ctrl-C で止めても巻き添えにならない)。入口は艦のページ `/ship/<艦名>` (`--edit` のときだけ)で、全部ページ内の確認画面を経る (`down --force` と `halt` は席が引き継ぎを書けず切れることを確認画面に書く)。
+- **CI**: `.github/workflows/ci.yml`。push と PR (main・develop) で、frontend (npm ci → lint → typecheck → test → build → gen-api → `git diff --exit-code` で dist・型の鮮度) と python (unittest discover を 3.11・3.13)。secrets なし。`git.merge_requires` の `ci` はこれ
+- **API のスキーマ**: web コンソールの JSON API の正本は `docs/api/openapi.yaml` (OpenAPI 3.1)。M1 は `GET /api/v1/overview` (dashboard の gather 相当)・`/api/v1/fleet` (ships.json と `_admiral`)・`/api/v1/ships/{name}/config` (team.yaml の項目ごとの値 + schema の description + 生の yaml + 「次の up で効く変更あり」)・`/api/v1/ships/{name}/files/{file}` (roles/*.md・charter.md・knowledge.md)。エラーは全 path 共通で `{"error": {"code", "message", "detail"}}`。TS の型はここから生成する。Python 側は `tests/api_schema.py` の小さな検査器 (type・nullable・properties・required・additionalProperties・items・enum・const・文書内の `$ref`。jsonschema は vendor しない。知らないキーワードは黙って通さずエラー) で応答をスキーマに照らす。実装済みは `GET /api/v1/overview` と `GET /api/v1/ships/{name}/config`・`GET /api/v1/ships/{name}/files/{file}` (応答は `tests/test_dashboard.py`・`tests/test_web_files.py` が検査器で確かめる)。ほかの path は 404
+- **艦隊の画面** (`/fleet`、`src/yamato/fleet.py`): 読むだけ (書き込みの入口は作らない)。`GET /api/v1/fleet` は `ships.json` の艦と `$YAMATO_HOME` 直下で team.yaml のある艦を、名前・パス・`registered` (ships.json にあるか)・`exists` (team.yaml があるか。ships.json にあってフォルダが消えた艦も落とさず `exists=false` で出す)・team.yaml の name・読めなかった理由で返す。team.yaml は検証せず読むだけなので、壊れた艦も一覧に残る。`_admiral` は `ships` に入れず別枠 `admiral` (パス・team の name・roles の名前・読めなかった理由。フォルダが無ければ null)。艦の名前は `exists` のとき設定画面へのリンクになる
+- **艦の設定画面** (`/ship/<艦名>/config`、`src/yamato/shipconfig.py`): 読むだけ。艦の引き方は files・edit と同じ `admiral.find_ship` (ships.json の艦と `$YAMATO_HOME` 直下の艦で team.yaml のあるもの。fleet の `exists=true` と一致し、無ければ 404)。項目の一覧は `team.schema.json` の最上位の properties の並びと team.yaml のキーから組み立て (項目名はコードに固定しない)、schema に無いキーは末尾に説明なしで出す。各項目は値・型・description・enum。値が「名前 → オブジェクト」の項目 (roles・profiles など) は画面で表にする。生の yaml は折りたたむ。team.yaml の mtime が `.runtime/team.json` より新しければ `pending.changed` で「次の yamato up で効く変更がある」と出す (`keys` は検証した team.yaml と team.json で値が違う最上位の項目。まだ up していない艦は false)。team.yaml を読めない艦は `unreadable` のエラー JSON (500) で、画面はエラーを出して落ちない。**`--edit` で起動したときだけ、各項目がフォームになる** (`frontend/src/form/`・`frontend/src/pages/ConfigForm.tsx`)。入力欄の型・enum・説明は `ConfigField.schema` (その項目の `team.schema.json` の定義そのもの) から再帰で組む (項目名・値の型をフロントに固定しない)。anyOf は今の値の型で枝を選び、決まらない形 (自由形式の map・型の混ざった list など) は読むだけの表示にして「生の yaml で直す」と案内する。保存は `POST /api/v1/edit/preview` → 差分と検証結果を見る → `commit`。送るのは全文でなく**操作 (`ops`: set_value・add_key・remove_key・insert_item・remove_item)** で、サーバーが `yamlpatch` で今のファイルに当てる (コメントと並びは触った所の外で変わらない。`src/yamato/web/teamedit.py`。preview と commit のそれぞれで、ハッシュを取ったのと同じバイト列に当てる)。検証は `team.validate` と同じ (落ちれば 422 `invalid`)。`yamlpatch` が扱えない形の team.yaml (anchor など) や操作 (最後の 1 キーを消すなど) は 422 `unpatchable` で断り、画面はサーバーの案内を出す。保存したら「次の yamato up で効く」と出す (自動で up はしない)。
+  - **生の team.yaml の編集** (`/ship/<艦名>/config/raw`、`--edit` のときだけ。設定画面から「生の team.yaml を直す」で入る。フォームで扱えない項目の行き先): textarea に team.yaml の全文を出し、「差分を見る」(preview。`content` で全文を送る) → 「確定」(commit)。書き込みはフォームと同じ `POST /api/v1/edit/*` の土台で、別の経路は無い。検証は yaml の構文 + `team.validate` で、エラーは `errors` の文字列の頭に `行 N:` を付ける (構文エラーはその位置、`team.validate` のエラーはメッセージが指す項目 (`roles.dev.trust` など) の行。項目を指せないエラーは行なし)。検証に通らなければ確定できず、preview 後にファイルが変わっていれば 409 `conflict` (フォームと同じ。差分を取り直す)。
+- 範囲外: 判断を閉じる・返事の操作 (席の操作は上)・ローカル以外からの閲覧・ログイン型の認証 (書き込みはトークンだけ)・トークンのドル換算・1 日の費用の合計や超過の警告
+
+### 10.2 yaml の部分置き換え (web コンソールの土台)
+
+`src/yamato/yamlpatch.py` は、team.yaml のコメントと並びを保ったまま値を変える部品 (CLI のコマンドは無い)。PyYAML の `compose` が返すノードの位置 (`start_mark` / `end_mark`) を使い、**変えた所の文字範囲だけを元のテキストで置き換える。dump はしない**。
+
+- 操作: `set_value` (scalar の変更)・`add_key` / `remove_key` (map)・`insert_item` / `remove_item` (list)。パスは `("roles", "pm", "model")` のようなキー (str) と添字 (int) の並び。何も変えなければバイト一致、触った所の外は一文字も変わらない
+- block 形式も flow 形式 (`{a: 1}` `[a, b]`) も扱う。元が `|` `>` の scalar は block scalar のまま差し替える。引用符は元の書き方に寄せ、必要なときだけ引用符を付ける (`yes` `123` `a: b` など)
+- 削除は、キー (要素) の行だけを消し、直前のコメント行は残す
+- **安全網**: 組み立てた結果を `yaml.safe_load` で読み直し、元の値に操作を当てた期待値と一致しなければ `YamlPatchError`。一致しないテキストは返さない
+- 扱えない形は `YamlPatchError` (呼ぶ側は生の yaml 欄に回す): anchor / alias / merge key・複数文書・scalar と collection の取り替え・最後の 1 キー / 1 要素の削除・`- - x` のような入れ子の block list・空の block collection への追加
 
 ## 11. admiral (窓口)
 
 - 人間の窓口。仕事は**チームの作成・構成の変更、出撃と帰投、全チームの状況を一望し、owner の判断を代筆すること**
-- **admiral はどの艦にも属さない、常駐の Claude のセッション**である (owner の決定、D-011)。名前付きの bg セッション (`yamato.admiral`)。`yamato admiral` で、生きていれば attach、止まっていれば talk と同じ規則で起こしてから attach する。スマホからは Remote Control (`--remote-control`) で話せる
-- 記録は `~/yamato/_admiral/` (`$YAMATO_HOME/_admiral/`)。**`_admiral/` は「席 1 つ・deadline なしの特別な艦」として、既存の seat / inject / rotate / talk / inbox の仕組みを丸ごと使い回す** (D-013)。`ships.json` には登録せず、`yamato ships` の一覧にも出ない (名前が `_` 始まり)
-- **時間の上限は掛けない** (`time_limit: none`。§0 B4 の例外、D-013)。実装しておらず CLI を打って話すだけなので、上限を掛ける理由がない。長くなったら rotate (コンテキスト・compaction・日付) で入れ替える
+- **admiral はどの艦にも属さない、常駐の Claude のセッション**である (owner の決定 2026-09-27)。名前付きの bg セッション (`yamato.admiral`)。`yamato admiral` で、生きていれば attach、止まっていれば talk と同じ規則で起こしてから attach する。スマホからは Remote Control (`--remote-control`) で話せる
+- 記録は `~/yamato/_admiral/` (`$YAMATO_HOME/_admiral/`)。**`_admiral/` は「席 1 つ・deadline なしの特別な艦」として、既存の seat / inject / rotate / talk / inbox の仕組みを丸ごと使い回す** (決定 2026-09-27)。`ships.json` には登録せず、`yamato ships` の一覧にも出ない (名前が `_` 始まり)
+- **時間の上限は掛けない** (`time_limit: none`。§0 B4 の例外、決定 2026-09-27)。実装しておらず CLI を打って話すだけなので、上限を掛ける理由がない。長くなったら rotate (コンテキスト・compaction・日付) で入れ替える
 - **艦の中身の仕事には踏み込まない** (task の割り振り・実装・レビュー・merge。判断や方針の中身は owner と captain / planner が直接やる)。**これは admiral の役割プロンプトの約束で、CLI は admiral からの `send` や board の操作を拒否しない** (mechanism-not-policy)。艦に送るのは出撃と帰投に伴う定型のメッセージだけ
 - 権限は `opus` + `auto`。`~/yamato/**` (艦フォルダ全部・`ships.json`) は編集してよい (team.yaml・roles・charter の変更をやらせる仕事のため)。各艦の記録本体 (`.runtime/`・`roster.json`・inbox・memory.md など、各艦の yamato のコマンドだけが書く場所) は deny で守る。WebFetch / WebSearch は使ってよい (owner の判断。他の役割にある B2 の分離は admiral には掛けない)。`~/dev/yamato` (yamato 自身の repo) は読むだけ (Edit / Write を deny。pull は Bash で打つ)
 - コマンドの一覧・使い方は design-p1 §6、[docs/admiral.md](admiral.md)
@@ -563,11 +585,11 @@ grace: 20m            # 終了時刻のあと、キリのいいところまで�
   - 作業中の席: ターンの終わりに Stop hook が終業を指示する (block)。1 つのターンの中でツールを呼び続ける席には、PreToolUse hook が、ツールは通したうえで終業の指示を添える (`additionalContext`)。Stop と PreToolUse を合わせて 1 シフトあたり数回まで (`MAX_WRAPUP_NOTICES`)
   - 待機中の席: Stop hook で起動した非同期の watcher (asyncRewake) が、終了時刻に席を起こして指示する。指示の回数を使い切ったあとも、猶予が切れるまで見張る
   - 同じ watcher (1 席 1 本) が inbox も数秒おきに見て、送り手が席でない未読が増えたら「inbox に未読がある。`yamato inbox` で読め」と席を起こす (§0 B1。同じ未読では 1 回だけ。終了時刻を過ぎたら起こさない)
-  - `time_limit: none` (D-013、admiral のみ) の艦は終了時刻を持たず、watcher は inbox だけを見張って回り続ける (上記)。これを終える経路 (`seat-stop`・強制停止) を通らずにセッションが死ぬと (手で `claude stop`・crash)、roster は `on_shift` のまま watcher だけが残り、次のシフトの watcher は pidfile を見て即 return してしまう (T-038)。そこで watcher は自分が古くなったことにも気付いて抜ける: 席の `shiftNo` が変わった (次のシフトが別の watcher を立てた)・pidfile が自分以外の watcher の名前になった、のいずれかで即座に return し、さらに数十秒おき (`LIVENESS_EVERY` ポーリングごと) に `claude agents --json` で自分のセッションがまだ生きているか確かめて、消えていれば見張りをやめる (`claude` を呼べない・答えが読めないときは「不明」として見張りを続ける。誤って早く諦めない側に倒す)
+  - `time_limit: none` (決定 2026-09-27、admiral のみ) の艦は終了時刻を持たず、watcher は inbox だけを見張って回り続ける (上記)。これを終える経路 (`seat-stop`・強制停止) を通らずにセッションが死ぬと (手で `claude stop`・crash)、roster は `on_shift` のまま watcher だけが残り、次のシフトの watcher は pidfile を見て即 return してしまう。そこで watcher は自分が古くなったことにも気付いて抜ける: 席の `shiftNo` が変わった (次のシフトが別の watcher を立てた)・pidfile が自分以外の watcher の名前になった、のいずれかで即座に return し、さらに数十秒おき (`LIVENESS_EVERY` ポーリングごと) に `claude agents --json` で自分のセッションがまだ生きているか確かめて、消えていれば見張りをやめる (`claude` を呼べない・答えが読めないときは「不明」として見張りを続ける。誤って早く諦めない側に倒す)
   - `send`: 終業のあとは宛先を起こさず記録だけして、送り手が席なら終業を指示する
   - 新しいシフトの SessionStart の注入にも、終業の指示が載る
 - 一度きりのタイマー (watchdog) は `up` と `down` が切り離して起動する。終了時刻 + 猶予に、生きている席を強制停止する補助で、消えても上限は効く (`send` / `status` と席の hook が毎回 deadline を確かめ、猶予を過ぎていれば強制停止する)。常駐のデーモンは作らない
-- `watchdog` と `status` は、`stopping` のまま `STOPPING_STUCK_AFTER` (5 分) を超えて生きている席を止め直す (`restop_stuck`。遅延 stop がおそらく走らなかったとみなす)。同じ席には同じ間隔より頻繁には打たず、events `stopping_stuck` と作業ログに記録する (T-012)
+- `watchdog` と `status` は、`stopping` のまま `STOPPING_STUCK_AFTER` (5 分) を超えて生きている席を止め直す (`restop_stuck`。遅延 stop がおそらく走らなかったとみなす)。同じ席には同じ間隔より頻繁には打たず、events `stopping_stuck` と作業ログに記録する
 - 猶予を過ぎたときの席の hook (watchdog が消えていても席が止まるための経路):
   - PreToolUse hook: ツールを **deny** し (理由に「間もなく止める。一言でターンを終えよ」)、席自身の遅延 stop を仕掛ける。遅延 stop は `seat-stop` と同じ仕組み (切り離した `sh -c "sleep 5; claude stop <id>; yamato _shift-ended ... --forced"`) で、1 シフトに 1 回 (`.runtime/force-stop-<seat>.json`。persistent の席は resume しても sessionId が同じなので、シフト番号で見る。止まらずに hook を呼び続けていれば 60 秒後にもう一度)
   - Stop hook: 終業の指示 (block) ではなく、ターンを終わらせて同じ遅延 stop を仕掛ける
@@ -590,13 +612,13 @@ grace: 20m            # 終了時刻のあと、キリのいいところまで�
 | `status [<ship>]` | 席ごとの状態 (生存、最後に動いた時刻、権限の確認で止まっている「詰まり」)、deadline までの残り、未読 inbox |
 | `send <ship> <seat\|owner> "<msg>" [--from <seat>]` | メッセージを送る (§7) |
 | `inbox <ship> <seat\|owner> [--all]` | 未読を全文で表示して既読にする |
-| `dashboard [--port N] [--no-open]` | 全艦の owner の判断待ちと席の状況をローカルのブラウザで見る (§10.1) |
+| `dashboard [--port N] [--no-open] [--edit]` | 全艦の owner の判断待ちと席の状況をローカルのブラウザで見る (§10.1) |
 | `board add / set / show / list / mine / archive` | board の操作と表示 (§6.2) |
 | `log <ship> <seat> "<text>"` | 席の作業ログに 1 行追記する |
 | `seat-stop <ship> <seat> [--delivered]` | 席が使う。終業処理 (引き継ぎの確認と遅延 stop。§8.3) |
 | `hook <event> <ship> <seat>` | Claude Code の hook から呼ばれる (session-start / session-start-knowledge / stop / wait-deadline / deny-dialog / log-denied) |
 
-P1 で足すもの (design-p1): `decide open / close / list`、`report daily`、`memo`、`memory curate / apply / status`、`ship extend / halt`、`ships` (全艦の一覧)、`talk`、`worktree add / path / list / rm`、`pr open / merge`、`seat-stop --rotate` と `rotate <ship> <seat>... | --all` (止まっている persistent の席に外から同じ入れ替えの印を立てる、design-p1 §5.4 の T-024)、`feed` (艦の出来事 events.jsonl を流し見する)。ほか、headless の席を起こすラッパー `run-headless` (内部用)。P2: `view` (実体は `bin/yamato-seat-attach`。`yamato` への組み込みは未)。
+P1 で足すもの (design-p1): `decide open / close / list`、`report daily`、`memo`、`memory curate / apply / status`、`ship extend / halt`、`ships` (全艦の一覧)、`talk`、`worktree add / path / list / rm`、`pr open / merge`、`seat-stop --rotate` と `rotate <ship> <seat>... | --all` (止まっている persistent の席に外から同じ入れ替えの印を立てる、design-p1 §5.4)、`feed` (艦の出来事 events.jsonl を流し見する)。ほか、headless の席を起こすラッパー `run-headless` (内部用)。P2: `view` (実体は `bin/yamato-seat-attach`。`yamato` への組み込みは未)。
 
 design-p1 には、別の名前で書かれている箇所がある (`ship up / down / status`、`shift end`)。実装済みの名前は上の表 (`up` / `down` / `status` / `seat-stop`)。揃え方は P1 の実装で決める (§15)。
 
@@ -616,8 +638,8 @@ design-p1 には、別の名前で書かれている箇所がある (`ship up / 
 - 稼働時間の各時刻の既定値: 終業は `time_limit`、猶予は `grace` (ひな形は 3h と 20m)。最終受付は design-p1 §9 の軽い形 (§12.1)
 - `persistent` の席を入れ替える条件: 設定 `rotate:` (コンテキストの量、compaction、時間、日付。どれも off にできる。design-p1 §5.3〜5.4)
 - 人間宛て通知の経路: `notify.via` に `slack` / `mac` / `windows` (複数可) と、任意の `command` (§7、design-p1 §2.4)
-- admiral の形: どの艦にも属さない常駐の Claude のセッション。時間の上限は掛けない (D-011、D-013、§11)
-- 会話ログ (transcript) の艦フォルダへの退避: しない (D-022)。代筆 (design-p1 §1.5) の根拠は `--reason` (owner の言葉をそのまま書いたもの) を正とする。transcript をコピーする hook は作らない
+- admiral の形: どの艦にも属さない常駐の Claude のセッション。時間の上限は掛けない (決定 2026-09-27、§11)
+- 会話ログ (transcript) の艦フォルダへの退避: しない (決定 2026-09-27)。代筆 (design-p1 §1.5) の根拠は `--reason` (owner の言葉をそのまま書いたもの) を正とする。transcript をコピーする hook は作らない
 
 **まだ決まっていないこと**
 - zellij で窓を開いている席は常駐する (attach で 1h 停止を免れる)。全席を開くか、見たい席だけ開くか

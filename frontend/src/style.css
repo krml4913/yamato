@@ -1,0 +1,21 @@
+/* 共通: 変数とリセットだけ。画面ごとの見た目は各画面の *.module.css に置く */
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+  --color-danger: #dc2626;
+  --color-warn: #d97706;
+  --color-ok: #16a34a;
+  --color-card: #fff;
+  --color-link: inherit;
+  --color-line: #7773;
+  --color-line-strong: #8884;
+  --color-chip: #7772;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --color-card: #292524; --color-link: #7dd3fc; }
+}
+body { margin: 0; }
+a { color: var(--color-link); }
+h1 { font-size: 20px; margin: 12px 0 4px; }
+h2 { font-size: 16px; margin: 0 0 8px; }
+pre { overflow-x: auto; }

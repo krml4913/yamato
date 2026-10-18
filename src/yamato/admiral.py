@@ -24,10 +24,10 @@ from .util import (YamatoError, fmt_span, fmt_time, load_registry, parse_duratio
 
 TALK_NOTE = "[yamato talk] owner がこれから `claude attach` でこの席に来て直接話します。起きたら待っていてください。"
 
-# --- yamato admiral (D-011, T-021) ---------------------------------------------------
-# _admiral/ (T-020) is a ship folder like any other -- unregistered (all_ships() leaves it
-# out) and with no deadline (time_limit: none, D-013) -- built once from the `admiral`
-# template (T-023) the first time `yamato admiral` is used, then driven by the existing
+# --- yamato admiral ---------------------------------------------------
+# _admiral/ is a ship folder like any other -- unregistered (known_ships() leaves it
+# out) and with no deadline (time_limit: none) -- built once from the `admiral`
+# template the first time `yamato admiral` is used, then driven by the existing
 # seat / talk / send / seat-stop / rotate machinery (Q5 of work/requirements/admiral.md).
 ADMIRAL_DIRNAME = "_admiral"
 ADMIRAL_TEMPLATE = "admiral"
@@ -45,19 +45,31 @@ def out(msg: str = "") -> None:
 
 # --- the ship list ------------------------------------------------------------
 
-def all_ships() -> dict[str, Path]:
-    """Every ship: ``$YAMATO_HOME/ships.json``, then the folders under ``$YAMATO_HOME``.
+def known_ships() -> dict[str, tuple[Path, bool]]:
+    """Every ship name -> (folder, registered): ``$YAMATO_HOME/ships.json`` first, then the folders
+    under ``$YAMATO_HOME`` that hold a team.yaml. A registered ship whose folder is gone stays in
+    (``fleet`` shows it as missing); ``all_ships``/``find_ship`` drop it.
 
-    A name starting with ``_`` (``_admiral``, T-020) is never a normal ship's own name
-    (``check_name`` forbids it) and is left out here: it is the admiral's special, unlisted
-    folder. ``resolve_ship``/``status`` still find it directly by that name/path."""
-    ships = {name: Path(p) for name, p in load_registry().items() if not name.startswith("_")}
+    A name starting with ``_`` (``_admiral``) is never a normal ship's own name (``check_name``
+    forbids it) and is left out here: it is the admiral's special, unlisted folder.
+    ``resolve_ship``/``status`` still find it directly by that name/path."""
+    ships = {name: (Path(p), True) for name, p in load_registry().items() if not name.startswith("_")}
     home = yamato_home()
     if home.is_dir():
         for d in sorted(home.iterdir()):
             if not d.name.startswith("_") and (d / "team.yaml").is_file():
-                ships.setdefault(d.name, d)
-    return {n: p for n, p in sorted(ships.items()) if (p / "team.yaml").is_file()}
+                ships.setdefault(d.name, (d, False))
+    return dict(sorted(ships.items()))
+
+
+def all_ships() -> dict[str, Path]:
+    """Every ship whose folder holds a team.yaml: name -> folder."""
+    return {n: p for n, (p, _reg) in known_ships().items() if (p / "team.yaml").is_file()}
+
+
+def find_ship(name: str) -> Path | None:
+    """The one way to look a ship up by name for the dashboard's config / files / edit APIs (the CLI resolves via ``resolve_ship`` / ``all_ships``)."""
+    return all_ships().get(name)
 
 
 # --- red seats (design-p1 §5.2) ---------------------------------------------------
@@ -86,7 +98,7 @@ def red_flags(team: dict, seat_name: str, rec: dict, live: dict | None, now: flo
     seat is idle.
 
     ``has_active``: whether the seat has an ``active`` board item, as assignee or reviewer
-    (design-drift #11, D-019; T-093).
+    (design-drift #11).
     A live ``per_task`` seat with none is flagged -- it should have been ``seat-stop``'d when
     its task ended; a caller that does not track the board (or has none to check) can leave
     the default and this check is skipped."""
@@ -291,7 +303,7 @@ def _wake_for_attach(shipdir: Path, name: str | None) -> tuple[dict, str, str]:
     if short is None:
         if team["time_limit"] is not None and deadline.phase(deadline.read(shipdir)) != deadline.RUNNING:
             # send would only record the note and not wake the seat: say so without the note.
-            # A ship with no time limit at all (time_limit: none, D-013, the admiral) has no
+            # A ship with no time limit at all (time_limit: none, the admiral) has no
             # "up" to wait for: it is always in bounds, so this gate does not apply to it.
             raise YamatoError(f"席 {name} は止まっていて、艦は稼働時間の外 ({deadline.describe(deadline.read(shipdir))})。"
                               f"`yamato up` か `yamato extend` のあとで talk する")
@@ -310,7 +322,7 @@ def talk(shipdir: Path, name: str | None, *, execvp=os.execvp) -> int:
     return procs.run_foreground([*claude.claude_cmd(), "attach", short], execvp=execvp)
 
 
-# --- yamato admiral: bootstrap, attach, stop (D-011, T-021) ---------------------------
+# --- yamato admiral: bootstrap, attach, stop ---------------------------
 
 def admiral_dir() -> Path:
     return yamato_home() / ADMIRAL_DIRNAME
@@ -318,7 +330,7 @@ def admiral_dir() -> Path:
 
 def ensure_admiral() -> Path:
     """``_admiral/`` built once, from the ``admiral`` template, the first time it is used
-    (T-020's ``ship.create(..., register=False)``). Already there: left untouched (owner
+    (via ``ship.create(..., register=False)``). Already there: left untouched (owner
     edits to team.yaml / charter.md / roles/admiral.md are never overwritten)."""
     from . import ship
 
@@ -342,7 +354,7 @@ def wake_admiral() -> None:
 
 def admiral_talk(*, execvp=os.execvp) -> int:
     """``yamato admiral``: 生きていれば attach、止まっていれば talk と同じ規則で起こしてから attach
-    する (D-011)。``_admiral/`` は無ければここで初めて作る。settings / agents は毎回 ``prepare`` で
+    する。``_admiral/`` は無ければここで初めて作る。settings / agents は毎回 ``prepare`` で
     作り直す (team.yaml を直したときに次の attach から効くのは他のどの艦とも同じ)。"""
     shipdir = ensure_admiral()
     seat.prepare(shipdir)
@@ -350,7 +362,7 @@ def admiral_talk(*, execvp=os.execvp) -> int:
 
 
 def admiral_stop(force: bool = False) -> int:
-    """``yamato admiral --stop`` (``--force`` つき): admiral は締切を持たない (D-013) ので、
+    """``yamato admiral --stop`` (``--force`` つき): admiral は締切を持たないので、
     ``down`` のような一時的な締切は書かない。代わりに、既存の send の経路で「引き継ぎを書いて
     seat-stop しろ」を admiral の inbox に置く (自分で読んで自分を止める)。それでも
     ``ADMIRAL_STOP_WAIT`` 秒 (モジュール定数) 止まらなければ、``--force`` で ``down --force`` /
@@ -396,7 +408,7 @@ def register(sub) -> None:
     t.add_argument("ship")
     t.add_argument("seat", nargs="?", help="既定は team.yaml の talk_default (省略時 hub)")
     a = sub.add_parser("admiral", help="(owner) 常駐の admiral セッションに attach する。"
-                                        "止まっていれば talk と同じ規則で起こしてから (D-011)")
+                                        "止まっていれば talk と同じ規則で起こしてから")
     a.add_argument("--stop", action="store_true", help="引き継ぎを促して止める (seat-stop は艦の席と同じに使える)")
     a.add_argument("--force", action="store_true",
                    help="--stop と一緒に使う。待っても自分で止まらなければ強制停止する (down --force と同じ扱い)")
